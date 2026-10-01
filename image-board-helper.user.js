@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.8.2
+// @version      0.9.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -81,7 +81,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.8.2'
+  const VERSION = '0.9.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -100,11 +100,12 @@
     fixFancybox:    true,   // fill empty src in the alternate viewer
     gestures:       true,   // swipe, double tap and pinch
     originalThumbs: false,  // swap visible thumbnails for the original file (heavy, needs reload)
+    nativeFeed:     false,  // one-column feed with sharp images on the site's own pages (needs reload)
     forceRule34Api: false,  // see applyRule34ApiUnlock (needs reload)
   }
 
   // Options that only take effect when the app boots.
-  const NEEDS_RELOAD = new Set(['sharpThumbs', 'forceRule34Api', 'originalThumbs'])
+  const NEEDS_RELOAD = new Set(['sharpThumbs', 'forceRule34Api', 'originalThumbs', 'nativeFeed'])
 
   const CFG = Object.assign({}, DEFAULTS, readJSON(CFG_KEY, {}))
 
@@ -155,6 +156,7 @@
       tSharp: 'Large thumbnails', tCovers: 'Video covers', tGif: 'Animated GIFs in the grid',
       tFancybox: 'Repair Fancybox', tGestures: 'Touch gestures',
       tOriginal: 'Original thumbnails (heavy)',
+      tFeed: 'One-column feed on site pages',
       tApi: 'Force API (loses filters)', tDebug: 'Log to console',
       noteReload: 'reload',
       bTest: 'Test URLs', bClearHost: 'Clear host',
@@ -177,6 +179,7 @@
       tSharp: 'Miniatura grande', tCovers: 'Capa de vídeo', tGif: 'GIF animado na grade',
       tFancybox: 'Consertar Fancybox', tGestures: 'Gestos de toque',
       tOriginal: 'Miniatura original (pesado)',
+      tFeed: 'Feed de uma coluna no site',
       tApi: 'Forçar API (perde filtros)', tDebug: 'Log no console',
       noteReload: 'recarregar',
       bTest: 'Testar URLs', bClearHost: 'Limpar host',
@@ -400,8 +403,22 @@
   // yande.re and konachan), so look at all of them, not just the first.
   const hasTypeIcon = (card, d) =>
     [...card.querySelectorAll('.posts-image-type path')].some(p => p.getAttribute('d') === d)
-  const isVideoCard = card => hasTypeIcon(card, ICON.video)
-  const isGifCard = card => hasTypeIcon(card, ICON.gif) || card.dataset.ibhKind === 'gif'
+  // Site pages (Gelbooru 0.2 markup) have no icons; the tags sit in the
+  // thumbnail's title or alt. "animated" alone may be either kind: it counts as
+  // video, and the cover falls back to the GIF when no video host answers.
+  const isMasonryCard = card => card.classList.contains('posts-image-card')
+  const nativeTags = card => {
+    const img = card.querySelector('img')
+    return ` ${(img && (img.title || img.alt)) || ''} `
+  }
+  const NATIVE_GIF = /\s(gif|animated_gif)\s/i
+  const NATIVE_VIDEO = /\s(video|mp4|webm|animated)\s/i
+  const isVideoCard = card => isMasonryCard(card)
+    ? hasTypeIcon(card, ICON.video)
+    : NATIVE_VIDEO.test(nativeTags(card)) && !NATIVE_GIF.test(nativeTags(card))
+  const isGifCard = card => card.dataset.ibhKind === 'gif' || (isMasonryCard(card)
+    ? hasTypeIcon(card, ICON.gif)
+    : NATIVE_GIF.test(nativeTags(card)))
 
   // Masonry's default layout draws cards with Vuetify's <v-img>: a div with a
   // background-image and no <img> at all. Only the "virtual" and "justified"
@@ -430,6 +447,10 @@
   let liveCovers = 0
   const coverQueue = new Set()
 
+  // Masonry rebuilds card elements as the list grows, so a "this is a GIF"
+  // mark on the element gets lost. Remember it by file hash instead.
+  const knownGifs = new Set()
+
   function releaseCover() {
     liveCovers = Math.max(0, liveCovers - 1)
     for (const card of coverQueue) {
@@ -441,11 +462,13 @@
 
   function mountCover(card) {
     if (card.dataset.ibhCover) return
-    // Masonry's rule34 scraper labels posts as video by tag, so some GIFs carry
-    // the video icon. Once a card proved to be one, go straight to the GIF path.
-    if (card.dataset.ibhKind === 'gif') { if (CFG.gifInline) playGif(card); return }
     const pic = cardPicture(card)
     if (!pic) { whenPictured(card, mountCover); return }
+    // Masonry's rule34 scraper labels posts as video by tag, so some GIFs carry
+    // the video icon. Once a file proved to be one, go straight to the GIF path.
+    const parts = thumbParts(pic.src)
+    if (parts && knownGifs.has(parts.hash)) card.dataset.ibhKind = 'gif'
+    if (card.dataset.ibhKind === 'gif') { if (CFG.gifInline) playGif(card); return }
     if (liveCovers >= COVER_MAX_LIVE) { coverQueue.add(card); return }
 
     const urls = fileCandidates(pic.src, ['mp4', 'webm'])
@@ -482,6 +505,7 @@
       if (i >= urls.length) {
         giveUp()
         card.dataset.ibhKind = 'gif'
+        if (parts) knownGifs.add(parts.hash)
         dbg(`no video host answered for ${pic.src}; trying it as a GIF`)
         if (CFG.gifInline) playGif(card)
         else { STATE.covers.failed++; touch() }
@@ -577,7 +601,7 @@
   function trackCard(card) {
     if (tracked.has(card)) return
     tracked.add(card)
-    if (!STATE.masonry) { STATE.masonry = true; touch() }
+    if (!STATE.masonry && isMasonryCard(card)) { STATE.masonry = true; touch() }
     const video = CFG.videoCovers && isVideoCard(card)
     const gif = CFG.gifInline && isGifCard(card)
     if (!video && !gif) return
@@ -586,9 +610,20 @@
     else { card.dataset.ibhSeen = '1'; video ? mountCover(card) : playGif(card) }
   }
 
+  // On site pages the link around each thumbnail plays the part of the card.
+  const NATIVE_THUMB = '.image-list span.thumb img'
+
   function scanCards(root) {
     if (!root || !root.querySelectorAll) return
     root.querySelectorAll('.posts-image-card').forEach(trackCard)
+    const imgs = [...root.querySelectorAll(NATIVE_THUMB)]
+    if (root.matches && root.matches(NATIVE_THUMB)) imgs.push(root)
+    for (const img of imgs) {
+      const link = img.closest('a') || img.parentElement
+      // Inline links have no box of their own; the cover needs one to sit on.
+      if (getComputedStyle(link).display === 'inline') link.style.display = 'inline-block'
+      trackCard(link)
+    }
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -843,6 +878,25 @@
   // ═══════════════════════════════════════════════════════════
 
   const ORIGINAL_EXTS = ['jpg', 'png', 'jpeg']   // no gif: animated originals are heavy
+
+  // In the one-column feed a 150 px thumbnail is stretched to the screen width.
+  // The sample (about 850 px) is already sharp there and far lighter than the
+  // original; posts too small to have a sample fall through to the original.
+  const inFeed = el => CFG.nativeFeed && !!el.closest('.image-list')
+
+  function sampleCandidates(src) {
+    const p = thumbParts(src)
+    if (!p) return []
+    const bases = [imageBase()]
+    try { bases.push(`${new URL(src).origin}/images`) } catch (e) { /* ignore */ }
+    return [...new Set(bases.filter(Boolean))]
+      .map(b => `${b.replace(/\/images$/, '/samples')}/${p.dir}/sample_${p.hash}.jpg`)
+  }
+
+  function upgradeCandidates(el, src) {
+    const originals = fileCandidates(src, ORIGINAL_EXTS)
+    return !CFG.originalThumbs && inFeed(el) ? [...sampleCandidates(src), ...originals] : originals
+  }
   const ORIGINAL_MAX_INFLIGHT = 3                // concurrent probes, to spare the phone
   // Targets are Masonry cards (either layout) or <img> on the site's own pages.
   const ORIGINAL_SELECTOR = '.posts-image-card, img[src*="/thumbnails/"], img[src*="/samples/"]'
@@ -865,6 +919,8 @@
   /** Returns true once the element needs no more watching. */
   function upgradeToOriginal(el) {
     if (el.dataset.ibhOrig) return true   // already queued, done or failed
+    // Without originalThumbs, only feed images on site pages get upgraded.
+    if (!CFG.originalThumbs && !inFeed(el)) return true
     // The detail viewer owns zoom and pan; leave its image alone.
     if (el.closest('.img_detail_cont, .fancybox__container')) return true
     if (isAnimatedThumb(el)) return true
@@ -883,7 +939,7 @@
       const pic = el.isConnected && pictureOf(el)
       if (!pic) continue
       originalInflight++
-      probeOriginal(el, pic.src, fileCandidates(pic.src, ORIGINAL_EXTS), () => {
+      probeOriginal(el, pic.src, upgradeCandidates(el, pic.src), () => {
         originalInflight--
         pumpOriginals()
       })
@@ -905,7 +961,7 @@
     probe.onload = () => {
       // Off Masonry the thumbnail has no fixed box: pin its current size so the
       // full-resolution file does not blow up the page layout.
-      if (!isCard(el) && el.clientWidth) {
+      if (!isCard(el) && !inFeed(el) && el.clientWidth) {
         el.style.width = `${el.clientWidth}px`
         el.style.height = `${el.clientHeight}px`
         el.style.objectFit = 'contain'
@@ -931,7 +987,7 @@
   const watchedThumbs = new WeakSet()
 
   function scanThumbs(root) {
-    if (!CFG.originalThumbs || !root || !root.querySelectorAll) return
+    if (!(CFG.originalThumbs || CFG.nativeFeed) || !root || !root.querySelectorAll) return
     const found = [...root.querySelectorAll(ORIGINAL_SELECTOR)]
     if (root.matches && root.matches(ORIGINAL_SELECTOR)) found.push(root)
     for (const el of found) {
@@ -1229,6 +1285,7 @@
     body.appendChild(el('div', { class: 'sec', text: t('fixes') }))
     body.appendChild(toggle('sharpThumbs', t('tSharp'), t('noteReload')))
     body.appendChild(toggle('originalThumbs', t('tOriginal'), t('noteReload')))
+    body.appendChild(toggle('nativeFeed', t('tFeed'), t('noteReload')))
     body.appendChild(toggle('videoCovers', t('tCovers')))
     body.appendChild(toggle('gifInline', t('tGif')))
     body.appendChild(toggle('fixFancybox', t('tFancybox')))
@@ -1321,10 +1378,23 @@
 
   // Without this the browser claims the horizontal drag as history navigation
   // and the swipe never reaches our listeners.
+  // One-column feed on Gelbooru 0.2 site pages: every thumbnail takes the full
+  // width. Favorites wrap each thumb in an extra span with the Remove link.
+  const FEED_CSS = `
+    .image-list { display: flex !important; flex-direction: column !important;
+      flex-wrap: nowrap !important; align-items: stretch !important; gap: 14px !important; }
+    .image-list > span { display: block !important; width: 100% !important; max-width: none !important; }
+    .image-list span.thumb { display: block !important; width: 100% !important; height: auto !important;
+      max-width: none !important; margin: 0 !important; }
+    .image-list span.thumb a { display: block !important; position: relative; }
+    .image-list span.thumb img { display: block; width: 100% !important; height: auto !important;
+      max-width: none !important; max-height: none !important; }
+  `
+
   function injectPageCSS() {
     if (document.querySelector('style[data-ibh]')) return
     const style = el('style', { 'data-ibh': '1' })
-    style.textContent = '.img_detail_cont { touch-action: pan-y; }'
+    style.textContent = '.img_detail_cont { touch-action: pan-y; }' + (CFG.nativeFeed ? FEED_CSS : '')
     ;(document.head || document.documentElement).appendChild(style)
   }
 
@@ -1350,6 +1420,7 @@
   installGestures()
   logSnapshot()
   if (CFG.originalThumbs) info('original thumbnails on: visible thumbnails load the full file')
+  if (CFG.nativeFeed) info('one-column feed on: site pages show samples at full width')
 
   const boot = () => {
     injectPageCSS()

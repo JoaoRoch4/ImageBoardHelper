@@ -41,6 +41,7 @@ Estes são fatos verificados no código do Masonry. Se algum quebrar, é porque 
 | Vídeo tocando | `.img_detail_cont .dplayer` presente. |
 | Cards | `.posts-image-card`; o tipo vem do `d` de **qualquer** ícone em `.posts-image-type` (no yande.re/konachan o ícone de pai/filho vem antes). No layout padrão o card é um `<v-img>` — `div.v-image__image` com `background-image`, sem `<img>`; só os layouts "virtual" e "justified" usam `<img>`. Leia e troque a imagem via `cardPicture()`. |
 | Configurações | `localStorage['YM_APP_SETTINGS']`, lido no arranque do app. |
+| Páginas do próprio site | Fora do Masonry (Gelbooru 0.2): `.image-list > span.thumb > a > img`, tags no `title` (favoritos) ou `alt` (listagem). O `<a>` faz o papel de card para capa e GIF; o feed (`nativeFeed`) é só CSS (`FEED_CSS`). |
 
 Bugs do Masonry que este script contorna:
 
@@ -63,7 +64,7 @@ Bugs do Masonry que este script contorna:
 6. **B.** Capa de vídeo e GIF inline — `mountCover`, `unmountCover`, `playGif`, `stopGif`, `IntersectionObserver`
 7. **C.** Fancybox — `repairItems`, `wrapFancybox`, `installExtensionFallback`
 8. **D.** Gestos — ponteiros, swipe, toque duplo, pinça
-9. **E.** Miniatura original (opcional, desligada) — `upgradeToOriginal`, `probeOriginal`, `scanThumbs`
+9. **E.** Miniatura original e feed nativo — `upgradeToOriginal`, `upgradeCandidates`, `sampleCandidates`, `probeOriginal`, `scanThumbs`
 10. Opcional: `applyRule34ApiUnlock`
 11. Diagnóstico — `probeVideoUrls`, `logSnapshot`
 12. Painel — Shadow DOM, `renderStatus`, `copyLog`

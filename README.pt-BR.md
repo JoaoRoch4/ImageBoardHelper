@@ -76,11 +76,12 @@ Todas ficam no painel e são gravadas em `localStorage` sob a chave `IBH_CFG`.
 | Opção | Padrão | Efeito |
 |---|---|---|
 | `sharpThumbs` | ligado | liga "miniatura usa imagem grande" (requer recarregar) |
-| `videoCovers` | ligado | sobrepõe o frame real do vídeo |
+| `videoCovers` | ligado | sobrepõe o frame real do vídeo, nos cards do Masonry e nas páginas do próprio site |
 | `gifInline` | ligado | card de GIF anima enquanto está na tela e volta à imagem parada quando sai |
 | `fixFancybox` | ligado | preenche `src` vazio no Fancybox |
 | `gestures` | ligado | swipe, toque duplo e pinça |
 | `originalThumbs` | **desligado** | troca as miniaturas visíveis, no Masonry e nas páginas do próprio site, pelo arquivo original; mais nítido, mas gasta várias vezes mais dados e memória (requer recarregar) |
+| `nativeFeed` | **desligado** | nas páginas do próprio site (rule34, safebooru, xbooru e outros Gelbooru 0.2): uma imagem por linha na largura toda, trocada pelo sample (ou pelo original quando não houver) (requer recarregar) |
 | `forceRule34Api` | **desligado** | ver abaixo (requer recarregar) |
 | `lang` | automático | idioma do painel: automático, português ou inglês |
 | `debug` | desligado | espelha o log no console do navegador |

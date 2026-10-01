@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.9.0
+
+- `nativeFeed` (off): on the site's own pages (Gelbooru 0.2 markup,
+  `.image-list span.thumb`) every thumbnail takes a full row and is swapped
+  for the sample, or for the original when the post has no sample
+- Video covers and inline GIFs also work on the site's own pages; the kind
+  comes from the thumbnail's tags (`title`/`alt`), since there are no icons
+- A video card that turned out to be a GIF is remembered by file hash, so the
+  ten video URLs are not retried when Masonry rebuilds the card element
+
 ## 0.8.2
 
 Found by inspecting the live page on the phone through `tools/ffrdp.js`:
