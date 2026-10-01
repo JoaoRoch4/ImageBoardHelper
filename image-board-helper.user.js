@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.17.0
+// @version      0.18.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -86,7 +86,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.17.0'
+  const VERSION = '0.18.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -103,6 +103,7 @@
     videoCovers:    true,   // overlay the real video frame on the card
     gifInline:      true,   // animate GIF cards while they are on screen
     memorySaver:    true,   // release far off-screen images and removed videos (needs reload)
+    feedNav:        true,   // ‹ › buttons to jump between posts in the one-column feed (needs reload)
     fixFancybox:    true,   // fill empty src in the alternate viewer
     gestures:       true,   // swipe, double tap and pinch
     originalThumbs: false,  // swap visible thumbnails for the original file (heavy, needs reload)
@@ -111,7 +112,7 @@
   }
 
   // Options that only take effect when the app boots.
-  const NEEDS_RELOAD = new Set(['sharpThumbs', 'forceRule34Api', 'originalThumbs', 'nativeFeed', 'memorySaver'])
+  const NEEDS_RELOAD = new Set(['sharpThumbs', 'forceRule34Api', 'originalThumbs', 'nativeFeed', 'memorySaver', 'feedNav'])
 
   const CFG = Object.assign({}, DEFAULTS, readJSON(CFG_KEY, {}))
 
@@ -161,6 +162,8 @@
       coversFmt: (ok, bad, all) => `${ok} ok · ${bad} failed · ${all} videos`,
       tSharp: 'Large thumbnails', tCovers: 'Video covers', tGif: 'Animated GIFs in the grid',
       tMemory: 'Release off-screen memory',
+      tNav: 'Previous / next post buttons',
+      navPrev: 'Previous post', navNext: 'Next post',
       tFancybox: 'Repair Fancybox', tGestures: 'Touch gestures',
       tOriginal: 'Original thumbnails (heavy)',
       tFeed: 'One-column feed on site pages',
@@ -185,6 +188,8 @@
       coversFmt: (ok, bad, all) => `${ok} ok · ${bad} falha · ${all} vídeos`,
       tSharp: 'Miniatura grande', tCovers: 'Capa de vídeo', tGif: 'GIF animado na grade',
       tMemory: 'Liberar memória fora da tela',
+      tNav: 'Botões post anterior / próximo',
+      navPrev: 'Post anterior', navNext: 'Próximo post',
       tFancybox: 'Consertar Fancybox', tGestures: 'Gestos de toque',
       tOriginal: 'Miniatura original (pesado)',
       tFeed: 'Feed de uma coluna no site',
@@ -1370,6 +1375,18 @@
     }
     .fab[data-alert="1"] { color: #fca5a5; border-color: #7f1d1d; }
 
+    .feednav {
+      position: fixed; right: 12px; bottom: 12px; z-index: 2147483000;
+      display: flex; gap: 10px;
+    }
+    .feednav button {
+      width: 46px; height: 46px; border-radius: 50%;
+      border: 1px solid #2a3a3f; background: rgba(15, 20, 23, .8); color: #5eead4;
+      font-size: 26px; line-height: 1; display: grid; place-items: center;
+      padding: 0 0 3px; box-shadow: 0 4px 14px rgba(0,0,0,.5);
+    }
+    .feednav button:active { background: #16211f; }
+
     .panel {
       position: fixed; left: 12px; bottom: 60px; z-index: 2147483000;
       width: min(360px, calc(100vw - 24px)); max-height: 70vh;
@@ -1565,6 +1582,7 @@
     body.appendChild(toggle('sharpThumbs', t('tSharp'), t('noteReload')))
     body.appendChild(toggle('originalThumbs', t('tOriginal'), t('noteReload')))
     body.appendChild(toggle('nativeFeed', t('tFeed'), t('noteReload')))
+    body.appendChild(toggle('feedNav', t('tNav'), t('noteReload')))
     body.appendChild(toggle('videoCovers', t('tCovers')))
     body.appendChild(toggle('gifInline', t('tGif')))
     body.appendChild(toggle('memorySaver', t('tMemory'), t('noteReload')))
@@ -1620,7 +1638,8 @@
   }
 
   function mountPanel() {
-    if (!CFG.panel) return
+    const nav = CFG.feedNav && CFG.nativeFeed && !!document.querySelector(FEED_POST)
+    if (!CFG.panel && !nav) return
     if (panelHost && panelHost.isConnected) return
     if (!document.body) return
 
@@ -1634,16 +1653,51 @@
     style.textContent = PANEL_CSS
     shadow.appendChild(style)
 
-    const fab = el('button', { class: 'fab', text: '◐', title: 'Image Board Helper' })
-    fab.addEventListener('click', () => togglePanel())
-    shadow.appendChild(fab)
-    shadow.appendChild(buildPanel())
+    if (CFG.panel) {
+      const fab = el('button', { class: 'fab', text: '◐', title: 'Image Board Helper' })
+      fab.addEventListener('click', () => togglePanel())
+      shadow.appendChild(fab)
+      shadow.appendChild(buildPanel())
+    }
+    if (nav) shadow.appendChild(buildFeedNav())
 
     document.body.appendChild(panelHost)
-    onLogEntry = appendLogLine
-    onStateChange = () => { if (panelOpen) renderStatus() }
-    if (panelOpen) renderStatus()
-    dbg('panel mounted')
+    if (CFG.panel) {
+      onLogEntry = appendLogLine
+      onStateChange = () => { if (panelOpen) renderStatus() }
+      if (panelOpen) renderStatus()
+    }
+    dbg(`panel mounted${nav ? ' with feed buttons' : ''}`)
+  }
+
+  // ‹ › buttons for the one-column feed: jump to the start of the previous or
+  // next post, e.g. to skip a long comic without scrolling through it.
+  const FEED_POST = '.image-list span.thumb'
+
+  function jumpPost(dir) {
+    const posts = [...document.querySelectorAll(FEED_POST)]
+    if (!posts.length) return
+    const tops = posts.map(p => p.getBoundingClientRect().top)
+    let target = null
+    if (dir > 0) {
+      target = posts[tops.findIndex(t => t > 8)]   // first post starting below the top edge
+    } else {
+      // Last post starting above the top edge: inside a long post that is its
+      // own start, at a post's start it is the one before.
+      for (let i = tops.length - 1; i >= 0; i--) if (tops[i] < -8) { target = posts[i]; break }
+    }
+    if (!target) return
+    // Instant, not smooth: smooth-scrolling past a 7000px comic takes ages.
+    window.scrollTo({ top: target.getBoundingClientRect().top + window.scrollY, behavior: 'auto' })
+    dbg(`feed: jumped to the ${dir > 0 ? 'next' : 'previous'} post`)
+  }
+
+  function buildFeedNav() {
+    const prev = el('button', { text: '‹', title: t('navPrev') })
+    const next = el('button', { text: '›', title: t('navNext') })
+    prev.addEventListener('click', () => jumpPost(-1))
+    next.addEventListener('click', () => jumpPost(1))
+    return el('div', { class: 'feednav' }, [prev, next])
   }
 
   /** Labels are baked when the panel is built, so switching language rebuilds it. */

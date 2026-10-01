@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.18.0
+
+- Feed buttons ‹ › (`feedNav`, on, with `nativeFeed`): bottom-right corner,
+  jump instantly to the start of the previous or next post, to skip a long
+  comic. Inside a long post, ‹ first goes back to its start. They live in the
+  panel's Shadow DOM host and show even with the panel turned off
+
 ## 0.17.0
 
 - Memory management (`memorySaver`, on):

@@ -68,7 +68,7 @@ Bugs do Masonry que este script contorna:
 10. **G.** Gerenciamento de memória — `farViewport`, `releaseFar`, `pinHeight`, `onNodesRemoved`, `onLocationChange`, `releaseAll`
 11. Opcional: `applyRule34ApiUnlock`
 12. Diagnóstico — `probeVideoUrls`, `logSnapshot`, `freeMemory`, `redoThumbs`
-13. Painel — Shadow DOM, `renderStatus`, `copyLog`
+13. Painel — Shadow DOM, `renderStatus`, `copyLog`; botões ‹ › do feed (`buildFeedNav`, `jumpPost`)
 14. Arranque e `window.__ibh`
 
 ---
