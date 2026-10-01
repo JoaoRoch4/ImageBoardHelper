@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.4
+
+- Site pages: real videos (tags `video`, `mp4`, `webm`) get the site's blue
+  `.webm-thumb` frame back where the page leaves it out, as on favorites; the
+  cover copies it. GIFs are left unmarked, and a mark added to an "animated"
+  post comes off if it turns out to be a GIF
+
 ## 0.9.3
 
 - The video cover no longer hides the video mark: on Masonry cards it is

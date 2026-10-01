@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.9.3
+// @version      0.9.4
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -81,7 +81,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.9.3'
+  const VERSION = '0.9.4'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -413,6 +413,7 @@
   }
   const NATIVE_GIF = /\s(gif|animated_gif)\s/i
   const NATIVE_VIDEO = /\s(video|mp4|webm|animated)\s/i
+  const NATIVE_REAL_VIDEO = /\s(video|mp4|webm)\s/i   // "animated" alone may be a GIF
   const isVideoCard = card => isMasonryCard(card)
     ? hasTypeIcon(card, ICON.video)
     : !!card.querySelector('img.webm-thumb') ||   // the site's own video mark
@@ -523,6 +524,9 @@
         giveUp()
         card.dataset.ibhKind = 'gif'
         if (parts) knownGifs.add(parts.hash)
+        // A video mark we added ourselves does not belong on a GIF.
+        const marked = card.querySelector('img[data-ibh-mark]')
+        if (marked) { marked.classList.remove('webm-thumb'); delete marked.dataset.ibhMark }
         dbg(`no video host answered for ${pic.src}; trying it as a GIF`)
         if (CFG.gifInline) playGif(card)
         else { STATE.covers.failed++; touch() }
@@ -653,6 +657,13 @@
     if (root.matches && root.matches(NATIVE_THUMB)) imgs.push(root)
     for (const img of imgs) {
       const link = img.closest('a') || img.parentElement
+      // The search list marks videos with .webm-thumb (a blue frame), but
+      // favorites leave it out. Put the site's own mark back on real videos.
+      const tags = nativeTags(link)
+      if (!img.classList.contains('webm-thumb') && NATIVE_REAL_VIDEO.test(tags) && !NATIVE_GIF.test(tags)) {
+        img.classList.add('webm-thumb')
+        img.dataset.ibhMark = '1'
+      }
       // Inline links have no box of their own; the cover needs one to sit on.
       if (getComputedStyle(link).display === 'inline') link.style.display = 'inline-block'
       trackCard(link)
@@ -1428,10 +1439,14 @@
     #image, #gelcomVideoPlayer { max-width: 100% !important; height: auto !important; }
   `
 
+  // The site's own video frame, repeated so it also applies on pages whose
+  // stylesheet lacks it (favorites), where the mark is added back.
+  const NATIVE_MARK_CSS = '.image-list img.webm-thumb { border: 3px solid rgb(0, 0, 255); box-sizing: border-box; }'
+
   function injectPageCSS() {
     if (document.querySelector('style[data-ibh]')) return
     const style = el('style', { 'data-ibh': '1' })
-    style.textContent = '.img_detail_cont { touch-action: pan-y; }' + (CFG.nativeFeed ? FEED_CSS : '')
+    style.textContent = '.img_detail_cont { touch-action: pan-y; }' + NATIVE_MARK_CSS + (CFG.nativeFeed ? FEED_CSS : '')
     ;(document.head || document.documentElement).appendChild(style)
   }
 
