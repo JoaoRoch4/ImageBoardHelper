@@ -101,7 +101,7 @@ Não sugira estas de novo sem um motivo novo.
 
 ## Testar
 
-Não existe harness de DOM. O que dá para verificar localmente:
+Não existe harness de DOM local; o DOM real é inspecionado no aparelho via `tools/ffrdp.js` (abaixo). O que dá para verificar sem o celular:
 
 ```bash
 node --check image-board-helper.user.js
@@ -123,6 +123,30 @@ Funções puras (`thumbParts`, `fileCandidates`, `nextExtension`) podem ser extr
 O resto é testado no aparelho, pelo painel: **Testar URLs** lista cada candidata com OK ou FALHA, e **Copiar log** monta um relatório com `userAgent`, host resolvido, modo de miniatura e histórico. Com o painel desligado, o console tem `window.__ibh` (`cfg`, `state`, `log()`, `probe()`, `clearHostCache()`, `set(chave, valor)`).
 
 Ambiente: Firefox para Android com Violentmonkey, num Oppo A5 4G. Sem PC na maior parte do tempo, então prefira mudanças que eu consiga aplicar e verificar pelo celular.
+
+O container roda no próprio aparelho, então dá para olhar a tela pelo `rish` (Shizuku, `uid=2000 shell`):
+
+```bash
+rish -c 'am start -a android.intent.action.VIEW -d "https://yande.re/post" org.mozilla.firefox'   # abre no Firefox
+rish -c 'input swipe 900 1200 200 1200 150'          # simula swipe; `input tap x y` para toque
+rish -c 'screencap -p /sdcard/Download/ibh.png'      # depois leia /sdcard/Download/ibh.png direto do container
+```
+
+Isso mexe no celular que estou usando: peça antes de abrir app ou injetar toque. O console do Firefox não aparece no `logcat` (`GeckoConsole` vem vazio).
+
+Para ler o estado do script na aba, `tools/ffrdp.js` fala o protocolo de depuração remota do Firefox (sem dependências):
+
+```bash
+node tools/ffrdp.js setup                          # adb connect 127.0.0.1:<porta> + forward tcp:6000
+node tools/ffrdp.js tabs                           # lista as abas
+node tools/ffrdp.js eval rule34 'window.__ibh.log()'   # aba por índice ou trecho da URL; resultado via JSON.stringify
+```
+
+- O `adb` (`android-tools`) já está pareado com a depuração sem fio do próprio aparelho — o pareamento é permanente. A porta de conexão muda quando a depuração sem fio reinicia; o `setup` acha a nova pelo mDNS e precisa ser rodado de novo.
+- Requer "Depuração remota via USB" ligada no Firefox. Hoje o socket ativo é o do **Firefox Beta** (`org.mozilla.firefox_beta`), onde o Masonry está instalado; o `setup` usa o primeiro socket que achar.
+- A conexão direta ao socket pelo container é bloqueada pelo SELinux; por isso o caminho passa pelo `adb`.
+- `FFRDP_DEBUG=1` imprime cada pacote no stderr.
+- `eval` só lê expressões síncronas; uma `Promise` volta como `{}`.
 
 ---
 
