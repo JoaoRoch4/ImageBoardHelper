@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.14.0
+// @version      0.15.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -81,7 +81,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.14.0'
+  const VERSION = '0.15.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -160,7 +160,7 @@
       tApi: 'Force API (loses filters)', tDebug: 'Log to console',
       noteReload: 'reload',
       bTest: 'Test URLs', bClearHost: 'Clear host',
-      bCopy: 'Copy log', bReload: 'Reload',
+      bCopy: 'Copy log', bReload: 'Reload', bFree: 'Free memory & cache', bRedo: 'Redo thumbnails',
       gNext: 'swipe left → next', gPrev: 'swipe right → previous',
       gClose: 'swipe down → close', gFav: 'double tap → favorite',
       gZoomIn: 'pinch out → zoom in', gZoomOut: 'pinch in → zoom out',
@@ -183,7 +183,7 @@
       tApi: 'Forçar API (perde filtros)', tDebug: 'Log no console',
       noteReload: 'recarregar',
       bTest: 'Testar URLs', bClearHost: 'Limpar host',
-      bCopy: 'Copiar log', bReload: 'Recarregar',
+      bCopy: 'Copiar log', bReload: 'Recarregar', bFree: 'Limpar memória e cache', bRedo: 'Refazer miniaturas',
       gNext: 'swipe ← → próxima', gPrev: 'swipe → → anterior',
       gClose: 'swipe ↓ → fechar', gFav: 'toque duplo → favoritar',
       gZoomIn: 'pinça abrir → zoom+', gZoomOut: 'pinça fechar → zoom−',
@@ -1012,6 +1012,7 @@
       }
       const pic = pictureOf(el)
       if (pic) pic.set(probe.src)   // already in cache, so this paints at once
+      el.dataset.ibhThumb = from    // what freeMemory() and redoThumbs() put back
       el.dataset.ibhOrig = 'done'
       dbg(`original: ${probe.src}`)
       done()
@@ -1109,6 +1110,82 @@
       v.addEventListener('error', () => done(false), { once: true })
       v.src = url
     })
+  }
+
+  /** Put an upgraded element back to its thumbnail and clear its upgrade state. */
+  function resetUpgrade(el) {
+    if (el.dataset.ibhOrig === 'done' && el.dataset.ibhThumb) {
+      const pic = pictureOf(el)
+      if (pic) pic.set(el.dataset.ibhThumb)
+    }
+    delete el.dataset.ibhOrig
+    delete el.dataset.ibhThumb
+  }
+
+  /**
+   * Give back the memory this script holds on the page and drop its caches.
+   * The browser's HTTP cache is out of reach for any page script; settings
+   * (IBH_CFG), Masonry's settings and the site login are left alone.
+   */
+  async function freeMemory() {
+    const n = { covers: 0, gifs: 0, images: 0, caches: 0 }
+    document.querySelectorAll('[data-ibh-cover]').forEach(card => { unmountCover(card); n.covers++ })
+    coverQueue.clear()
+    // Animated GIFs keep every decoded frame; back to the still.
+    document.querySelectorAll('[data-ibh-gif="playing"]').forEach(card => { stopGif(card); n.gifs++ })
+    // Undo sample/original upgrades and watch again: what is on screen comes
+    // back from the HTTP cache, the rest only when it scrolls in.
+    document.querySelectorAll('[data-ibh-orig="done"]').forEach(el => {
+      resetUpgrade(el)
+      if (originalViewport) originalViewport.observe(el)
+      n.images++
+    })
+    try { localStorage.removeItem(HOST_KEY) } catch (e) { /* ignore */ }
+    STATE.imageBase = null
+    try {
+      if (window.caches) {
+        const keys = await caches.keys()
+        await Promise.all(keys.map(k => caches.delete(k)))
+        n.caches = keys.length
+      }
+    } catch (e) {
+      warn(`could not clear Cache Storage — ${describeError(e)}`)
+    }
+    imageBase()
+    info(`freed ${n.covers} covers, ${n.gifs} GIFs, ${n.images} upgraded images; ` +
+      `host cache and ${n.caches} Cache Storage entries cleared (browser HTTP cache untouched)`)
+    touch()
+  }
+
+  /**
+   * Start every thumbnail over, failures included: upgrades go back to the
+   * thumbnail and are queued again, covers and GIFs are dropped, and whatever
+   * is on screen is processed again right away.
+   */
+  function redoThumbs() {
+    const n = { images: 0, covers: 0, gifs: 0 }
+    document.querySelectorAll('[data-ibh-orig]').forEach(el => {
+      resetUpgrade(el)
+      // observe() reports elements already on screen at once, so they upgrade now.
+      if (originalViewport) originalViewport.observe(el)
+      else upgradeToOriginal(el)
+      n.images++
+    })
+    document.querySelectorAll('[data-ibh-cover]').forEach(card => unmountCover(card))
+    coverQueue.clear()
+    document.querySelectorAll('[data-ibh-gif]').forEach(card => { stopGif(card); delete card.dataset.ibhGif })
+    // Forget which video cards turned out to be GIFs, so they get a fresh try.
+    knownGifs.clear()
+    document.querySelectorAll('[data-ibh-kind]').forEach(card => { delete card.dataset.ibhKind })
+    document.querySelectorAll('[data-ibh-seen]').forEach(card => {
+      if (CFG.videoCovers && isVideoCard(card)) { mountCover(card); n.covers++ }
+      else if (CFG.gifInline && isGifCard(card)) { playGif(card); n.gifs++ }
+    })
+    // Pick up elements Masonry rebuilt since the last scan.
+    scanCards(document)
+    scanThumbs(document)
+    info(`redo thumbnails: ${n.images} images re-queued, ${n.covers} covers and ${n.gifs} GIFs restarted`)
+    touch()
   }
 
   function logSnapshot() {
@@ -1348,6 +1425,8 @@
     body.appendChild(el('div', { class: 'acts' }, [
       actionButton(t('bTest'), probeVideoUrls),
       actionButton(t('bClearHost'), () => { clearHostCache(); renderStatus() }),
+      actionButton(t('bRedo'), () => { redoThumbs(); renderStatus() }),
+      actionButton(t('bFree'), () => { freeMemory().then(renderStatus) }),
       actionButton(t('bCopy'), copyLog),
       actionButton(t('bReload'), () => location.reload()),
     ]))
@@ -1496,6 +1575,8 @@
     log: () => LOG,
     probe: probeVideoUrls,
     clearHostCache,
+    free: freeMemory,
+    redo: redoThumbs,
     set: setCfg,
   }
 })()

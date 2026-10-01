@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.15.0
+
+- On top of the 0.14.0 rollback, two panel buttons:
+  - **Redo thumbnails** starts every thumbnail over, failures included:
+    upgrades go back to the thumbnail and are queued again, covers and GIFs
+    restart, and what is on screen is processed again right away
+  - **Free memory & cache** is back: closes video covers, puts animated GIFs
+    back to their still, undoes upgrades, and clears the host cache and the
+    site's Cache Storage
+- Console: `__ibh.redo()` and `__ibh.free()`
+
 ## 0.14.0
 
 - Rollback to the 0.9.4 code, before the thumbnail video preview: removes the
