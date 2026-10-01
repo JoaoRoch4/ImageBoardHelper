@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.11.0
+
+- After a scrub, the thumbnail keeps playing on its own from where the finger
+  lifted: muted, looping, at 2x, with the progress bar following playback. One
+  preview at a time on the same video element; it stops when the card leaves
+  the screen or another card is touched, and a new drag on the same card
+  pauses it, picks a new point and resumes from there
+
 ## 0.10.1
 
 - Faster video scrub: the file starts loading on touch-down instead of after

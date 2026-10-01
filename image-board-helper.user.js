@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.10.1
+// @version      0.11.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -85,7 +85,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.10.1'
+  const VERSION = '0.11.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -638,7 +638,8 @@
           if (e.isIntersecting) card.dataset.ibhSeen = '1'
           else delete card.dataset.ibhSeen
           if (isVideoCard(card) && card.dataset.ibhKind !== 'gif') {
-            e.isIntersecting ? mountCover(card) : unmountCover(card)
+            if (e.isIntersecting) { if (CFG.videoCovers) mountCover(card) }
+            else { stopPreview(card); unmountCover(card) }
           } else {
             e.isIntersecting ? playGif(card) : stopGif(card)
           }
@@ -651,12 +652,14 @@
     tracked.add(card)
     if (!STATE.masonry && isMasonryCard(card)) { STATE.masonry = true; touch() }
     if (CFG.videoScrub && isVideoCard(card)) card.dataset.ibhVideo = '1'   // scrub target, see F
-    const video = CFG.videoCovers && isVideoCard(card)
+    const isVideo = isVideoCard(card)
+    const video = CFG.videoCovers && isVideo
     const gif = CFG.gifInline && isGifCard(card)
-    if (!video && !gif) return
+    // Scrub-only video cards are still watched, so a preview stops off screen.
+    if (!video && !gif && !(CFG.videoScrub && isVideo)) return
     if (video) { STATE.covers.tracked++; touch() }
     if (viewport) viewport.observe(card)
-    else { card.dataset.ibhSeen = '1'; video ? mountCover(card) : playGif(card) }
+    else { card.dataset.ibhSeen = '1'; if (video) mountCover(card); else if (gif) playGif(card) }
   }
 
   // On site pages the link around each thumbnail plays the part of the card.
@@ -1120,18 +1123,24 @@
     v.remove()
   }
 
+  function progressBar() {
+    const bar = document.createElement('div')
+    bar.style.cssText =
+      'position:absolute;left:0;bottom:0;height:3px;width:0;background:#5eead4;pointer-events:none'
+    return bar
+  }
+
   function startScrub() {
     const found = scrub.found
     if (!found) return false
     Object.assign(scrub, found, { active: true })
+    scrub.video.pause()
     if (found.shared) {
       found.video.preload = 'auto'   // confirmed: buffer ahead so later seeks land faster
       placeOverPicture(scrub.card, found.video)
     }
     hookSeeks(scrub.video)
-    const bar = document.createElement('div')
-    bar.style.cssText =
-      'position:absolute;left:0;bottom:0;height:3px;width:0;background:#5eead4;pointer-events:none'
+    const bar = progressBar()
     const label = document.createElement('div')
     label.style.cssText =
       'position:absolute;left:4px;bottom:6px;padding:1px 5px;border-radius:3px;font:11px/1.4 ' +
@@ -1147,6 +1156,40 @@
 
   const clock = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
 
+  // After the finger lifts, the thumbnail keeps playing on its own from where
+  // it stopped: muted, looping, sped up. One at a time — it is the same video
+  // element the scrub used, so no extra decoder is opened.
+  const PREVIEW_RATE = 2
+  let preview = null
+
+  function startPreview(card, video, shared, bar) {
+    const onTime = () => {
+      if (video.duration) bar.style.width = `${(video.currentTime / video.duration) * 100}%`
+    }
+    video.addEventListener('timeupdate', onTime)
+    video.loop = true
+    video.defaultPlaybackRate = video.playbackRate = PREVIEW_RATE   // survives a reload of the source
+    video.style.opacity = '1'
+    const played = video.play()
+    if (played && played.catch) played.catch(e => dbg(`preview: ${describeError(e)}`))
+    preview = { card, video, shared, bar, onTime }
+  }
+
+  /** Stop the running preview; with keepVideo the caller takes the element over. */
+  function stopPreview(card, keepVideo) {
+    if (!preview || (card && preview.card !== card)) return null
+    const { video, shared, bar, onTime } = preview
+    preview = null
+    video.removeEventListener('timeupdate', onTime)
+    video.pause()
+    video.loop = false
+    video.defaultPlaybackRate = video.playbackRate = 1
+    bar.remove()
+    if (keepVideo) return { video, shared }
+    if (shared) releaseShared(video)
+    return null
+  }
+
   function updateScrub(x) {
     scrub.x = x
     const r = scrub.card.getBoundingClientRect()
@@ -1160,11 +1203,9 @@
 
   function endScrub() {
     const { card, video, shared, bar, label } = scrub
-    bar.remove()
     label.remove()
-    if (shared) releaseShared(video)
-    // A cover keeps the frame where the finger stopped.
-    dbg(`scrub: ${label.textContent} on ${card.tagName.toLowerCase()}`)
+    dbg(`scrub: ${label.textContent} on ${card.tagName.toLowerCase()}, playing at ${PREVIEW_RATE}x`)
+    startPreview(card, video, shared, bar)   // the scrub bar becomes the playback bar
   }
 
   function onScrubDown(ev) {
@@ -1173,12 +1214,27 @@
     const card = ev.target.closest && ev.target.closest('[data-ibh-video]')
     if (!card || card.dataset.ibhKind === 'gif') return
     scrub = { card, id: ev.pointerId, x0: ev.clientX, y0: ev.clientY, x: ev.clientX, active: false }
-    scrub.found = scrubVideoFor(card)   // warm up now; dropped if this turns into a scroll or a tap
+    // Touching the card that is already playing reuses its video; touching
+    // another card stops that preview first.
+    const inherited = stopPreview(card, true)
+    stopPreview()
+    scrub.inherited = !!inherited
+    scrub.found = inherited || scrubVideoFor(card)   // warm up now; dropped if this turns into a scroll or a tap
   }
 
   // The touch was not a scrub: stop a warm-up download that nothing will use.
+  // A preview that was playing resumes (the touch was only a scroll).
   function dropScrub() {
-    if (scrub && !scrub.active && scrub.found && scrub.found.shared) releaseShared(scrub.found.video)
+    if (scrub && !scrub.active && scrub.found) {
+      const { video, shared } = scrub.found
+      if (scrub.inherited) {
+        const bar = progressBar()
+        placeOverPicture(scrub.card, bar)
+        startPreview(scrub.card, video, shared, bar)
+      } else if (shared) {
+        releaseShared(video)
+      }
+    }
     scrub = null
   }
 
