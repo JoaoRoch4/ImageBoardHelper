@@ -76,7 +76,7 @@ Bugs do Masonry que este script contorna:
 
 Não sugira estas de novo sem um motivo novo.
 
-**Capturar o frame do vídeo num `<canvas>`.** Foi a primeira tentativa. Exige `crossOrigin="anonymous"` e o CDN mandando cabeçalho CORS; sem isso o canvas fica sujo e `toDataURL` lança. Falhava calado. A solução atual sobrepõe um `<video muted preload="metadata">` com fragmento `#t=1`: o navegador desenha o frame e nada é exportado, então CORS não entra na conta.
+**Capturar o frame do vídeo num `<canvas>`.** Foi a primeira tentativa. Exige `crossOrigin="anonymous"` e o CDN mandando cabeçalho CORS; sem isso o canvas fica sujo e `toDataURL` lança. Falhava calado. A solução atual sobrepõe um `<video muted preload="metadata">` e, quando os metadados chegam, pula para 35% da duração (`COVER_POINT`): o navegador desenha o frame e nada é exportado, então CORS não entra na conta.
 
 **Derivar o arquivo do host da miniatura.** Alguns boorus servem miniatura e arquivo de hosts diferentes, e certos mirrors só têm miniatura — `miami.rule34.xxx` e `ny.rule34.xxx` são os mapeados. Dá 404 silencioso. O `imageBase()` resolve o host separado, ignora mirrors conhecidos, cai num fallback e guarda por sete dias.
 
@@ -85,6 +85,8 @@ Não sugira estas de novo sem um motivo novo.
 **Abrir uma capa de vídeo por card visível, sem limite.** No Oppo A5 o Firefox decodifica uns quatro vídeos ao mesmo tempo; o resto fica em `readyState` 1 para sempre ou dá `MEDIA_ERR_DECODE`. Medido com 18 `<video>` simultâneos pela `ffrdp`. Daí `COVER_MAX_LIVE = 3` e a fila. Aba em segundo plano não decodifica nada — teste de vídeo só com o Firefox na frente.
 
 **Trocar o `src` da miniatura para mostrar a imagem melhor.** Quebra o Imagus (e afins), que reconhece a miniatura pelo padrão `thumbnail_` no `src`, e o Vue do Masonry pode desfazer. A troca vai no `srcset` via `imgPicture()`; o `src` fica como o site entregou.
+
+**`touch()` dentro do que o painel chama ao se desenhar.** `renderStatus` → `readMasonryState` → `touch()` → `renderStatus` entrava em laço até estourar a pilha com o painel aberto, e a lista de status sumia sem aviso. O painel lê com `readMasonryState(false)` e `renderStatus` tem trava de reentrada.
 
 **Consertar o Fancybox em sites de detalhe tardio.** Em sankaku, anime-pictures, allgirl, hentaibooru e kusowanka a URL só existe após o fetch de detalhe e não é derivável. Sem acesso a `store.imageList`, não há solução externa. O patch correto está no README e é no script original.
 

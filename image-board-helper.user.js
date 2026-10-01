@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.15.0
+// @version      0.15.1
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -81,7 +81,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.15.0'
+  const VERSION = '0.15.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -260,12 +260,14 @@
   const MASONRY_KEY = 'YM_APP_SETTINGS'
   const masonrySettings = () => readJSON(MASONRY_KEY, {})
 
-  function readMasonryState() {
+  // notify=false when the panel itself is reading: touch() re-renders the
+  // panel, which would read again and loop until the stack overflows.
+  function readMasonryState(notify = true) {
     const s = masonrySettings()
     STATE.credential = !!s.credentialQuery
     STATE.columns = s.selectedColumn == null ? '0' : s.selectedColumn
     STATE.thumbMode = s.isThumbSampleUrl ? 'large' : 'small'
-    touch()
+    if (notify) touch()
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -462,6 +464,7 @@
   // decode error. Keep covers under the limit, with one decoder spare for the
   // viewer, and hand freed slots to cards still waiting on screen.
   const COVER_MAX_LIVE = 3
+  const COVER_POINT = 0.35   // where in the video the cover frame is taken
   let liveCovers = 0
   const coverQueue = new Set()
 
@@ -532,15 +535,27 @@
         else { STATE.covers.failed++; touch() }
         return
       }
-      v.src = `${urls[i++]}#t=1`   // media fragment: jump straight to the frame
+      v.src = urls[i++]
     }
 
-    // Only reveal once a frame is painted, otherwise a black rectangle flashes.
-    v.addEventListener('loadeddata', () => {
+    // The cover is the frame at 35% of the video: past intros and title cards,
+    // and the duration is known as soon as the metadata arrives. Reveal only
+    // once that frame is painted, otherwise a black rectangle (or frame 0) flashes.
+    let seekingCover = false
+    const reveal = () => {
+      if (v.style.opacity === '1') return
       v.style.opacity = '1'
       STATE.covers.ok++
       touch()
+    }
+    v.addEventListener('loadedmetadata', () => {
+      if (Number.isFinite(v.duration) && v.duration > 0) {
+        seekingCover = true
+        v.currentTime = v.duration * COVER_POINT
+      }
     }, { once: true })
+    v.addEventListener('seeked', reveal, { once: true })
+    v.addEventListener('loadeddata', () => { if (!seekingCover) reveal() }, { once: true })   // unknown duration
     v.addEventListener('error', tryNext)
     tryNext()
 
@@ -1308,9 +1323,16 @@
     el('span', { class: 'v', text: String(value) }),
   ])
 
+  let renderingStatus = false   // guard: anything below that calls touch() must not re-enter
+
   function renderStatus() {
-    if (!statusBox) return
-    readMasonryState()
+    if (!statusBox || renderingStatus) return
+    renderingStatus = true
+    try { drawStatus() } finally { renderingStatus = false }
+  }
+
+  function drawStatus() {
+    readMasonryState(false)
     statusBox.textContent = ''
 
     const c = STATE.covers

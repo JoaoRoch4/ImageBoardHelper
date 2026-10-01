@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.15.1
+
+- Video covers show the frame at 35% of the video (past intros and title
+  cards) instead of the one at 1 s
+- Fix: with the panel open, drawing the status called `touch()`, which drew
+  the status again, until "too much recursion". The status list at the top of
+  the panel failed silently because of it, and **Redo thumbnails** threw it.
+  The panel now reads Masonry's settings without notifying, and the status
+  render cannot re-enter
+
 ## 0.15.0
 
 - On top of the 0.14.0 rollback, two panel buttons:
