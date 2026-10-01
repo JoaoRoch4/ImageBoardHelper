@@ -12,7 +12,9 @@ O repositório é em inglês: código, comentários, README.md e CHANGELOG. O `R
 
 Cada uma tem um motivo concreto. Não mude sem entender o custo.
 
-**`@grant none`.** A interceptação de `window.Fancybox` e a sobrescrita de `navigator.userAgent` exigem o mesmo realm da página. Qualquer `@grant` coloca o script num sandbox onde `window` não é o `window` da página e as duas coisas param de funcionar em silêncio. É por isso que as opções vivem no painel e não em `GM_registerMenuCommand`.
+**`@grant none`.** A interceptação de `window.Fancybox` e a sobrescrita de `navigator.userAgent` exigem o mesmo realm da página. Qualquer `@grant` coloca o script num sandbox onde `window` não é o `window` da página e as duas coisas param de funcionar em silêncio. É por isso que as opções vivem no painel e não em `GM_registerMenuCommand`. O `@inject-into page` explicita a mesma escolha: o padrão `auto` do Violentmonkey cai no sandbox quando o CSP do site bloqueia scripts de página, e aí as duas coisas quebram do mesmo jeito.
+
+**`@noframes` e `@downloadURL`.** Sem o primeiro, o script roda dentro de iframes e o painel pode montar lá. Sem o segundo, uma cópia instalada a partir de arquivo nunca atualiza. Referência das chaves: https://violentmonkey.github.io/api/metadata-block/
 
 **`@run-at document-start`.** A correção de miniatura grava em `localStorage` antes de o Masonry ler as configurações no arranque. Rodar depois não tem efeito até a próxima recarga.
 

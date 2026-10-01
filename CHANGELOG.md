@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.8.1
+
+- Header aligned with Violentmonkey's metadata reference: `@inject-into page`
+  (the default `auto` falls back to the sandbox under a strict CSP, which
+  silently breaks the Fancybox hook and the userAgent override), `@noframes`
+  (the panel no longer mounts inside iframes) and `@downloadURL` (a copy
+  installed from a file now updates). Dropped `@source`, which Violentmonkey
+  does not read
+
 ## 0.8.0
 
 - GIFs play inline (`gifInline`, on): while a GIF card is on screen the

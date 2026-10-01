@@ -127,6 +127,8 @@ async function showImgModal(index) {
 
 A interceptação do `Fancybox` e a leitura de `window.Fancybox` exigem o mesmo realm da página. Qualquer `@grant` coloca o script num sandbox onde `window` não é o `window` da página, e nada disso funciona. Por isso as opções ficam no painel e não em `GM_registerMenuCommand`.
 
+O `@inject-into page` deixa a mesma escolha explícita: o padrão `auto` do Violentmonkey cai no sandbox quando o CSP do site bloqueia scripts de página, e aí as mesmas funções quebram em silêncio.
+
 ---
 
 ## Créditos

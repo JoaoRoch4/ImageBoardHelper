@@ -1,12 +1,12 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.8.0
+// @version      0.8.1
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
-// @source       https://github.com/JoaoRoch4/ImageBoardHelper
 // @supportURL   https://github.com/JoaoRoch4/ImageBoardHelper/issues
+// @downloadURL  https://raw.githubusercontent.com/JoaoRoch4/ImageBoardHelper/main/image-board-helper.user.js
 // @license      MIT
 // @match        https://yande.re/*
 // @match        https://konachan.com/*
@@ -26,6 +26,8 @@
 // @match        https://rule34.paheal.net/*
 // @run-at       document-start
 // @grant        none
+// @inject-into  page
+// @noframes
 // ==/UserScript==
 
 /*
@@ -68,7 +70,9 @@
  * navigator.userAgent both require the page's own realm. Any @grant puts the
  * script in a sandbox where `window` is not the page's window, and both stop
  * working silently. That is why the options live in the panel instead of
- * GM_registerMenuCommand.
+ * GM_registerMenuCommand. @inject-into page makes the same choice explicit:
+ * the default "auto" silently falls back to the sandbox when a site's CSP
+ * blocks page scripts, which would break both features without a trace.
  *
  * REQUIRES: "Listen for keyboard events" enabled in Masonry's settings,
  * otherwise the navigation swipes do nothing.
@@ -77,7 +81,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.8.0'
+  const VERSION = '0.8.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
