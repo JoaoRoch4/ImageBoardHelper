@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.18.0
+// @version      0.18.1
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -86,7 +86,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.18.0'
+  const VERSION = '0.18.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -103,7 +103,7 @@
     videoCovers:    true,   // overlay the real video frame on the card
     gifInline:      true,   // animate GIF cards while they are on screen
     memorySaver:    true,   // release far off-screen images and removed videos (needs reload)
-    feedNav:        true,   // ‹ › buttons to jump between posts in the one-column feed (needs reload)
+    feedNav:        true,   // ⤒ ‹ › buttons: top of page, previous and next post in the feed (needs reload)
     fixFancybox:    true,   // fill empty src in the alternate viewer
     gestures:       true,   // swipe, double tap and pinch
     originalThumbs: false,  // swap visible thumbnails for the original file (heavy, needs reload)
@@ -162,8 +162,8 @@
       coversFmt: (ok, bad, all) => `${ok} ok · ${bad} failed · ${all} videos`,
       tSharp: 'Large thumbnails', tCovers: 'Video covers', tGif: 'Animated GIFs in the grid',
       tMemory: 'Release off-screen memory',
-      tNav: 'Previous / next post buttons',
-      navPrev: 'Previous post', navNext: 'Next post',
+      tNav: 'Top / previous / next buttons',
+      navPrev: 'Previous post', navNext: 'Next post', navTop: 'Top of the page',
       tFancybox: 'Repair Fancybox', tGestures: 'Touch gestures',
       tOriginal: 'Original thumbnails (heavy)',
       tFeed: 'One-column feed on site pages',
@@ -188,8 +188,8 @@
       coversFmt: (ok, bad, all) => `${ok} ok · ${bad} falha · ${all} vídeos`,
       tSharp: 'Miniatura grande', tCovers: 'Capa de vídeo', tGif: 'GIF animado na grade',
       tMemory: 'Liberar memória fora da tela',
-      tNav: 'Botões post anterior / próximo',
-      navPrev: 'Post anterior', navNext: 'Próximo post',
+      tNav: 'Botões topo / anterior / próximo',
+      navPrev: 'Post anterior', navNext: 'Próximo post', navTop: 'Topo da página',
       tFancybox: 'Consertar Fancybox', tGestures: 'Gestos de toque',
       tOriginal: 'Miniatura original (pesado)',
       tFeed: 'Feed de uma coluna no site',
@@ -1693,11 +1693,13 @@
   }
 
   function buildFeedNav() {
+    const top = el('button', { text: '⤒', title: t('navTop') })
     const prev = el('button', { text: '‹', title: t('navPrev') })
     const next = el('button', { text: '›', title: t('navNext') })
+    top.addEventListener('click', () => { window.scrollTo({ top: 0, behavior: 'auto' }); dbg('feed: jumped to the top') })
     prev.addEventListener('click', () => jumpPost(-1))
     next.addEventListener('click', () => jumpPost(1))
-    return el('div', { class: 'feednav' }, [prev, next])
+    return el('div', { class: 'feednav' }, [top, prev, next])
   }
 
   /** Labels are baked when the panel is built, so switching language rebuilds it. */

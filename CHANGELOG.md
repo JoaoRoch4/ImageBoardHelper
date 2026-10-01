@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.18.1
+
+- Feed buttons gain ⤒, jump to the top of the page
+
 ## 0.18.0
 
 - Feed buttons ‹ › (`feedNav`, on, with `nativeFeed`): bottom-right corner,
