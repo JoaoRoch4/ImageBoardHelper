@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.12.0
+
+- Panel button **Free memory & cache**: closes video covers and the preview,
+  puts animated GIFs back to their still, undoes sample/original upgrades, and
+  clears the host cache and the site's Cache Storage. Settings, Masonry's
+  settings and the login are kept; the browser HTTP cache cannot be reached
+  from a page script. Also on the console as `__ibh.free()`
+
 ## 0.11.0
 
 - After a scrub, the thumbnail keeps playing on its own from where the finger

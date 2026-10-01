@@ -57,11 +57,12 @@ Um botão redondo no canto inferior esquerdo abre o painel — fica longe do FAB
 
 Mostra host de imagens resolvido, modo de miniatura, contagem de capas (ok / falha / total), estado do Fancybox e último gesto reconhecido. As opções são persistidas, então dá pra ligar e desligar cada correção sem editar o arquivo.
 
-Três ações úteis:
+Ações úteis:
 
 - **Testar URLs** — pega o primeiro card de vídeo na tela e testa cada URL candidata, registrando OK ou FALHA por host. É o jeito rápido de descobrir qual servidor serve os arquivos.
 - **Limpar host** — apaga o cache de sete dias e resolve de novo, para quando o CDN mudar.
 - **Copiar log** — monta um relatório com `userAgent`, host, modo de miniatura e o histórico.
+- **Limpar memória e cache** — fecha as capas de vídeo e a prévia, volta os GIFs animados para a imagem parada, desfaz as trocas por sample/original (o que está na tela recarrega do cache do navegador) e apaga o cache de host e o Cache Storage do site. O cache HTTP do navegador não é alcançável por script de página; configurações e login ficam.
 
 O painel tem um seletor de idioma (automático, português, inglês). As linhas de log continuam em inglês de propósito: elas existem para serem coladas em issues, e relatório bilíngue é pior que relatório só em inglês.
 

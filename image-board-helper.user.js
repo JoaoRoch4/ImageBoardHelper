@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.11.0
+// @version      0.12.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -85,7 +85,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.11.0'
+  const VERSION = '0.12.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -166,7 +166,7 @@
       tApi: 'Force API (loses filters)', tDebug: 'Log to console',
       noteReload: 'reload',
       bTest: 'Test URLs', bClearHost: 'Clear host',
-      bCopy: 'Copy log', bReload: 'Reload',
+      bCopy: 'Copy log', bReload: 'Reload', bFree: 'Free memory & cache',
       gNext: 'swipe left → next', gPrev: 'swipe right → previous',
       gClose: 'swipe down → close', gFav: 'double tap → favorite',
       gZoomIn: 'pinch out → zoom in', gZoomOut: 'pinch in → zoom out',
@@ -190,7 +190,7 @@
       tApi: 'Forçar API (perde filtros)', tDebug: 'Log no console',
       noteReload: 'recarregar',
       bTest: 'Testar URLs', bClearHost: 'Limpar host',
-      bCopy: 'Copiar log', bReload: 'Recarregar',
+      bCopy: 'Copiar log', bReload: 'Recarregar', bFree: 'Limpar memória e cache',
       gNext: 'swipe ← → próxima', gPrev: 'swipe → → anterior',
       gClose: 'swipe ↓ → fechar', gFav: 'toque duplo → favoritar',
       gZoomIn: 'pinça abrir → zoom+', gZoomOut: 'pinça fechar → zoom−',
@@ -1027,6 +1027,7 @@
       }
       const pic = pictureOf(el)
       if (pic) pic.set(probe.src)   // already in cache, so this paints at once
+      el.dataset.ibhThumb = from    // what freeMemory() puts back
       el.dataset.ibhOrig = 'done'
       dbg(`original: ${probe.src}`)
       done()
@@ -1349,6 +1350,45 @@
     })
   }
 
+  /**
+   * Give back the memory this script holds on the page and drop its caches.
+   * The browser's HTTP cache is out of reach for any page script; settings
+   * (IBH_CFG), Masonry's settings and the site login are left alone.
+   */
+  async function freeMemory() {
+    const n = { covers: 0, gifs: 0, images: 0, caches: 0 }
+    stopPreview()
+    document.querySelectorAll('[data-ibh-cover]').forEach(card => { unmountCover(card); n.covers++ })
+    coverQueue.clear()
+    // Animated GIFs keep every decoded frame; back to the still.
+    document.querySelectorAll('[data-ibh-gif="playing"]').forEach(card => { stopGif(card); n.gifs++ })
+    // Undo sample/original upgrades and watch again: what is on screen comes
+    // back from the HTTP cache, the rest only when it scrolls in.
+    document.querySelectorAll('[data-ibh-orig="done"]').forEach(el => {
+      const pic = pictureOf(el)
+      if (pic && el.dataset.ibhThumb) pic.set(el.dataset.ibhThumb)
+      delete el.dataset.ibhOrig
+      delete el.dataset.ibhThumb
+      if (originalViewport) originalViewport.observe(el)
+      n.images++
+    })
+    try { localStorage.removeItem(HOST_KEY) } catch (e) { /* ignore */ }
+    STATE.imageBase = null
+    try {
+      if (window.caches) {
+        const keys = await caches.keys()
+        await Promise.all(keys.map(k => caches.delete(k)))
+        n.caches = keys.length
+      }
+    } catch (e) {
+      warn(`could not clear Cache Storage — ${describeError(e)}`)
+    }
+    imageBase()
+    info(`freed ${n.covers} covers, ${n.gifs} GIFs, ${n.images} upgraded images; ` +
+      `host cache and ${n.caches} Cache Storage entries cleared (browser HTTP cache untouched)`)
+    touch()
+  }
+
   function logSnapshot() {
     info(`v${VERSION} on ${SITE} · ui=${LANG}`)
     dbg(`userAgent: ${navigator.userAgent}`)
@@ -1587,6 +1627,7 @@
     body.appendChild(el('div', { class: 'acts' }, [
       actionButton(t('bTest'), probeVideoUrls),
       actionButton(t('bClearHost'), () => { clearHostCache(); renderStatus() }),
+      actionButton(t('bFree'), () => { freeMemory().then(renderStatus) }),
       actionButton(t('bCopy'), copyLog),
       actionButton(t('bReload'), () => location.reload()),
     ]))
@@ -1741,6 +1782,7 @@
     log: () => LOG,
     probe: probeVideoUrls,
     clearHostCache,
+    free: freeMemory,
     set: setCfg,
   }
 })()
