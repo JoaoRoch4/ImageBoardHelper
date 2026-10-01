@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.18.2
+// @version      0.19.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -86,7 +86,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.18.2'
+  const VERSION = '0.19.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -104,6 +104,7 @@
     gifInline:      true,   // animate GIF cards while they are on screen
     memorySaver:    true,   // release far off-screen images and removed videos (needs reload)
     feedNav:        true,   // ⤒ ‹ › buttons: top of page, previous and next post in the feed (needs reload)
+    sortButton:     true,   // ★ button on search listings: add or remove sort:score (needs reload)
     fixFancybox:    true,   // fill empty src in the alternate viewer
     gestures:       true,   // swipe, double tap and pinch
     originalThumbs: false,  // swap visible thumbnails for the original file (heavy, needs reload)
@@ -112,7 +113,7 @@
   }
 
   // Options that only take effect when the app boots.
-  const NEEDS_RELOAD = new Set(['sharpThumbs', 'forceRule34Api', 'originalThumbs', 'nativeFeed', 'memorySaver', 'feedNav'])
+  const NEEDS_RELOAD = new Set(['sharpThumbs', 'forceRule34Api', 'originalThumbs', 'nativeFeed', 'memorySaver', 'feedNav', 'sortButton'])
 
   const CFG = Object.assign({}, DEFAULTS, readJSON(CFG_KEY, {}))
 
@@ -164,6 +165,7 @@
       tMemory: 'Release off-screen memory',
       tNav: 'Top / previous / next buttons',
       navPrev: 'Previous post', navNext: 'Next post', navTop: 'Top of the page',
+      tSortBtn: 'Sort-by-score button', navSort: 'Sort by score (tap again to undo)',
       tFancybox: 'Repair Fancybox', tGestures: 'Touch gestures',
       tOriginal: 'Original thumbnails (heavy)',
       tFeed: 'One-column feed on site pages',
@@ -190,6 +192,7 @@
       tMemory: 'Liberar memória fora da tela',
       tNav: 'Botões topo / anterior / próximo',
       navPrev: 'Post anterior', navNext: 'Próximo post', navTop: 'Topo da página',
+      tSortBtn: 'Botão ordenar por score', navSort: 'Ordenar por score (toque de novo para desfazer)',
       tFancybox: 'Consertar Fancybox', tGestures: 'Gestos de toque',
       tOriginal: 'Miniatura original (pesado)',
       tFeed: 'Feed de uma coluna no site',
@@ -1386,6 +1389,8 @@
       padding: 0 0 3px; box-shadow: 0 4px 14px rgba(0,0,0,.5);
     }
     .feednav button:active { background: #16211f; }
+    .feednav button.on { background: #5eead4; color: #0f1417; border-color: #5eead4; }
+    .feednav.raised { bottom: 76px; }
 
     .panel {
       position: fixed; left: 12px; bottom: 60px; z-index: 2147483000;
@@ -1583,6 +1588,7 @@
     body.appendChild(toggle('originalThumbs', t('tOriginal'), t('noteReload')))
     body.appendChild(toggle('nativeFeed', t('tFeed'), t('noteReload')))
     body.appendChild(toggle('feedNav', t('tNav'), t('noteReload')))
+    body.appendChild(toggle('sortButton', t('tSortBtn'), t('noteReload')))
     body.appendChild(toggle('videoCovers', t('tCovers')))
     body.appendChild(toggle('gifInline', t('tGif')))
     body.appendChild(toggle('memorySaver', t('tMemory'), t('noteReload')))
@@ -1638,7 +1644,7 @@
   }
 
   function mountPanel() {
-    const nav = CFG.feedNav && CFG.nativeFeed && !!document.querySelector(FEED_POST)
+    const nav = wantsFeedButtons() || wantsSortButton()
     if (!CFG.panel && !nav) return
     if (panelHost && panelHost.isConnected) return
     if (!document.body) return
@@ -1671,11 +1677,45 @@
 
   // The host is often mounted while the page is still parsing, before the
   // post list exists, so the buttons are added whenever the list shows up.
+  // Runs on every mutation batch, so it only rebuilds when the set of buttons
+  // the page needs has changed (e.g. the post list arrived after the host).
   function ensureFeedNav() {
-    if (!shadow || shadow.querySelector('.feednav')) return
-    if (!(CFG.feedNav && CFG.nativeFeed && document.querySelector(FEED_POST))) return
-    shadow.appendChild(buildFeedNav())
-    dbg('feed buttons added')
+    if (!shadow) return
+    const feed = wantsFeedButtons()
+    const sort = wantsSortButton()
+    const want = `${feed ? 'f' : ''}${sort ? 's' : ''}`
+    let nav = shadow.querySelector('.feednav')
+    if (nav && nav.dataset.set !== want) { nav.remove(); nav = null }
+    if (!nav && want) {
+      nav = buildFeedNav(feed, sort)
+      nav.dataset.set = want
+      shadow.appendChild(nav)
+      dbg(`buttons added: ${feed ? 'feed ' : ''}${sort ? 'sort' : ''}`.trim())
+    }
+    // Masonry's refresh button sits in the same corner; stay above it.
+    if (nav) nav.classList.toggle('raised', !!document.querySelector('.v-application'))
+  }
+
+  const wantsFeedButtons = () => CFG.feedNav && CFG.nativeFeed && !!document.querySelector(FEED_POST)
+  // Search listings only: favorites and post pages have no tag search to sort.
+  const isSearchList = () => /[?&]page=post(&|$)/.test(location.search) && /[?&]s=list(&|$)/.test(location.search)
+  const wantsSortButton = () => CFG.sortButton && isSearchList()
+
+  const searchTags = () => (new URL(location.href).searchParams.get('tags') || '').split(/\s+/).filter(Boolean)
+  const sortedByScore = () => searchTags().some(tag => /^sort:score/i.test(tag))
+
+  // Add sort:score to the search (replacing any other sort:, only one counts)
+  // or take it out, and reload on the first page. Masonry reads the search
+  // from the same tags parameter when it boots, so this works there too.
+  function toggleSortScore() {
+    const had = sortedByScore()
+    const tags = searchTags().filter(tag => !/^sort:/i.test(tag))
+    if (!had) tags.push('sort:score')
+    const url = new URL(location.href)
+    url.searchParams.set('tags', tags.join(' '))
+    url.searchParams.delete('pid')
+    info(`search: sort:score ${had ? 'removed' : 'added'}`)
+    location.href = url.href
   }
 
   // ‹ › buttons for the one-column feed: jump to the start of the previous or
@@ -1700,14 +1740,24 @@
     dbg(`feed: jumped to the ${dir > 0 ? 'next' : 'previous'} post`)
   }
 
-  function buildFeedNav() {
-    const top = el('button', { text: '⤒', title: t('navTop') })
-    const prev = el('button', { text: '‹', title: t('navPrev') })
-    const next = el('button', { text: '›', title: t('navNext') })
-    top.addEventListener('click', () => { window.scrollTo({ top: 0, behavior: 'auto' }); dbg('feed: jumped to the top') })
-    prev.addEventListener('click', () => jumpPost(-1))
-    next.addEventListener('click', () => jumpPost(1))
-    return el('div', { class: 'feednav' }, [top, prev, next])
+  function buildFeedNav(feed, sort) {
+    const buttons = []
+    if (sort) {
+      const star = el('button', { text: '★', title: t('navSort') })
+      if (sortedByScore()) star.classList.add('on')
+      star.addEventListener('click', toggleSortScore)
+      buttons.push(star)
+    }
+    if (feed) {
+      const top = el('button', { text: '⤒', title: t('navTop') })
+      const prev = el('button', { text: '‹', title: t('navPrev') })
+      const next = el('button', { text: '›', title: t('navNext') })
+      top.addEventListener('click', () => { window.scrollTo({ top: 0, behavior: 'auto' }); dbg('feed: jumped to the top') })
+      prev.addEventListener('click', () => jumpPost(-1))
+      next.addEventListener('click', () => jumpPost(1))
+      buttons.push(top, prev, next)
+    }
+    return el('div', { class: 'feednav' }, buttons)
   }
 
   /** Labels are baked when the panel is built, so switching language rebuilds it. */

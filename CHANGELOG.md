@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.19.0
+
+- ★ button (`sortButton`, on) on search listings, on the site and on Masonry:
+  adds `sort:score` to the current search (replacing any other `sort:`) or
+  removes it, and reloads on the first page. Lit while the search is sorted by
+  score. On Masonry the button group sits above Masonry's refresh button
+
 ## 0.18.2
 
 - Fix: the feed buttons never showed. The panel host is mounted while the
