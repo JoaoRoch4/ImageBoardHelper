@@ -81,7 +81,7 @@ Todas ficam no painel e são gravadas em `localStorage` sob a chave `IBH_CFG`.
 | `fixFancybox` | ligado | preenche `src` vazio no Fancybox |
 | `gestures` | ligado | swipe, toque duplo e pinça |
 | `originalThumbs` | **desligado** | troca as miniaturas visíveis, no Masonry e nas páginas do próprio site, pelo arquivo original; mais nítido, mas gasta várias vezes mais dados e memória (requer recarregar) |
-| `nativeFeed` | **desligado** | nas páginas do próprio site (rule34, safebooru, xbooru e outros Gelbooru 0.2): uma imagem por linha na largura toda, trocada pelo sample (ou pelo original quando não houver) (requer recarregar) |
+| `nativeFeed` | **desligado** | nas páginas do próprio site (rule34, safebooru, xbooru e outros Gelbooru 0.2): uma imagem por linha na largura toda da tela, trocada pelo sample (ou pelo original quando não houver) (requer recarregar) |
 | `forceRule34Api` | **desligado** | ver abaixo (requer recarregar) |
 | `lang` | automático | idioma do painel: automático, português ou inglês |
 | `debug` | desligado | espelha o log no console do navegador |

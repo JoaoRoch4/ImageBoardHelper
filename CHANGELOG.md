@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.9.1
+
+- Feed posts span the full screen width, cancelling the site's side padding;
+  on the post page the image and the video fit the screen width
+
 ## 0.9.0
 
 - `nativeFeed` (off): on the site's own pages (Gelbooru 0.2 markup,

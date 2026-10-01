@@ -81,7 +81,7 @@ All of them live in the panel and are stored in `localStorage` under `IBH_CFG`.
 | `fixFancybox` | on | fills empty `src` in Fancybox |
 | `gestures` | on | swipe, double tap and pinch |
 | `originalThumbs` | **off** | swaps visible thumbnails, on Masonry and on the site's own pages, for the original file; sharper, but several times the data and memory (needs reload) |
-| `nativeFeed` | **off** | on the site's own pages (rule34, safebooru, xbooru and other Gelbooru 0.2 sites): one image per row at full width, upgraded to the sample (or the original when there is none) (needs reload) |
+| `nativeFeed` | **off** | on the site's own pages (rule34, safebooru, xbooru and other Gelbooru 0.2 sites): one image per row at the full screen width, upgraded to the sample (or the original when there is none) (needs reload) |
 | `forceRule34Api` | **off** | see below (needs reload) |
 | `lang` | automatic | panel language: automatic, Portuguese or English |
 | `debug` | off | mirrors the log into the browser console |
