@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.16.0
+
+- Video thumbnails are upgraded too: video posts have no sample, so they are
+  swapped for the site's full-size poster frame (`images/DIR/HASH.jpg`, tens
+  of KB). In a mostly-video listing almost every thumbnail stayed a stretched
+  250 px image, which is why "nothing gets replaced"
+- Up to six upgrades at once (was three), and each new image is decoded off
+  the main thread (`decode()`) before it is swapped in, so the feed does not
+  stall while large files decode
+
 ## 0.15.1
 
 - Video covers show the frame at 35% of the video (past intros and title

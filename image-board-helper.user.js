@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.15.1
+// @version      0.16.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -81,7 +81,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.15.1'
+  const VERSION = '0.16.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -953,10 +953,16 @@
   }
 
   function upgradeCandidates(el, src) {
+    // Video posts have no sample, but the site keeps a full-size poster frame
+    // at images/DIR/HASH.jpg: sharp, small (tens of KB), and no video decoder.
+    if (thumbKind(el) === 'video') return fileCandidates(src, ['jpg'])
     const originals = fileCandidates(src, ORIGINAL_EXTS)
     return !CFG.originalThumbs && inFeed(el) ? [...sampleCandidates(src), ...originals] : originals
   }
-  const ORIGINAL_MAX_INFLIGHT = 3                // concurrent probes, to spare the phone
+  // Downloads already run on the browser's network threads; this only caps
+  // how many the script starts at once. Six matches the per-host limit of
+  // HTTP/1.1 and keeps a feed of mostly small posters moving.
+  const ORIGINAL_MAX_INFLIGHT = 6
   // Targets are Masonry cards (either layout) or <img> on the site's own pages.
   const ORIGINAL_SELECTOR = '.posts-image-card, img[src*="/thumbnails/"], img[src*="/samples/"]'
   const originalQueue = []
@@ -970,9 +976,13 @@
   }
 
   // Native pages put the tags in title/alt; Masonry marks videos with an icon.
-  function isAnimatedThumb(el) {
-    if (isCard(el)) return isVideoCard(el) || isGifCard(el)
-    return /(^|\s)(video|animated|webm|mp4|gif)(\s|$)/i.test(el.title || el.alt || '')
+  // The kind of post an element shows. A native <img> takes it from its link,
+  // which is what the cover and GIF code treat as the card.
+  function thumbKind(el) {
+    const card = isCard(el) ? el : (el.closest('a') || el.parentElement)
+    if (card && isGifCard(card)) return 'gif'
+    if (card && isVideoCard(card)) return 'video'
+    return 'image'
   }
 
   /** Returns true once the element needs no more watching. */
@@ -982,7 +992,7 @@
     if (!CFG.originalThumbs && !inFeed(el)) return true
     // The detail viewer owns zoom and pan; leave its image alone.
     if (el.closest('.img_detail_cont, .fancybox__container')) return true
-    if (isAnimatedThumb(el)) return true
+    if (thumbKind(el) === 'gif') return true   // inline GIFs have their own path
     // Masonry may not have painted the picture yet; try on the next intersection.
     const pic = pictureOf(el)
     if (!pic || !thumbParts(pic.src)) return false
@@ -1007,6 +1017,7 @@
 
   function probeOriginal(el, from, urls, done) {
     const probe = new Image()
+    probe.decoding = 'async'
     let i = 0
     const tryNext = () => {
       if (i >= urls.length) {
@@ -1017,7 +1028,13 @@
       }
       probe.src = urls[i++]
     }
+    // Decode off the main thread before swapping, so the new image appears in
+    // one go instead of stalling the scroll while a large file is decoded.
     probe.onload = () => {
+      const decoded = typeof probe.decode === 'function' ? probe.decode().catch(() => {}) : Promise.resolve()
+      decoded.then(swap)
+    }
+    const swap = () => {
       // Off Masonry the thumbnail has no fixed box: pin its current size so the
       // full-resolution file does not blow up the page layout.
       if (!isCard(el) && !inFeed(el) && el.clientWidth) {
@@ -1025,8 +1042,9 @@
         el.style.height = `${el.clientHeight}px`
         el.style.objectFit = 'contain'
       }
+      if (el.tagName === 'IMG') el.decoding = 'async'
       const pic = pictureOf(el)
-      if (pic) pic.set(probe.src)   // already in cache, so this paints at once
+      if (pic) pic.set(probe.src)   // already in cache and decoded, so this paints at once
       el.dataset.ibhThumb = from    // what freeMemory() and redoThumbs() put back
       el.dataset.ibhOrig = 'done'
       dbg(`original: ${probe.src}`)
