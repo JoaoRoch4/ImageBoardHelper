@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.18.1
+// @version      0.18.2
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -86,7 +86,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.18.1'
+  const VERSION = '0.18.2'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -1659,15 +1659,23 @@
       shadow.appendChild(fab)
       shadow.appendChild(buildPanel())
     }
-    if (nav) shadow.appendChild(buildFeedNav())
-
     document.body.appendChild(panelHost)
+    ensureFeedNav()
     if (CFG.panel) {
       onLogEntry = appendLogLine
       onStateChange = () => { if (panelOpen) renderStatus() }
       if (panelOpen) renderStatus()
     }
-    dbg(`panel mounted${nav ? ' with feed buttons' : ''}`)
+    dbg('panel mounted')
+  }
+
+  // The host is often mounted while the page is still parsing, before the
+  // post list exists, so the buttons are added whenever the list shows up.
+  function ensureFeedNav() {
+    if (!shadow || shadow.querySelector('.feednav')) return
+    if (!(CFG.feedNav && CFG.nativeFeed && document.querySelector(FEED_POST))) return
+    shadow.appendChild(buildFeedNav())
+    dbg('feed buttons added')
   }
 
   // ‹ › buttons for the one-column feed: jump to the start of the previous or
@@ -1763,6 +1771,7 @@
     }
     if (panelHost && !panelHost.isConnected) { panelHost = null; shadow = null }
     if (!panelHost) mountPanel()
+    ensureFeedNav()
     injectPageCSS()
   }).observe(document, { childList: true, subtree: true })
 
@@ -1778,6 +1787,7 @@
   const boot = () => {
     injectPageCSS()
     mountPanel()
+    ensureFeedNav()
     scanCards(document)
     scanThumbs(document)
     imageBase()

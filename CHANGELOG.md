@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.18.2
+
+- Fix: the feed buttons never showed. The panel host is mounted while the
+  page is still parsing, before the post list exists, so the "is this a feed?"
+  check failed once and was never repeated. The buttons are now added whenever
+  the list shows up
+
 ## 0.18.1
 
 - Feed buttons gain ⤒, jump to the top of the page
