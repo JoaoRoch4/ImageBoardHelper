@@ -57,12 +57,11 @@ Um botão redondo no canto inferior esquerdo abre o painel — fica longe do FAB
 
 Mostra host de imagens resolvido, modo de miniatura, contagem de capas (ok / falha / total), estado do Fancybox e último gesto reconhecido. As opções são persistidas, então dá pra ligar e desligar cada correção sem editar o arquivo.
 
-Ações úteis:
+Três ações úteis:
 
 - **Testar URLs** — pega o primeiro card de vídeo na tela e testa cada URL candidata, registrando OK ou FALHA por host. É o jeito rápido de descobrir qual servidor serve os arquivos.
 - **Limpar host** — apaga o cache de sete dias e resolve de novo, para quando o CDN mudar.
 - **Copiar log** — monta um relatório com `userAgent`, host, modo de miniatura e o histórico.
-- **Limpar memória e cache** — fecha as capas de vídeo e a prévia, volta os GIFs animados para a imagem parada, desfaz as trocas por sample/original (o que está na tela recarrega do cache do navegador) e apaga o cache de host e o Cache Storage do site. O cache HTTP do navegador não é alcançável por script de página; configurações e login ficam.
 
 O painel tem um seletor de idioma (automático, português, inglês). As linhas de log continuam em inglês de propósito: elas existem para serem coladas em issues, e relatório bilíngue é pior que relatório só em inglês.
 
@@ -78,7 +77,6 @@ Todas ficam no painel e são gravadas em `localStorage` sob a chave `IBH_CFG`.
 |---|---|---|
 | `sharpThumbs` | ligado | liga "miniatura usa imagem grande" (requer recarregar) |
 | `videoCovers` | ligado | sobrepõe o frame real do vídeo, nos cards do Masonry e nas páginas do próprio site |
-| `videoScrub` | ligado | segurar o dedo na miniatura de vídeo mostra frames aleatórios do vídeo até soltar, no Masonry e nas páginas do próprio site (requer recarregar) |
 | `gifInline` | ligado | card de GIF anima enquanto está na tela e volta à imagem parada quando sai |
 | `fixFancybox` | ligado | preenche `src` vazio no Fancybox |
 | `gestures` | ligado | swipe, toque duplo e pinça |

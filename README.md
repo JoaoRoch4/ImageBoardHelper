@@ -59,12 +59,11 @@ It shows the resolved image host, thumbnail mode, cover counts (ok / failed / to
 
 The panel has a language selector: Automatic, Português or English. Log lines stay in English on purpose — they exist to be pasted into issues, and a bilingual bug report is worse than an English-only one.
 
-Useful actions:
+Three useful actions:
 
 - **Test URLs** — takes the first video card on screen and tests each candidate URL, logging OK or FAIL per host. The quick way to find out which server actually carries the files.
 - **Clear host** — drops the seven-day cache and resolves again, for when the CDN moves.
 - **Copy log** — builds a report with `userAgent`, host, thumbnail mode and the history.
-- **Free memory & cache** — closes open video covers and the preview, puts animated GIFs back to their still, undoes sample/original upgrades (what is on screen reloads from the browser cache), and clears the host cache and the site's Cache Storage. The browser's HTTP cache is out of reach for a page script; settings and the site login are kept.
 
 The panel uses Shadow DOM because Masonry's CSS is aggressive with `!important` on `html, body`. Touches inside it are ignored by the gesture layer, via `composedPath`.
 
@@ -78,7 +77,6 @@ All of them live in the panel and are stored in `localStorage` under `IBH_CFG`.
 |---|---|---|
 | `sharpThumbs` | on | enables "thumbnail uses large image" (needs reload) |
 | `videoCovers` | on | overlays the real video frame, on Masonry cards and on the site's own pages |
-| `videoScrub` | on | hold a finger on a video thumbnail to see random frames of the video until you lift it, on Masonry and on the site's own pages (needs reload) |
 | `gifInline` | on | GIF cards animate while on screen and go back to the still when they leave |
 | `fixFancybox` | on | fills empty `src` in Fancybox |
 | `gestures` | on | swipe, double tap and pinch |

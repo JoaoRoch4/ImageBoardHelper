@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.14.0
+
+- Rollback to the 0.9.4 code, before the thumbnail video preview: removes the
+  hold/drag preview (0.10.0–0.13.0), and with it the **Free memory & cache**
+  button (0.12.0) and the speed-ordered rule34 video hosts (0.13.0). The
+  version number moves forward so Violentmonkey installs it
+
 ## 0.13.0
 
 - The thumbnail preview is now **hold for random frames**: holding a finger on

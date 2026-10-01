@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.13.0
+// @version      0.14.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -66,10 +66,6 @@
  *      for the original file, probing jpg/png/jpeg off-screen first. Sharper
  *      than the sample, at several times the data and memory.
  *
- *   F. VIDEO PREVIEW ON HOLD
- *      Holding a finger on a video thumbnail shows random frames of the video
- *      until it lifts, seeking the card's cover or one shared <video>.
- *
  * WHY @grant none: intercepting window.Fancybox and overriding
  * navigator.userAgent both require the page's own realm. Any @grant puts the
  * script in a sandbox where `window` is not the page's window, and both stop
@@ -85,7 +81,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.13.0'
+  const VERSION = '0.14.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -101,7 +97,6 @@
     sharpThumbs:    true,   // enable "thumbnail uses large image" (needs reload)
     videoCovers:    true,   // overlay the real video frame on the card
     gifInline:      true,   // animate GIF cards while they are on screen
-    videoScrub:     true,   // hold a video thumbnail to see random frames (needs reload)
     fixFancybox:    true,   // fill empty src in the alternate viewer
     gestures:       true,   // swipe, double tap and pinch
     originalThumbs: false,  // swap visible thumbnails for the original file (heavy, needs reload)
@@ -110,7 +105,7 @@
   }
 
   // Options that only take effect when the app boots.
-  const NEEDS_RELOAD = new Set(['sharpThumbs', 'forceRule34Api', 'originalThumbs', 'nativeFeed', 'videoScrub'])
+  const NEEDS_RELOAD = new Set(['sharpThumbs', 'forceRule34Api', 'originalThumbs', 'nativeFeed'])
 
   const CFG = Object.assign({}, DEFAULTS, readJSON(CFG_KEY, {}))
 
@@ -159,14 +154,13 @@
       filled: 'filled', empty: 'empty',
       coversFmt: (ok, bad, all) => `${ok} ok · ${bad} failed · ${all} videos`,
       tSharp: 'Large thumbnails', tCovers: 'Video covers', tGif: 'Animated GIFs in the grid',
-      tScrub: 'Hold for video frames',
       tFancybox: 'Repair Fancybox', tGestures: 'Touch gestures',
       tOriginal: 'Original thumbnails (heavy)',
       tFeed: 'One-column feed on site pages',
       tApi: 'Force API (loses filters)', tDebug: 'Log to console',
       noteReload: 'reload',
       bTest: 'Test URLs', bClearHost: 'Clear host',
-      bCopy: 'Copy log', bReload: 'Reload', bFree: 'Free memory & cache',
+      bCopy: 'Copy log', bReload: 'Reload',
       gNext: 'swipe left → next', gPrev: 'swipe right → previous',
       gClose: 'swipe down → close', gFav: 'double tap → favorite',
       gZoomIn: 'pinch out → zoom in', gZoomOut: 'pinch in → zoom out',
@@ -183,14 +177,13 @@
       filled: 'preenchida', empty: 'vazia',
       coversFmt: (ok, bad, all) => `${ok} ok · ${bad} falha · ${all} vídeos`,
       tSharp: 'Miniatura grande', tCovers: 'Capa de vídeo', tGif: 'GIF animado na grade',
-      tScrub: 'Segurar p/ frames do vídeo',
       tFancybox: 'Consertar Fancybox', tGestures: 'Gestos de toque',
       tOriginal: 'Miniatura original (pesado)',
       tFeed: 'Feed de uma coluna no site',
       tApi: 'Forçar API (perde filtros)', tDebug: 'Log no console',
       noteReload: 'recarregar',
       bTest: 'Testar URLs', bClearHost: 'Limpar host',
-      bCopy: 'Copiar log', bReload: 'Recarregar', bFree: 'Limpar memória e cache',
+      bCopy: 'Copiar log', bReload: 'Recarregar',
       gNext: 'swipe ← → próxima', gPrev: 'swipe → → anterior',
       gClose: 'swipe ↓ → fechar', gFav: 'toque duplo → favoritar',
       gZoomIn: 'pinça abrir → zoom+', gZoomOut: 'pinça fechar → zoom−',
@@ -305,17 +298,14 @@
     'rule34.xxx': {
       thumbsOnly: ['miami.rule34.xxx', 'ny.rule34.xxx'],
       fallback: 'https://wimg.rule34.xxx/images',
-      // Video mirrors, fastest first. wimg answers 403 for video files. Order
-      // measured from the phone's network (time to first byte / 1 MB):
-      // api-cdn 0.4 s / 0.3 s, nymp4 0.9 / 1.7, api-cdn-us-mp4 1.0 / 1.8,
-      // ahri2mp4 1.3 / 2.2, ws-cdn-video 1.5 / 2.7, api-cdn-mp4 1.9 / 2.9.
+      // Video mirrors, tried in order. wimg answers 403 for video files, so
+      // these come first. Post pages link to api-cdn-us-mp4 and ahri2mp4.
       videoHosts: [
-        'https://api-cdn.rule34.xxx/images',
-        'https://nymp4.rule34.xxx/images',
+        'https://api-cdn-mp4.rule34.xxx/images',
         'https://api-cdn-us-mp4.rule34.xxx/images',
         'https://ahri2mp4.rule34.xxx/images',
+        'https://nymp4.rule34.xxx/images',
         'https://ws-cdn-video.rule34.xxx/images',
-        'https://api-cdn-mp4.rule34.xxx/images',
       ],
     },
   }
@@ -488,16 +478,6 @@
     }
   }
 
-  // Sit right above the picture. Masonry's type icon and action buttons are
-  // absolutely positioned with no z-index and come later in the card, so they
-  // keep painting on top; appending at the end used to hide the video icon.
-  function placeOverPicture(card, node) {
-    if (getComputedStyle(card).position === 'static') card.style.position = 'relative'
-    const picEl = card.querySelector(':scope > .v-image, :scope > img')
-    if (picEl) picEl.after(node)
-    else card.appendChild(node)
-  }
-
   function mountCover(card) {
     if (card.dataset.ibhCover) return
     const pic = cardPicture(card)
@@ -575,7 +555,13 @@
       }
     }
 
-    placeOverPicture(card, v)
+    if (getComputedStyle(card).position === 'static') card.style.position = 'relative'
+    // Sit right above the picture. Masonry's type icon and action buttons are
+    // absolutely positioned with no z-index and come later in the card, so they
+    // keep painting on top; appending at the end used to hide the video icon.
+    const picEl = card.querySelector(':scope > .v-image, :scope > img')
+    if (picEl) picEl.after(v)
+    else card.appendChild(v)
   }
 
   function unmountCover(card) {
@@ -641,8 +627,7 @@
           if (e.isIntersecting) card.dataset.ibhSeen = '1'
           else delete card.dataset.ibhSeen
           if (isVideoCard(card) && card.dataset.ibhKind !== 'gif') {
-            if (e.isIntersecting) { if (CFG.videoCovers) mountCover(card) }
-            else unmountCover(card)
+            e.isIntersecting ? mountCover(card) : unmountCover(card)
           } else {
             e.isIntersecting ? playGif(card) : stopGif(card)
           }
@@ -654,13 +639,12 @@
     if (tracked.has(card)) return
     tracked.add(card)
     if (!STATE.masonry && isMasonryCard(card)) { STATE.masonry = true; touch() }
-    if (CFG.videoScrub && isVideoCard(card)) card.dataset.ibhVideo = '1'   // hold-preview target, see F
     const video = CFG.videoCovers && isVideoCard(card)
     const gif = CFG.gifInline && isGifCard(card)
     if (!video && !gif) return
     if (video) { STATE.covers.tracked++; touch() }
     if (viewport) viewport.observe(card)
-    else { card.dataset.ibhSeen = '1'; if (video) mountCover(card); else if (gif) playGif(card) }
+    else { card.dataset.ibhSeen = '1'; video ? mountCover(card) : playGif(card) }
   }
 
   // On site pages the link around each thumbnail plays the part of the card.
@@ -1028,7 +1012,6 @@
       }
       const pic = pictureOf(el)
       if (pic) pic.set(probe.src)   // already in cache, so this paints at once
-      el.dataset.ibhThumb = from    // what freeMemory() puts back
       el.dataset.ibhOrig = 'done'
       dbg(`original: ${probe.src}`)
       done()
@@ -1058,185 +1041,6 @@
       watchedThumbs.add(el)
       originalViewport ? originalViewport.observe(el) : upgradeToOriginal(el)
     }
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // F. Video preview on hold
-  //
-  // Holding a finger on a video thumbnail shows random frames of the video,
-  // one after another, until the finger lifts. It seeks the card's own cover
-  // when one is open, otherwise a single shared <video> released on lift, so
-  // it never opens a decoder per card.
-  // ═══════════════════════════════════════════════════════════
-
-  const HOLD_MS = 250          // press this long to start; under the browser's long-press menu
-  const HOLD_SLOP = 10         // moving further first means it was a scroll
-  const FRAME_DWELL_MS = 400   // how long each frame stays before the next jump
-  let hold = null              // the press in progress
-  let holdClickUntil = 0       // lifting after a preview must not open the post
-  let sharedPreviewVideo = null
-
-  // Called on touch-down, before the press is known to be a hold, so the file
-  // is already on its way when the preview starts. A cover counts even while
-  // still loading: it began downloading when the card scrolled in.
-  function previewVideoFor(card) {
-    const cover = card.querySelector('video[data-ibh]')
-    if (cover && cover.getAttribute('src')) return { video: cover, shared: false }
-
-    const pic = cardPicture(card)
-    const urls = pic ? fileCandidates(pic.src, ['mp4', 'webm']) : []
-    if (!urls.length) return null
-    if (!sharedPreviewVideo) {
-      sharedPreviewVideo = document.createElement('video')
-      sharedPreviewVideo.muted = true
-      sharedPreviewVideo.playsInline = true
-      sharedPreviewVideo.style.cssText =
-        'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none'
-    }
-    const v = sharedPreviewVideo
-    v.preload = 'metadata'   // only the index until the hold is confirmed
-    let i = 0
-    v.onerror = () => { if (i < urls.length) v.src = urls[i++] }   // walk the hosts, like covers
-    v.src = urls[i++]
-    return { video: v, shared: true }
-  }
-
-  function releaseShared(v) {
-    v.onerror = null
-    v.removeAttribute('src')
-    v.load()   // stop the download and hand the decoder back
-    v.remove()
-    if (sharedHoldsSlot) { sharedHoldsSlot = false; releaseCover() }   // an evicted cover can come back
-  }
-
-  // The shared video counts against the same decoder budget as covers. With
-  // every slot taken it would sit waiting for a decoder, so close the cover of
-  // another card instead and queue it to come back when the preview ends.
-  let sharedHoldsSlot = false
-
-  function reserveDecoder(card) {
-    if (sharedHoldsSlot) return
-    sharedHoldsSlot = true
-    liveCovers++
-    if (liveCovers <= COVER_MAX_LIVE) return
-    const victim = [...document.querySelectorAll('[data-ibh-cover]')].find(c => c !== card)
-    if (!victim) return
-    unmountCover(victim)   // releaseCover inside sees the budget still full: nothing remounts
-    if (victim.dataset.ibhSeen) coverQueue.add(victim)
-  }
-
-  function progressBar() {
-    const bar = document.createElement('div')
-    bar.style.cssText =
-      'position:absolute;left:0;bottom:0;height:3px;width:0;background:#5eead4;pointer-events:none'
-    return bar
-  }
-
-  const clock = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
-
-  // Jump to a random point between 5% and 95%, so credits and black frames at
-  // the ends are skipped. fastSeek lands on the nearest keyframe: cheap to decode.
-  function nextFrame() {
-    if (!hold || !hold.active) return
-    const v = hold.video
-    const d = v.duration
-    if (!Number.isFinite(d) || d <= 0) { hold.label.textContent = '…'; return }   // loadedmetadata calls back
-    const t = d * (0.05 + 0.9 * Math.random())
-    hold.bar.style.width = `${(t / d) * 100}%`
-    hold.label.textContent = `${clock(t)} / ${clock(d)}`
-    hold.frames++
-    if (typeof v.fastSeek === 'function') v.fastSeek(t)
-    else v.currentTime = t
-  }
-
-  function startHold() {
-    const h = hold
-    if (!h || !h.found) { finishHold(); return }
-    h.active = true
-    h.video = h.found.video
-    h.video.pause()
-    if (h.found.shared) {
-      // Only now, not on touch-down: every scroll starts with a touch, and
-      // evicting a cover for each one would keep reloading covers.
-      reserveDecoder(h.card)
-      h.video.preload = 'auto'   // confirmed: buffer ahead so the jumps land faster
-      placeOverPicture(h.card, h.video)
-    }
-    h.video.style.opacity = '1'
-    h.bar = progressBar()
-    h.label = document.createElement('div')
-    h.label.style.cssText =
-      'position:absolute;left:4px;bottom:6px;padding:1px 5px;border-radius:3px;font:11px/1.4 ' +
-      'ui-monospace,monospace;color:#fff;background:rgba(0,0,0,.6);pointer-events:none'
-    placeOverPicture(h.card, h.bar)
-    placeOverPicture(h.card, h.label)
-    // Each landed seek shows its frame for a moment, then jumps again.
-    h.onSeeked = () => { h.frameTimer = setTimeout(nextFrame, FRAME_DWELL_MS) }
-    h.onMeta = () => nextFrame()
-    h.video.addEventListener('seeked', h.onSeeked)
-    h.video.addEventListener('loadedmetadata', h.onMeta)
-    nextFrame()
-  }
-
-  /** End the press: tear down a running preview, or drop the warm-up of a non-hold. */
-  function finishHold() {
-    const h = hold
-    if (!h) return
-    hold = null
-    clearTimeout(h.timer)
-    clearTimeout(h.frameTimer)
-    if (h.video) {
-      h.video.removeEventListener('seeked', h.onSeeked)
-      h.video.removeEventListener('loadedmetadata', h.onMeta)
-    }
-    if (h.bar) h.bar.remove()
-    if (h.label) h.label.remove()
-    if (h.found && h.found.shared) releaseShared(h.found.video)
-    if (h.active) {
-      holdClickUntil = Date.now() + 400
-      dbg(`hold preview: ${h.frames} frames on ${h.card.tagName.toLowerCase()}`)
-    }
-  }
-
-  function onHoldDown(ev) {
-    if (hold || detailOpen() || insidePanel(ev)) return
-    if (ev.pointerType === 'mouse' && ev.button !== 0) return
-    const card = ev.target.closest && ev.target.closest('[data-ibh-video]')
-    if (!card || card.dataset.ibhKind === 'gif') return
-    hold = { card, id: ev.pointerId, x0: ev.clientX, y0: ev.clientY, active: false, frames: 0 }
-    hold.found = previewVideoFor(card)   // warm up now; dropped if this is a scroll or a tap
-    hold.timer = setTimeout(startHold, HOLD_MS)
-  }
-
-  function onHoldMove(ev) {
-    if (!hold || hold.active || ev.pointerId !== hold.id) return
-    if (Math.hypot(ev.clientX - hold.x0, ev.clientY - hold.y0) > HOLD_SLOP) finishHold()   // a scroll
-  }
-
-  function onHoldUp(ev) {
-    if (hold && ev.pointerId === hold.id) finishHold()   // a plain tap opens the post as usual
-  }
-
-  // Lifting after a preview, and the browser's long-press menu during it, must
-  // not reach the page.
-  function onHoldSwallow(ev) {
-    if ((hold && hold.active) || Date.now() < holdClickUntil) {
-      if (ev.type === 'click') holdClickUntil = 0
-      ev.stopPropagation()
-      ev.preventDefault()
-    }
-  }
-
-  function installVideoHold() {
-    if (!CFG.videoScrub) return
-    // On window, like the gestures: listeners on body die with replaceDocument().
-    window.addEventListener('pointerdown', onHoldDown, true)
-    window.addEventListener('pointermove', onHoldMove, true)
-    window.addEventListener('pointerup', onHoldUp, true)
-    window.addEventListener('pointercancel', onHoldUp, true)
-    window.addEventListener('click', onHoldSwallow, true)
-    window.addEventListener('contextmenu', onHoldSwallow, true)
-    info('video hold preview active: hold a video thumbnail for random frames')
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -1305,45 +1109,6 @@
       v.addEventListener('error', () => done(false), { once: true })
       v.src = url
     })
-  }
-
-  /**
-   * Give back the memory this script holds on the page and drop its caches.
-   * The browser's HTTP cache is out of reach for any page script; settings
-   * (IBH_CFG), Masonry's settings and the site login are left alone.
-   */
-  async function freeMemory() {
-    const n = { covers: 0, gifs: 0, images: 0, caches: 0 }
-    finishHold()
-    document.querySelectorAll('[data-ibh-cover]').forEach(card => { unmountCover(card); n.covers++ })
-    coverQueue.clear()
-    // Animated GIFs keep every decoded frame; back to the still.
-    document.querySelectorAll('[data-ibh-gif="playing"]').forEach(card => { stopGif(card); n.gifs++ })
-    // Undo sample/original upgrades and watch again: what is on screen comes
-    // back from the HTTP cache, the rest only when it scrolls in.
-    document.querySelectorAll('[data-ibh-orig="done"]').forEach(el => {
-      const pic = pictureOf(el)
-      if (pic && el.dataset.ibhThumb) pic.set(el.dataset.ibhThumb)
-      delete el.dataset.ibhOrig
-      delete el.dataset.ibhThumb
-      if (originalViewport) originalViewport.observe(el)
-      n.images++
-    })
-    try { localStorage.removeItem(HOST_KEY) } catch (e) { /* ignore */ }
-    STATE.imageBase = null
-    try {
-      if (window.caches) {
-        const keys = await caches.keys()
-        await Promise.all(keys.map(k => caches.delete(k)))
-        n.caches = keys.length
-      }
-    } catch (e) {
-      warn(`could not clear Cache Storage — ${describeError(e)}`)
-    }
-    imageBase()
-    info(`freed ${n.covers} covers, ${n.gifs} GIFs, ${n.images} upgraded images; ` +
-      `host cache and ${n.caches} Cache Storage entries cleared (browser HTTP cache untouched)`)
-    touch()
   }
 
   function logSnapshot() {
@@ -1567,7 +1332,6 @@
     body.appendChild(toggle('nativeFeed', t('tFeed'), t('noteReload')))
     body.appendChild(toggle('videoCovers', t('tCovers')))
     body.appendChild(toggle('gifInline', t('tGif')))
-    body.appendChild(toggle('videoScrub', t('tScrub'), t('noteReload')))
     body.appendChild(toggle('fixFancybox', t('tFancybox')))
     body.appendChild(toggle('gestures', t('tGestures')))
     body.appendChild(toggle('forceRule34Api', t('tApi'), t('noteReload')))
@@ -1584,7 +1348,6 @@
     body.appendChild(el('div', { class: 'acts' }, [
       actionButton(t('bTest'), probeVideoUrls),
       actionButton(t('bClearHost'), () => { clearHostCache(); renderStatus() }),
-      actionButton(t('bFree'), () => { freeMemory().then(renderStatus) }),
       actionButton(t('bCopy'), copyLog),
       actionButton(t('bReload'), () => location.reload()),
     ]))
@@ -1680,16 +1443,10 @@
   // stylesheet lacks it (favorites), where the mark is added back.
   const NATIVE_MARK_CSS = '.image-list img.webm-thumb { border: 3px solid rgb(0, 0, 255); box-sizing: border-box; }'
 
-  // Holding a video thumbnail must not select it, drag the image or pop the
-  // touch callout while the preview runs.
-  const HOLD_CSS = '[data-ibh-video], [data-ibh-video] img { user-select: none; ' +
-    '-webkit-user-select: none; -webkit-touch-callout: none; -webkit-user-drag: none; }'
-
   function injectPageCSS() {
     if (document.querySelector('style[data-ibh]')) return
     const style = el('style', { 'data-ibh': '1' })
-    style.textContent = '.img_detail_cont { touch-action: pan-y; }' + NATIVE_MARK_CSS +
-      (CFG.videoScrub ? HOLD_CSS : '') + (CFG.nativeFeed ? FEED_CSS : '')
+    style.textContent = '.img_detail_cont { touch-action: pan-y; }' + NATIVE_MARK_CSS + (CFG.nativeFeed ? FEED_CSS : '')
     ;(document.head || document.documentElement).appendChild(style)
   }
 
@@ -1713,7 +1470,6 @@
   applyRule34ApiUnlock()
   hookFancybox()
   installGestures()
-  installVideoHold()
   logSnapshot()
   if (CFG.originalThumbs) info('original thumbnails on: visible thumbnails load the full file')
   if (CFG.nativeFeed) info('one-column feed on: site pages show samples at full width')
@@ -1740,7 +1496,6 @@
     log: () => LOG,
     probe: probeVideoUrls,
     clearHostCache,
-    free: freeMemory,
     set: setCfg,
   }
 })()
