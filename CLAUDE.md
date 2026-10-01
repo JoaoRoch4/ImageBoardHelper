@@ -58,13 +58,14 @@ Bugs do Masonry que este script contorna:
 3. `STATE` observável pelo painel
 4. **A.** Miniatura nítida — `applySharpThumbs`
 5. Resolução de servidor de imagens — `imageBase`, `thumbParts`, `fileCandidates`
-6. **B.** Capa de vídeo — `mountCover`, `unmountCover`, `IntersectionObserver`
+6. **B.** Capa de vídeo e GIF inline — `mountCover`, `unmountCover`, `playGif`, `stopGif`, `IntersectionObserver`
 7. **C.** Fancybox — `repairItems`, `wrapFancybox`, `installExtensionFallback`
 8. **D.** Gestos — ponteiros, swipe, toque duplo, pinça
-9. Opcional: `applyRule34ApiUnlock`
-10. Diagnóstico — `probeVideoUrls`, `logSnapshot`
-11. Painel — Shadow DOM, `renderStatus`, `copyLog`
-12. Arranque e `window.__ibh`
+9. **E.** Miniatura original (opcional, desligada) — `upgradeToOriginal`, `probeOriginal`, `scanThumbs`
+10. Opcional: `applyRule34ApiUnlock`
+11. Diagnóstico — `probeVideoUrls`, `logSnapshot`
+12. Painel — Shadow DOM, `renderStatus`, `copyLog`
+13. Arranque e `window.__ibh`
 
 ---
 
@@ -154,5 +155,4 @@ node tools/ffrdp.js eval rule34 'window.__ibh.log()'   # aba por índice ou trec
 
 - `HOSTS` só tem o rule34 mapeado. safebooru, xbooru e realbooru podem ter mirrors próprios; descobrir com **Testar URLs** e preencher.
 - Preview de vídeo no hover e no toque longo, reaproveitando um único elemento `<video>` — um por card derruba o Chrome do Android.
-- GIF inline: hoje a capa cobre vídeo apenas. A detecção por `fileExt` já está correta; falta o caminho do GIF.
 - Downloads no caminho do raspador continuam usando o `fileUrl` errado do app. Investigar se dá para corrigir interceptando `fetch` e reescrevendo o host das miniaturas no HTML antes do app parsear.

@@ -77,8 +77,10 @@ All of them live in the panel and are stored in `localStorage` under `IBH_CFG`.
 |---|---|---|
 | `sharpThumbs` | on | enables "thumbnail uses large image" (needs reload) |
 | `videoCovers` | on | overlays the real video frame |
+| `gifInline` | on | GIF cards animate while on screen and go back to the still when they leave |
 | `fixFancybox` | on | fills empty `src` in Fancybox |
 | `gestures` | on | swipe, double tap and pinch |
+| `originalThumbs` | **off** | swaps visible thumbnails, on Masonry and on the site's own pages, for the original file; sharper, but several times the data and memory (needs reload) |
 | `forceRule34Api` | **off** | see below (needs reload) |
 | `lang` | automatic | panel language: automatic, Portuguese or English |
 | `debug` | off | mirrors the log into the browser console |
@@ -130,7 +132,7 @@ Intercepting `Fancybox` and reading `window.Fancybox` both require the page's ow
 ## Credits
 
 - [Yande.re Masonry](https://github.com/asadahimeka/yandere-masonry) by asadahimeka — MIT
-- Image server resolution inspired by the `ImageServer` module in Booru Enhanced Dark Gallery
+- Image server resolution and the original-thumbnail probe inspired by Booru Enhanced Dark Gallery
 
 ## License
 

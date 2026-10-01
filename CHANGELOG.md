@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.8.0
+
+- GIFs play inline (`gifInline`, on): while a GIF card is on screen the
+  original .gif, probed off-screen, replaces the still; leaving the screen puts
+  the still back to free the decoded frames
+- Video and GIF detection looks at every type icon on the card, not only the
+  first; on yande.re and konachan the parent/children icon came first and
+  hid the video icon
+- Optional `originalThumbs` (off by default): visible thumbnails, on Masonry
+  cards and on the site's own pages, are swapped for the original file. The
+  extension is probed off-screen (jpg, png, jpeg) at most three at a time;
+  videos, GIFs and the detail viewer are left alone. Technique from Booru
+  Enhanced Dark Gallery
+- `thumbParts` also accepts `/samples/DIR/sample_HASH` URLs
+- rule34: video covers now walk five verified video mirrors (`api-cdn-mp4`,
+  `api-cdn-us-mp4`, `ahri2mp4`, `nymp4`, `ws-cdn-video`) instead of one;
+  `wimg` answers 403 for video files. `videoHost` became `videoHosts`
+- Panel: warning lines in the log were unreadable (yellow on yellow) because
+  the status-dot colours leaked onto log lines; long URLs in the log now wrap
+
 ## 0.7.0
 
 - Code and documentation translated to English; `README.pt-BR.md` added

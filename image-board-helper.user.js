@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.7.0
+// @version      0.8.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -45,7 +45,8 @@
  *      the .mp4 itself and will not render inside an <img>. We overlay a
  *      <video muted preload="metadata"> on the card: the browser paints the
  *      real frame and nothing is read back, so CORS never enters the picture —
- *      unlike grabbing the frame through a <canvas>.
+ *      unlike grabbing the frame through a <canvas>. GIF cards get the same
+ *      treatment: the original .gif replaces the still while on screen.
  *
  *   C. FANCYBOX
  *      fancyboxShow builds items as `src: e.jpegUrl || e.fileUrl`, but several
@@ -57,6 +58,11 @@
  *      Masonry listens for keyup on window (A/left, D/right, F). We dispatch
  *      synthetic key events and click toolbar buttons, located by the `d`
  *      attribute of the icon <path>.
+ *
+ *   E. ORIGINAL THUMBNAILS (optional, off by default)
+ *      Swaps visible thumbnails, on Masonry cards and on the site's own pages,
+ *      for the original file, probing jpg/png/jpeg off-screen first. Sharper
+ *      than the sample, at several times the data and memory.
  *
  * WHY @grant none: intercepting window.Fancybox and overriding
  * navigator.userAgent both require the page's own realm. Any @grant puts the
@@ -71,7 +77,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.7.0'
+  const VERSION = '0.8.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -86,13 +92,15 @@
     panel:          true,   // floating button and status panel
     sharpThumbs:    true,   // enable "thumbnail uses large image" (needs reload)
     videoCovers:    true,   // overlay the real video frame on the card
+    gifInline:      true,   // animate GIF cards while they are on screen
     fixFancybox:    true,   // fill empty src in the alternate viewer
     gestures:       true,   // swipe, double tap and pinch
+    originalThumbs: false,  // swap visible thumbnails for the original file (heavy, needs reload)
     forceRule34Api: false,  // see applyRule34ApiUnlock (needs reload)
   }
 
   // Options that only take effect when the app boots.
-  const NEEDS_RELOAD = new Set(['sharpThumbs', 'forceRule34Api'])
+  const NEEDS_RELOAD = new Set(['sharpThumbs', 'forceRule34Api', 'originalThumbs'])
 
   const CFG = Object.assign({}, DEFAULTS, readJSON(CFG_KEY, {}))
 
@@ -140,8 +148,9 @@
       notResolved: 'not resolved', cached: 'cached',
       filled: 'filled', empty: 'empty',
       coversFmt: (ok, bad, all) => `${ok} ok · ${bad} failed · ${all} videos`,
-      tSharp: 'Large thumbnails', tCovers: 'Video covers',
+      tSharp: 'Large thumbnails', tCovers: 'Video covers', tGif: 'Animated GIFs in the grid',
       tFancybox: 'Repair Fancybox', tGestures: 'Touch gestures',
+      tOriginal: 'Original thumbnails (heavy)',
       tApi: 'Force API (loses filters)', tDebug: 'Log to console',
       noteReload: 'reload',
       bTest: 'Test URLs', bClearHost: 'Clear host',
@@ -161,8 +170,9 @@
       notResolved: 'não resolvido', cached: 'cache',
       filled: 'preenchida', empty: 'vazia',
       coversFmt: (ok, bad, all) => `${ok} ok · ${bad} falha · ${all} vídeos`,
-      tSharp: 'Miniatura grande', tCovers: 'Capa de vídeo',
+      tSharp: 'Miniatura grande', tCovers: 'Capa de vídeo', tGif: 'GIF animado na grade',
       tFancybox: 'Consertar Fancybox', tGestures: 'Gestos de toque',
+      tOriginal: 'Miniatura original (pesado)',
       tApi: 'Forçar API (perde filtros)', tDebug: 'Log no console',
       noteReload: 'recarregar',
       bTest: 'Testar URLs', bClearHost: 'Limpar host',
@@ -281,7 +291,15 @@
     'rule34.xxx': {
       thumbsOnly: ['miami.rule34.xxx', 'ny.rule34.xxx'],
       fallback: 'https://wimg.rule34.xxx/images',
-      videoHost: 'https://api-cdn-mp4.rule34.xxx/images',
+      // Video mirrors, tried in order. wimg answers 403 for video files, so
+      // these come first. Post pages link to api-cdn-us-mp4 and ahri2mp4.
+      videoHosts: [
+        'https://api-cdn-mp4.rule34.xxx/images',
+        'https://api-cdn-us-mp4.rule34.xxx/images',
+        'https://ahri2mp4.rule34.xxx/images',
+        'https://nymp4.rule34.xxx/images',
+        'https://ws-cdn-video.rule34.xxx/images',
+      ],
     },
   }
 
@@ -332,11 +350,11 @@
     imageBase()
   }
 
-  /** Pull DIR and HASH out of .../thumbnails/DIR/thumbnail_HASH.jpg */
+  /** Pull DIR and HASH out of .../thumbnails/DIR/thumbnail_HASH.jpg or .../samples/DIR/sample_HASH.jpg */
   function thumbParts(thumbUrl) {
     if (!thumbUrl) return null
     const m = thumbUrl.replace(/\?.*$/, '')
-      .match(/\/thumbnails\/(.+)\/thumbnail_([^/]+)\.(?:jpe?g|png)$/i)
+      .match(/\/(?:thumbnails|samples)\/(.+)\/(?:thumbnail|sample)_([^/]+)\.(?:jpe?g|png)$/i)
     return m ? { dir: m[1], hash: m[2] } : null
   }
 
@@ -347,7 +365,7 @@
 
     const bases = []
     const wantsVideo = exts.some(e => e === 'mp4' || e === 'webm')
-    if (wantsVideo && HOST_CFG.videoHost) bases.push(HOST_CFG.videoHost)
+    if (wantsVideo) bases.push(...(HOST_CFG.videoHosts || []))
     const resolved = imageBase()
     if (resolved) bases.push(resolved)
     try { bases.push(`${new URL(thumbUrl).origin}/images`) } catch (e) { /* ignore */ }
@@ -368,14 +386,17 @@
     zoomIn:  'M15.5,14L20.5,19L19,20.5L14,15.5V14.71L13.73,14.43C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.43,13.73L14.71,14H15.5M9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14M12,10H10V12H9V10H7V9H9V7H10V9H12V10Z',
     zoomOut: 'M15.5,14H14.71L14.43,13.73C15.41,12.59 16,11.11 16,9.5A6.5,6.5 0 0,0 9.5,3A6.5,6.5 0 0,0 3,9.5A6.5,6.5 0 0,0 9.5,16C11.11,16 12.59,15.41 13.73,14.43L14,14.71V15.5L19,20.5L20.5,19L15.5,14M9.5,14C7,14 5,12 5,9.5C5,7 7,5 9.5,5C12,5 14,7 14,9.5C14,12 12,14 9.5,14M7,9H12V10H7V9Z',
     video:   'M17,10.5V7A1,1 0 0,0 16,6H4A1,1 0 0,0 3,7V17A1,1 0 0,0 4,18H16A1,1 0 0,0 17,17V13.5L21,17.5V6.5L17,10.5Z',
+    gif:     'M19 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19V5C21 3.9 20.1 3 19 3M10 10.5H7.5V13.5H8.5V12H10V13.7C10 14.4 9.5 15 8.7 15H7.3C6.5 15 6 14.3 6 13.7V10.4C6 9.7 6.5 9 7.3 9H8.6C9.5 9 10 9.7 10 10.3V10.5M13 15H11.5V9H13V15M17.5 10.5H16V11.5H17.5V13H16V15H14.5V9H17.5V10.5Z',
   }
 
   const tracked = new WeakSet()
 
-  const isVideoCard = card => {
-    const p = card.querySelector('.posts-image-type path')
-    return !!p && p.getAttribute('d') === ICON.video
-  }
+  // A card can carry several type icons (parent/children ones come first on
+  // yande.re and konachan), so look at all of them, not just the first.
+  const hasTypeIcon = (card, d) =>
+    [...card.querySelectorAll('.posts-image-type path')].some(p => p.getAttribute('d') === d)
+  const isVideoCard = card => hasTypeIcon(card, ICON.video)
+  const isGifCard = card => hasTypeIcon(card, ICON.gif)
 
   function mountCover(card) {
     if (card.dataset.ibhCover) return
@@ -431,11 +452,55 @@
     delete card.dataset.ibhCover
   }
 
+  // GIF cards show a still (sample or thumbnail .jpg). While on screen, swap in
+  // the original .gif, probed off-screen first; put the still back on the way
+  // out, because animated GIFs hold every decoded frame in memory.
+  function playGif(card) {
+    if (card.dataset.ibhGif) return   // loading, playing or failed
+    const img = card.querySelector('img')
+    if (!img || !img.src) return
+    const urls = fileCandidates(img.currentSrc || img.src, ['gif'])
+    if (!urls.length) { dbg('gif card outside the derivable pattern'); return }
+
+    card.dataset.ibhGif = 'loading'
+    const probe = new Image()
+    let i = 0
+    const tryNext = () => {
+      if (card.dataset.ibhGif !== 'loading') return   // scrolled away meanwhile
+      if (i >= urls.length) {
+        card.dataset.ibhGif = 'failed'
+        dbg(`gif: no host answered for ${img.src}`)
+        return
+      }
+      probe.src = urls[i++]
+    }
+    probe.onload = () => {
+      if (card.dataset.ibhGif !== 'loading') return
+      img.dataset.ibhStill = img.src
+      img.src = probe.src
+      card.dataset.ibhGif = 'playing'
+      dbg(`gif: playing ${probe.src}`)
+    }
+    probe.onerror = tryNext
+    tryNext()
+  }
+
+  function stopGif(card) {
+    const state = card.dataset.ibhGif
+    if (state === 'playing') {
+      const img = card.querySelector('img')
+      if (img && img.dataset.ibhStill) img.src = img.dataset.ibhStill
+    }
+    if (state === 'playing' || state === 'loading') delete card.dataset.ibhGif
+  }
+
   // Opening decoders only for what is on screen keeps the phone alive.
   const viewport = 'IntersectionObserver' in window
     ? new IntersectionObserver(entries => {
         for (const e of entries) {
-          e.isIntersecting ? mountCover(e.target) : unmountCover(e.target)
+          const card = e.target
+          if (isVideoCard(card)) e.isIntersecting ? mountCover(card) : unmountCover(card)
+          else e.isIntersecting ? playGif(card) : stopGif(card)
         }
       }, { rootMargin: '200px' })
     : null
@@ -444,10 +509,12 @@
     if (tracked.has(card)) return
     tracked.add(card)
     if (!STATE.masonry) { STATE.masonry = true; touch() }
-    if (!CFG.videoCovers || !isVideoCard(card)) return
-    STATE.covers.tracked++
-    touch()
-    viewport ? viewport.observe(card) : mountCover(card)
+    const video = CFG.videoCovers && isVideoCard(card)
+    const gif = CFG.gifInline && isGifCard(card)
+    if (!video && !gif) return
+    if (video) { STATE.covers.tracked++; touch() }
+    if (viewport) viewport.observe(card)
+    else video ? mountCover(card) : playGif(card)
   }
 
   function scanCards(root) {
@@ -697,6 +764,105 @@
   }
 
   // ═══════════════════════════════════════════════════════════
+  // E. Original thumbnails (optional, off by default)
+  //
+  // Swaps visible thumbnails — on Masonry cards and on the site's own pages —
+  // for the original file. The thumbnail is always .jpg, so the real extension
+  // is unknown: each one is tried in an off-screen Image and the visible <img>
+  // only changes once one loads, so nothing flickers. Originals cost several
+  // times the data and memory of the sample, which is why this ships off.
+  // ═══════════════════════════════════════════════════════════
+
+  const ORIGINAL_EXTS = ['jpg', 'png', 'jpeg']   // no gif: animated originals are heavy
+  const ORIGINAL_MAX_INFLIGHT = 3                // concurrent probes, to spare the phone
+  const ORIGINAL_SELECTOR = '.posts-image-card img, img[src*="/thumbnails/"], img[src*="/samples/"]'
+  const originalQueue = []
+  let originalInflight = 0
+
+  // Native pages put the tags in title/alt; Masonry marks videos with an icon.
+  function isAnimatedThumb(img) {
+    const card = img.closest('.posts-image-card')
+    if (card) return isVideoCard(card) || isGifCard(card)
+    return /(^|\s)(video|animated|webm|mp4|gif)(\s|$)/i.test(img.title || img.alt || '')
+  }
+
+  /** Returns true once the image needs no more watching. */
+  function upgradeToOriginal(img) {
+    if (img.dataset.ibhOrig) return true   // already queued, done or failed
+    // The detail viewer owns zoom and pan; leave its image alone.
+    if (img.closest('.img_detail_cont, .fancybox__container')) return true
+    if (isAnimatedThumb(img)) return true
+    // Masonry may not have set src yet; try again on the next intersection.
+    if (!thumbParts(img.currentSrc || img.src)) return false
+    img.dataset.ibhOrig = 'queued'
+    originalQueue.push(img)
+    pumpOriginals()
+    return true
+  }
+
+  function pumpOriginals() {
+    while (originalInflight < ORIGINAL_MAX_INFLIGHT && originalQueue.length) {
+      const img = originalQueue.shift()
+      if (!img.isConnected) continue
+      originalInflight++
+      probeOriginal(img, fileCandidates(img.currentSrc || img.src, ORIGINAL_EXTS), () => {
+        originalInflight--
+        pumpOriginals()
+      })
+    }
+  }
+
+  function probeOriginal(img, urls, done) {
+    const probe = new Image()
+    let i = 0
+    const tryNext = () => {
+      if (i >= urls.length) {
+        img.dataset.ibhOrig = 'failed'
+        dbg(`original: nothing loaded for ${img.src}`)
+        done()
+        return
+      }
+      probe.src = urls[i++]
+    }
+    probe.onload = () => {
+      // Off Masonry the thumbnail has no fixed box: pin its current size so the
+      // full-resolution file does not blow up the page layout.
+      if (!img.closest('.posts-image-card') && img.clientWidth) {
+        img.style.width = `${img.clientWidth}px`
+        img.style.height = `${img.clientHeight}px`
+        img.style.objectFit = 'contain'
+      }
+      img.src = probe.src   // already in cache, so this paints at once
+      img.dataset.ibhOrig = 'done'
+      dbg(`original: ${probe.src}`)
+      done()
+    }
+    probe.onerror = tryNext
+    tryNext()
+  }
+
+  const originalViewport = 'IntersectionObserver' in window
+    ? new IntersectionObserver(entries => {
+        for (const e of entries) {
+          if (e.isIntersecting && upgradeToOriginal(e.target)) originalViewport.unobserve(e.target)
+        }
+      }, { rootMargin: '300px' })
+    : null
+
+  const watchedThumbs = new WeakSet()
+
+  function scanThumbs(root) {
+    if (!CFG.originalThumbs || !root || !root.querySelectorAll) return
+    const imgs = [...root.querySelectorAll(ORIGINAL_SELECTOR)]
+    if (root.matches && root.matches(ORIGINAL_SELECTOR)) imgs.push(root)
+    for (const img of imgs) {
+      if (watchedThumbs.has(img)) continue
+      watchedThumbs.add(img)
+      originalViewport ? originalViewport.observe(img) : upgradeToOriginal(img)
+    }
+  }
+
+  // ═══════════════════════════════════════════════════════════
   // Optional: unlock the API path on rule34
   //
   //   isRule34Firefox() = hostname == "rule34.xxx"
@@ -821,10 +987,11 @@
     .row .k { color: #7c9297; min-width: 104px; flex-shrink: 0; }
     .row .v { color: #d7dee0; word-break: break-all; }
     .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; align-self: center; }
-    .ok   { background: #4ade80; }
-    .warn { background: #fbbf24; }
-    .bad  { background: #f87171; }
-    .idle { background: #475569; }
+    /* Scoped to .dot: log lines reuse the level names as classes. */
+    .dot.ok   { background: #4ade80; }
+    .dot.warn { background: #fbbf24; }
+    .dot.bad  { background: #f87171; }
+    .dot.idle { background: #475569; }
 
     .sec {
       padding: 8px 12px 4px; color: #4e6469; font-size: 11px;
@@ -857,6 +1024,7 @@
     }
     .log div { display: flex; gap: 6px; }
     .log .ts { color: #3c4d51; flex-shrink: 0; }
+    .log .ts + span { min-width: 0; overflow-wrap: anywhere; }   /* long URLs wrap */
     .log .debug { color: #6b8085; }
     .log .info  { color: #a8b8bb; }
     .log .warn  { color: #fbbf24; }
@@ -977,7 +1145,9 @@
 
     body.appendChild(el('div', { class: 'sec', text: t('fixes') }))
     body.appendChild(toggle('sharpThumbs', t('tSharp'), t('noteReload')))
+    body.appendChild(toggle('originalThumbs', t('tOriginal'), t('noteReload')))
     body.appendChild(toggle('videoCovers', t('tCovers')))
+    body.appendChild(toggle('gifInline', t('tGif')))
     body.appendChild(toggle('fixFancybox', t('tFancybox')))
     body.appendChild(toggle('gestures', t('tGestures')))
     body.appendChild(toggle('forceRule34Api', t('tApi'), t('noteReload')))
@@ -1083,6 +1253,7 @@
         if (node.nodeType !== 1) continue
         if (node.classList && node.classList.contains('posts-image-card')) trackCard(node)
         else scanCards(node)
+        scanThumbs(node)
       }
     }
     if (panelHost && !panelHost.isConnected) { panelHost = null; shadow = null }
@@ -1095,11 +1266,13 @@
   hookFancybox()
   installGestures()
   logSnapshot()
+  if (CFG.originalThumbs) info('original thumbnails on: visible thumbnails load the full file')
 
   const boot = () => {
     injectPageCSS()
     mountPanel()
     scanCards(document)
+    scanThumbs(document)
     imageBase()
   }
 

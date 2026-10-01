@@ -77,8 +77,10 @@ Todas ficam no painel e são gravadas em `localStorage` sob a chave `IBH_CFG`.
 |---|---|---|
 | `sharpThumbs` | ligado | liga "miniatura usa imagem grande" (requer recarregar) |
 | `videoCovers` | ligado | sobrepõe o frame real do vídeo |
+| `gifInline` | ligado | card de GIF anima enquanto está na tela e volta à imagem parada quando sai |
 | `fixFancybox` | ligado | preenche `src` vazio no Fancybox |
 | `gestures` | ligado | swipe, toque duplo e pinça |
+| `originalThumbs` | **desligado** | troca as miniaturas visíveis, no Masonry e nas páginas do próprio site, pelo arquivo original; mais nítido, mas gasta várias vezes mais dados e memória (requer recarregar) |
 | `forceRule34Api` | **desligado** | ver abaixo (requer recarregar) |
 | `lang` | automático | idioma do painel: automático, português ou inglês |
 | `debug` | desligado | espelha o log no console do navegador |
@@ -130,7 +132,7 @@ A interceptação do `Fancybox` e a leitura de `window.Fancybox` exigem o mesmo 
 ## Créditos
 
 - [Yande.re Masonry](https://github.com/asadahimeka/yandere-masonry) por asadahimeka — MIT
-- Resolução de servidor de imagens inspirada no módulo `ImageServer` do Booru Enhanced Dark Gallery
+- Resolução de servidor de imagens e o teste de miniatura original inspirados no Booru Enhanced Dark Gallery
 
 ## Licença
 
