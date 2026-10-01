@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.10.1
+
+- Faster video scrub: the file starts loading on touch-down instead of after
+  the drag is recognised, and is dropped if the touch turns into a scroll or a
+  tap; a cover is reused even while still loading instead of opening a second
+  download; the drag threshold went from 12 to 8 px
+
 ## 0.10.0
 
 - Video scrub (`videoScrub`, on): dragging a finger sideways across a video

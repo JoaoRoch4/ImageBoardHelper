@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.10.0
+// @version      0.10.1
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -85,7 +85,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.10.0'
+  const VERSION = '0.10.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -1064,7 +1064,7 @@
   // lift, so scrubbing never opens a decoder per card.
   // ═══════════════════════════════════════════════════════════
 
-  const SCRUB_START_PX = 12   // sideways travel before a drag counts as a scrub
+  const SCRUB_START_PX = 8    // sideways travel before a drag counts as a scrub
   let scrub = null            // the drag in progress
   let scrubClickUntil = 0     // lifting after a scrub must not open the post
   let sharedScrubVideo = null
@@ -1087,9 +1087,13 @@
     })
   }
 
+  // Called on touch-down, before the drag is known to be a scrub, so the file
+  // is already on its way when the finger starts moving. A cover counts even
+  // while still loading: it began downloading when the card scrolled in, so it
+  // is ahead of any fresh request for the same file.
   function scrubVideoFor(card) {
     const cover = card.querySelector('video[data-ibh]')
-    if (cover && cover.readyState >= 1) return { video: cover, shared: false }
+    if (cover && cover.getAttribute('src')) return { video: cover, shared: false }
 
     const pic = cardPicture(card)
     const urls = pic ? fileCandidates(pic.src, ['mp4', 'webm']) : []
@@ -1098,22 +1102,32 @@
       sharedScrubVideo = document.createElement('video')
       sharedScrubVideo.muted = true
       sharedScrubVideo.playsInline = true
-      sharedScrubVideo.preload = 'auto'
       sharedScrubVideo.style.cssText =
         'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none'
     }
     const v = sharedScrubVideo
+    v.preload = 'metadata'   // only the index until the drag is confirmed
     let i = 0
     v.onerror = () => { if (i < urls.length) v.src = urls[i++] }   // walk the hosts, like covers
     v.src = urls[i++]
-    placeOverPicture(card, v)
     return { video: v, shared: true }
   }
 
+  function releaseShared(v) {
+    v.onerror = null
+    v.removeAttribute('src')
+    v.load()   // stop the download and hand the decoder back
+    v.remove()
+  }
+
   function startScrub() {
-    const found = scrubVideoFor(scrub.card)
+    const found = scrub.found
     if (!found) return false
     Object.assign(scrub, found, { active: true })
+    if (found.shared) {
+      found.video.preload = 'auto'   // confirmed: buffer ahead so later seeks land faster
+      placeOverPicture(scrub.card, found.video)
+    }
     hookSeeks(scrub.video)
     const bar = document.createElement('div')
     bar.style.cssText =
@@ -1148,12 +1162,7 @@
     const { card, video, shared, bar, label } = scrub
     bar.remove()
     label.remove()
-    if (shared) {
-      video.onerror = null
-      video.removeAttribute('src')
-      video.load()   // hand the decoder back
-      video.remove()
-    }
+    if (shared) releaseShared(video)
     // A cover keeps the frame where the finger stopped.
     dbg(`scrub: ${label.textContent} on ${card.tagName.toLowerCase()}`)
   }
@@ -1164,6 +1173,13 @@
     const card = ev.target.closest && ev.target.closest('[data-ibh-video]')
     if (!card || card.dataset.ibhKind === 'gif') return
     scrub = { card, id: ev.pointerId, x0: ev.clientX, y0: ev.clientY, x: ev.clientX, active: false }
+    scrub.found = scrubVideoFor(card)   // warm up now; dropped if this turns into a scroll or a tap
+  }
+
+  // The touch was not a scrub: stop a warm-up download that nothing will use.
+  function dropScrub() {
+    if (scrub && !scrub.active && scrub.found && scrub.found.shared) releaseShared(scrub.found.video)
+    scrub = null
   }
 
   function onScrubMove(ev) {
@@ -1172,9 +1188,9 @@
       const dx = Math.abs(ev.clientX - scrub.x0)
       const dy = Math.abs(ev.clientY - scrub.y0)
       // Mostly vertical: it is a page scroll, let it go.
-      if (dy > SCRUB_START_PX && dy > dx) { scrub = null; return }
+      if (dy > SCRUB_START_PX && dy > dx) { dropScrub(); return }
       if (dx < SCRUB_START_PX) return
-      if (!startScrub()) { scrub = null; return }
+      if (!startScrub()) { dropScrub(); return }
     }
     updateScrub(ev.clientX)
   }
@@ -1184,8 +1200,10 @@
     if (scrub.active) {
       endScrub()
       scrubClickUntil = Date.now() + 400
+      scrub = null
+    } else {
+      dropScrub()   // a plain tap opens the post as usual
     }
-    scrub = null
   }
 
   function onScrubClick(ev) {
