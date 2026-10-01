@@ -84,6 +84,8 @@ Não sugira estas de novo sem um motivo novo.
 
 **Abrir uma capa de vídeo por card visível, sem limite.** No Oppo A5 o Firefox decodifica uns quatro vídeos ao mesmo tempo; o resto fica em `readyState` 1 para sempre ou dá `MEDIA_ERR_DECODE`. Medido com 18 `<video>` simultâneos pela `ffrdp`. Daí `COVER_MAX_LIVE = 3` e a fila. Aba em segundo plano não decodifica nada — teste de vídeo só com o Firefox na frente.
 
+**Trocar o `src` da miniatura para mostrar a imagem melhor.** Quebra o Imagus (e afins), que reconhece a miniatura pelo padrão `thumbnail_` no `src`, e o Vue do Masonry pode desfazer. A troca vai no `srcset` via `imgPicture()`; o `src` fica como o site entregou.
+
 **Consertar o Fancybox em sites de detalhe tardio.** Em sankaku, anime-pictures, allgirl, hentaibooru e kusowanka a URL só existe após o fetch de detalhe e não é derivável. Sem acesso a `store.imageList`, não há solução externa. O patch correto está no README e é no script original.
 
 ---

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.9.1
+// @version      0.9.2
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -81,7 +81,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.9.1'
+  const VERSION = '0.9.2'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -425,10 +425,26 @@
   // layouts use <img>. Read and replace the picture through either one.
   function cardPicture(card) {
     const img = card.querySelector('img')
-    if (img) return img.src ? { src: img.currentSrc || img.src, set: url => { img.src = url } } : null
+    if (img) return imgPicture(img)
     const bg = card.querySelector('.v-image__image')
     const m = bg && bg.style.backgroundImage.match(/url\(["']?(.*?)["']?\)/)
     return m ? { src: m[1], set: url => { bg.style.backgroundImage = `url("${url}")` } } : null
+  }
+
+  // On an <img>, the better file goes in srcset and src is left alone: the
+  // browser paints the srcset candidate, while src keeps the site's thumbnail
+  // URL for everything that reads it — Imagus and other hover-zoom tools match
+  // on the thumbnail_ pattern, and Masonry's Vue only ever rewrites src.
+  // Setting the thumbnail back (or nothing) clears srcset.
+  function imgPicture(img) {
+    if (!img.src) return null
+    return {
+      src: img.src,
+      set: url => {
+        if (!url || url === img.src) img.removeAttribute('srcset')
+        else img.srcset = url.replace(/ /g, '%20').replace(/,/g, '%2C')   // srcset splits on both
+      },
+    }
   }
 
   // <v-img> only paints its background once the thumbnail has loaded, so a
@@ -907,7 +923,7 @@
 
   function pictureOf(el) {
     if (isCard(el)) return cardPicture(el)
-    return el.src ? { src: el.currentSrc || el.src, set: url => { el.src = url } } : null
+    return imgPicture(el)
   }
 
   // Native pages put the tags in title/alt; Masonry marks videos with an icon.

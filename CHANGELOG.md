@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.2
+
+- Upgrades (sample, original, GIF) on an `<img>` now go in `srcset` and leave
+  `src` untouched. Swapping `src` hid the `thumbnail_` URL that Imagus and
+  similar hover-zoom tools match on, so they stopped working on upgraded
+  images; it also kept Masonry's Vue free to undo the swap
+
 ## 0.9.1
 
 - Feed posts span the full screen width, cancelling the site's side padding;
