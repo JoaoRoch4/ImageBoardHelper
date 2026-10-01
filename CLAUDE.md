@@ -32,7 +32,7 @@ Estes são fatos verificados no código do Masonry. Se algum quebrar, é porque 
 
 | Ponto de contato | Detalhe |
 |---|---|
-| Navegação | `window.addEventListener('keyup', ...)` com `A`/`←`, `D`/`→`, `F`. Disparamos `KeyboardEvent` sintético. Tem `debounce(500, immediate)`, então gestos em rajada são engolidos. |
+| Navegação | `window.addEventListener('keyup', ...)` com `A`/`←`, `D`/`→`, `F`. Disparamos `KeyboardEvent` sintético. Tem `debounce(500, immediate)`, então gestos em rajada são engolidos. Só funciona com "Listen for keyboard events" ligado nas configurações do Masonry. |
 | Botões da barra | Selecionados pelo atributo `d` do `<path>` do ícone MDI, que é único. `.click()` funciona mesmo com `display:none` — o handler do Vue dispara. |
 | Detalhe aberto | `.img_detail_cont` presente no DOM. |
 | Modo lupa | `.img_scale_scroll` presente. Nele o arrasto é pan, então swipe é ignorado. |
@@ -84,13 +84,15 @@ Não sugira estas de novo sem um motivo novo.
 
 ## Convenções de código
 
-- Comentários em português. Quando uma linha não é autoexplicativa, explique o que ela faz.
+- Quando uma linha não é autoexplicativa, o comentário explica o que ela faz.
 - Ao escrever código, me explique o que ele faz e como eu mesmo poderia ter chegado nele. Quero aprender junto, não só receber pronto.
 - Prefira trecho inline curto a arquivo novo, salvo quando eu pedir o arquivo.
 - Sugira alternativas mais eficientes quando existirem; se o ganho for irrelevante, não levante o assunto.
 - Nada de parede de texto. Direto ao ponto.
 - Toda função nova que mexe no DOM da galeria precisa ser idempotente: o `MutationObserver` reprocessa o mesmo nó várias vezes. Use `WeakSet` ou `dataset`.
-- Todo recurso novo entra com uma chave em `DEFAULTS`, uma entrada no painel e uma linha de log.
+- Todo recurso novo entra com uma chave em `DEFAULTS`, uma entrada no painel, uma linha de log e uma linha na tabela de opções dos dois READMEs. Se só vale no arranque do app, a chave entra também em `NEEDS_RELOAD`.
+- A versão vive em dois lugares — `@version` no cabeçalho e `const VERSION` — e os dois sobem junto com uma entrada no `CHANGELOG.md`.
+- Site novo precisa de uma linha `@match` no cabeçalho.
 - Todo texto novo de painel entra nas duas tabelas de `I18N`. Texto de log é escrito direto, em inglês.
 - Código e comentários em inglês no repositório. Comigo, no chat, fale português.
 - Erro e aviso sempre vão ao console; `debug` só espelha o resto.
@@ -118,7 +120,7 @@ console.log(en.filter(k=>!pt.includes(k)), pt.filter(k=>!en.includes(k)));
 
 Funções puras (`thumbParts`, `fileCandidates`, `nextExtension`) podem ser extraídas com regex e rodadas num `new Function` com stubs — veja o padrão usado no histórico do projeto. Vale a pena quando mexer na derivação de URL.
 
-O resto é testado no aparelho, pelo painel: **Testar URLs** lista cada candidata com OK ou FALHA, e **Copiar log** monta um relatório com `userAgent`, host resolvido, modo de miniatura e histórico.
+O resto é testado no aparelho, pelo painel: **Testar URLs** lista cada candidata com OK ou FALHA, e **Copiar log** monta um relatório com `userAgent`, host resolvido, modo de miniatura e histórico. Com o painel desligado, o console tem `window.__ibh` (`cfg`, `state`, `log()`, `probe()`, `clearHostCache()`, `set(chave, valor)`).
 
 Ambiente: Firefox para Android com Violentmonkey, num Oppo A5 4G. Sem PC na maior parte do tempo, então prefira mudanças que eu consiga aplicar e verificar pelo celular.
 
