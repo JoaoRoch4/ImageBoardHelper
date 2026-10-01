@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.16.0
+// @version      0.16.1
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -81,7 +81,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.16.0'
+  const VERSION = '0.16.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -1541,6 +1541,9 @@
 
   // Without this the browser claims the horizontal drag as history navigation
   // and the swipe never reaches our listeners.
+  // The site injects .thumb { width/max-height: <thumbnail size> !important }
+  // from the account's thumbnail setting; max-height has to be lifted too, or
+  // a tall image overflows its 250px box and covers the next post.
   // One-column feed on Gelbooru 0.2 site pages: every thumbnail takes the full
   // screen width. Favorites wrap each thumb in an extra span with the Remove
   // link. calc(50% - 50vw) is the negative margin that cancels whatever side
@@ -1548,9 +1551,11 @@
   const FEED_CSS = `
     .image-list { display: flex !important; flex-direction: column !important;
       flex-wrap: nowrap !important; align-items: stretch !important; gap: 14px !important; }
-    .image-list > span { display: block !important; width: 100% !important; max-width: none !important; }
+    .image-list > span { display: block !important; width: 100% !important; max-width: none !important;
+      height: auto !important; max-height: none !important; }
     .image-list span.thumb { display: block !important; width: 100vw !important; height: auto !important;
-      max-width: none !important; margin: 0 calc(50% - 50vw) !important; }
+      max-width: none !important; max-height: none !important; min-height: 0 !important;
+      margin: 0 calc(50% - 50vw) !important; }
     .image-list span.thumb a { display: block !important; position: relative; }
     .image-list span.thumb img { display: block; width: 100% !important; height: auto !important;
       max-width: none !important; max-height: none !important; }

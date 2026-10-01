@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.16.1
+
+- Feed: posts no longer overlap. The site injects
+  `.thumb { max-height: <thumbnail size> !important }` from the account
+  setting; the feed lifted width and height but not max-height, so any image
+  taller than 250 px (comics most of all) spilled over the next post.
+  Measured on the phone: 126 items, no overlap
+
 ## 0.16.0
 
 - Video thumbnails are upgraded too: video posts have no sample, so they are

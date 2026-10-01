@@ -41,7 +41,7 @@ Estes são fatos verificados no código do Masonry. Se algum quebrar, é porque 
 | Vídeo tocando | `.img_detail_cont .dplayer` presente. |
 | Cards | `.posts-image-card`; o tipo vem do `d` de **qualquer** ícone em `.posts-image-type` (no yande.re/konachan o ícone de pai/filho vem antes). No layout padrão o card é um `<v-img>` — `div.v-image__image` com `background-image`, sem `<img>`; só os layouts "virtual" e "justified" usam `<img>`. Leia e troque a imagem via `cardPicture()`. |
 | Configurações | `localStorage['YM_APP_SETTINGS']`, lido no arranque do app. |
-| Páginas do próprio site | Fora do Masonry (Gelbooru 0.2): `.image-list > span.thumb > a > img`, tags no `title` (favoritos) ou `alt` (listagem). O `<a>` faz o papel de card para capa e GIF; o feed (`nativeFeed`) é só CSS (`FEED_CSS`). |
+| Páginas do próprio site | Fora do Masonry (Gelbooru 0.2): `.image-list > span.thumb > a > img`, tags no `title` (favoritos) ou `alt` (listagem). O `<a>` faz o papel de card para capa e GIF; o feed (`nativeFeed`) é só CSS (`FEED_CSS`). O site injeta `.thumb { width; max-height: <tamanho da conta> !important }`: o feed precisa anular os dois, senão a imagem vaza sobre o post seguinte. |
 
 Bugs do Masonry que este script contorna:
 
