@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.9.3
+
+- The video cover no longer hides the video mark: on Masonry cards it is
+  inserted right after the picture, so the type icon and buttons paint on top;
+  on site pages it copies the thumbnail's border (rule34's blue `.webm-thumb`)
+- Site pages detect video by the `.webm-thumb` class before falling back to tags
+
 ## 0.9.2
 
 - Upgrades (sample, original, GIF) on an `<img>` now go in `srcset` and leave

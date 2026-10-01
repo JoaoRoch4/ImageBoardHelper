@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.9.2
+// @version      0.9.3
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -81,7 +81,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.9.2'
+  const VERSION = '0.9.3'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -415,7 +415,8 @@
   const NATIVE_VIDEO = /\s(video|mp4|webm|animated)\s/i
   const isVideoCard = card => isMasonryCard(card)
     ? hasTypeIcon(card, ICON.video)
-    : NATIVE_VIDEO.test(nativeTags(card)) && !NATIVE_GIF.test(nativeTags(card))
+    : !!card.querySelector('img.webm-thumb') ||   // the site's own video mark
+      (NATIVE_VIDEO.test(nativeTags(card)) && !NATIVE_GIF.test(nativeTags(card)))
   const isGifCard = card => card.dataset.ibhKind === 'gif' || (isMasonryCard(card)
     ? hasTypeIcon(card, ICON.gif)
     : NATIVE_GIF.test(nativeTags(card)))
@@ -539,8 +540,24 @@
     v.addEventListener('error', tryNext)
     tryNext()
 
+    // Site pages mark videos with a border on the thumbnail (rule34: 3px blue
+    // .webm-thumb); give the cover the same border so the mark stays visible.
+    if (!isMasonryCard(card)) {
+      const thumb = card.querySelector('img')
+      if (thumb) {
+        v.style.border = getComputedStyle(thumb).border
+        v.style.boxSizing = 'border-box'
+        v.style.borderRadius = '0'
+      }
+    }
+
     if (getComputedStyle(card).position === 'static') card.style.position = 'relative'
-    card.appendChild(v)
+    // Sit right above the picture. Masonry's type icon and action buttons are
+    // absolutely positioned with no z-index and come later in the card, so they
+    // keep painting on top; appending at the end used to hide the video icon.
+    const picEl = card.querySelector(':scope > .v-image, :scope > img')
+    if (picEl) picEl.after(v)
+    else card.appendChild(v)
   }
 
   function unmountCover(card) {
