@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.9.4
+// @version      0.10.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -66,6 +66,10 @@
  *      for the original file, probing jpg/png/jpeg off-screen first. Sharper
  *      than the sample, at several times the data and memory.
  *
+ *   F. VIDEO SCRUB
+ *      Dragging sideways across a video thumbnail shows the frame at that
+ *      point of the video, seeking the card's cover or one shared <video>.
+ *
  * WHY @grant none: intercepting window.Fancybox and overriding
  * navigator.userAgent both require the page's own realm. Any @grant puts the
  * script in a sandbox where `window` is not the page's window, and both stop
@@ -81,7 +85,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.9.4'
+  const VERSION = '0.10.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -97,6 +101,7 @@
     sharpThumbs:    true,   // enable "thumbnail uses large image" (needs reload)
     videoCovers:    true,   // overlay the real video frame on the card
     gifInline:      true,   // animate GIF cards while they are on screen
+    videoScrub:     true,   // drag sideways on a video thumbnail to preview its frames (needs reload)
     fixFancybox:    true,   // fill empty src in the alternate viewer
     gestures:       true,   // swipe, double tap and pinch
     originalThumbs: false,  // swap visible thumbnails for the original file (heavy, needs reload)
@@ -105,7 +110,7 @@
   }
 
   // Options that only take effect when the app boots.
-  const NEEDS_RELOAD = new Set(['sharpThumbs', 'forceRule34Api', 'originalThumbs', 'nativeFeed'])
+  const NEEDS_RELOAD = new Set(['sharpThumbs', 'forceRule34Api', 'originalThumbs', 'nativeFeed', 'videoScrub'])
 
   const CFG = Object.assign({}, DEFAULTS, readJSON(CFG_KEY, {}))
 
@@ -154,6 +159,7 @@
       filled: 'filled', empty: 'empty',
       coversFmt: (ok, bad, all) => `${ok} ok · ${bad} failed · ${all} videos`,
       tSharp: 'Large thumbnails', tCovers: 'Video covers', tGif: 'Animated GIFs in the grid',
+      tScrub: 'Drag to preview video',
       tFancybox: 'Repair Fancybox', tGestures: 'Touch gestures',
       tOriginal: 'Original thumbnails (heavy)',
       tFeed: 'One-column feed on site pages',
@@ -177,6 +183,7 @@
       filled: 'preenchida', empty: 'vazia',
       coversFmt: (ok, bad, all) => `${ok} ok · ${bad} falha · ${all} vídeos`,
       tSharp: 'Miniatura grande', tCovers: 'Capa de vídeo', tGif: 'GIF animado na grade',
+      tScrub: 'Arrastar p/ prévia do vídeo',
       tFancybox: 'Consertar Fancybox', tGestures: 'Gestos de toque',
       tOriginal: 'Miniatura original (pesado)',
       tFeed: 'Feed de uma coluna no site',
@@ -478,6 +485,16 @@
     }
   }
 
+  // Sit right above the picture. Masonry's type icon and action buttons are
+  // absolutely positioned with no z-index and come later in the card, so they
+  // keep painting on top; appending at the end used to hide the video icon.
+  function placeOverPicture(card, node) {
+    if (getComputedStyle(card).position === 'static') card.style.position = 'relative'
+    const picEl = card.querySelector(':scope > .v-image, :scope > img')
+    if (picEl) picEl.after(node)
+    else card.appendChild(node)
+  }
+
   function mountCover(card) {
     if (card.dataset.ibhCover) return
     const pic = cardPicture(card)
@@ -555,13 +572,7 @@
       }
     }
 
-    if (getComputedStyle(card).position === 'static') card.style.position = 'relative'
-    // Sit right above the picture. Masonry's type icon and action buttons are
-    // absolutely positioned with no z-index and come later in the card, so they
-    // keep painting on top; appending at the end used to hide the video icon.
-    const picEl = card.querySelector(':scope > .v-image, :scope > img')
-    if (picEl) picEl.after(v)
-    else card.appendChild(v)
+    placeOverPicture(card, v)
   }
 
   function unmountCover(card) {
@@ -639,6 +650,7 @@
     if (tracked.has(card)) return
     tracked.add(card)
     if (!STATE.masonry && isMasonryCard(card)) { STATE.masonry = true; touch() }
+    if (CFG.videoScrub && isVideoCard(card)) card.dataset.ibhVideo = '1'   // scrub target, see F
     const video = CFG.videoCovers && isVideoCard(card)
     const gif = CFG.gifInline && isGifCard(card)
     if (!video && !gif) return
@@ -1044,6 +1056,158 @@
   }
 
   // ═══════════════════════════════════════════════════════════
+  // F. Video scrub on the thumbnail
+  //
+  // Dragging a finger sideways across a video card shows the frame at that
+  // point: left edge = start, right edge = end. It seeks the card's own cover
+  // when one is open, otherwise a single shared <video> that is released on
+  // lift, so scrubbing never opens a decoder per card.
+  // ═══════════════════════════════════════════════════════════
+
+  const SCRUB_START_PX = 12   // sideways travel before a drag counts as a scrub
+  let scrub = null            // the drag in progress
+  let scrubClickUntil = 0     // lifting after a scrub must not open the post
+  let sharedScrubVideo = null
+
+  // One seek at a time: while the decoder is busy keep only the latest target,
+  // and apply it on "seeked". fastSeek jumps to the nearest keyframe, which is
+  // what keeps a finger drag responsive on a phone.
+  function seekTo(v, t) {
+    if (v.seeking) { v.dataset.ibhTarget = String(t); return }
+    if (typeof v.fastSeek === 'function') v.fastSeek(t)
+    else v.currentTime = t
+  }
+
+  function hookSeeks(v) {
+    if (v.dataset.ibhSeekHook) return
+    v.dataset.ibhSeekHook = '1'
+    v.addEventListener('seeked', () => {
+      const t = v.dataset.ibhTarget
+      if (t) { delete v.dataset.ibhTarget; seekTo(v, Number(t)) }
+    })
+  }
+
+  function scrubVideoFor(card) {
+    const cover = card.querySelector('video[data-ibh]')
+    if (cover && cover.readyState >= 1) return { video: cover, shared: false }
+
+    const pic = cardPicture(card)
+    const urls = pic ? fileCandidates(pic.src, ['mp4', 'webm']) : []
+    if (!urls.length) return null
+    if (!sharedScrubVideo) {
+      sharedScrubVideo = document.createElement('video')
+      sharedScrubVideo.muted = true
+      sharedScrubVideo.playsInline = true
+      sharedScrubVideo.preload = 'auto'
+      sharedScrubVideo.style.cssText =
+        'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none'
+    }
+    const v = sharedScrubVideo
+    let i = 0
+    v.onerror = () => { if (i < urls.length) v.src = urls[i++] }   // walk the hosts, like covers
+    v.src = urls[i++]
+    placeOverPicture(card, v)
+    return { video: v, shared: true }
+  }
+
+  function startScrub() {
+    const found = scrubVideoFor(scrub.card)
+    if (!found) return false
+    Object.assign(scrub, found, { active: true })
+    hookSeeks(scrub.video)
+    const bar = document.createElement('div')
+    bar.style.cssText =
+      'position:absolute;left:0;bottom:0;height:3px;width:0;background:#5eead4;pointer-events:none'
+    const label = document.createElement('div')
+    label.style.cssText =
+      'position:absolute;left:4px;bottom:6px;padding:1px 5px;border-radius:3px;font:11px/1.4 ' +
+      'ui-monospace,monospace;color:#fff;background:rgba(0,0,0,.6);pointer-events:none'
+    placeOverPicture(scrub.card, bar)
+    placeOverPicture(scrub.card, label)
+    scrub.bar = bar
+    scrub.label = label
+    // A fresh shared video has no duration yet; seek once it knows.
+    scrub.video.addEventListener('loadedmetadata', () => { if (scrub) updateScrub(scrub.x) }, { once: true })
+    return true
+  }
+
+  const clock = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
+
+  function updateScrub(x) {
+    scrub.x = x
+    const r = scrub.card.getBoundingClientRect()
+    const f = Math.min(1, Math.max(0, (x - r.left) / r.width))
+    scrub.bar.style.width = `${f * 100}%`
+    const d = scrub.video.duration
+    if (!Number.isFinite(d) || d <= 0) { scrub.label.textContent = '…'; return }
+    scrub.label.textContent = `${clock(f * d)} / ${clock(d)}`
+    seekTo(scrub.video, f * d)
+  }
+
+  function endScrub() {
+    const { card, video, shared, bar, label } = scrub
+    bar.remove()
+    label.remove()
+    if (shared) {
+      video.onerror = null
+      video.removeAttribute('src')
+      video.load()   // hand the decoder back
+      video.remove()
+    }
+    // A cover keeps the frame where the finger stopped.
+    dbg(`scrub: ${label.textContent} on ${card.tagName.toLowerCase()}`)
+  }
+
+  function onScrubDown(ev) {
+    if (scrub || detailOpen() || insidePanel(ev)) return
+    if (ev.pointerType === 'mouse' && ev.button !== 0) return
+    const card = ev.target.closest && ev.target.closest('[data-ibh-video]')
+    if (!card || card.dataset.ibhKind === 'gif') return
+    scrub = { card, id: ev.pointerId, x0: ev.clientX, y0: ev.clientY, x: ev.clientX, active: false }
+  }
+
+  function onScrubMove(ev) {
+    if (!scrub || ev.pointerId !== scrub.id) return
+    if (!scrub.active) {
+      const dx = Math.abs(ev.clientX - scrub.x0)
+      const dy = Math.abs(ev.clientY - scrub.y0)
+      // Mostly vertical: it is a page scroll, let it go.
+      if (dy > SCRUB_START_PX && dy > dx) { scrub = null; return }
+      if (dx < SCRUB_START_PX) return
+      if (!startScrub()) { scrub = null; return }
+    }
+    updateScrub(ev.clientX)
+  }
+
+  function onScrubUp(ev) {
+    if (!scrub || ev.pointerId !== scrub.id) return
+    if (scrub.active) {
+      endScrub()
+      scrubClickUntil = Date.now() + 400
+    }
+    scrub = null
+  }
+
+  function onScrubClick(ev) {
+    if (Date.now() < scrubClickUntil) {
+      scrubClickUntil = 0
+      ev.stopPropagation()
+      ev.preventDefault()
+    }
+  }
+
+  function installVideoScrub() {
+    if (!CFG.videoScrub) return
+    // On window, like the gestures: listeners on body die with replaceDocument().
+    window.addEventListener('pointerdown', onScrubDown, true)
+    window.addEventListener('pointermove', onScrubMove, true)
+    window.addEventListener('pointerup', onScrubUp, true)
+    window.addEventListener('pointercancel', onScrubUp, true)
+    window.addEventListener('click', onScrubClick, true)
+    info('video scrub active: drag sideways on a video thumbnail')
+  }
+
+  // ═══════════════════════════════════════════════════════════
   // Optional: unlock the API path on rule34
   //
   //   isRule34Firefox() = hostname == "rule34.xxx"
@@ -1332,6 +1496,7 @@
     body.appendChild(toggle('nativeFeed', t('tFeed'), t('noteReload')))
     body.appendChild(toggle('videoCovers', t('tCovers')))
     body.appendChild(toggle('gifInline', t('tGif')))
+    body.appendChild(toggle('videoScrub', t('tScrub'), t('noteReload')))
     body.appendChild(toggle('fixFancybox', t('tFancybox')))
     body.appendChild(toggle('gestures', t('tGestures')))
     body.appendChild(toggle('forceRule34Api', t('tApi'), t('noteReload')))
@@ -1443,10 +1608,15 @@
   // stylesheet lacks it (favorites), where the mark is added back.
   const NATIVE_MARK_CSS = '.image-list img.webm-thumb { border: 3px solid rgb(0, 0, 255); box-sizing: border-box; }'
 
+  // Without this the browser claims a sideways drag as a (no-op) pan and sends
+  // pointercancel. Vertical scrolling and pinch zoom stay with the browser.
+  const SCRUB_CSS = '[data-ibh-video] { touch-action: pan-y pinch-zoom; }'
+
   function injectPageCSS() {
     if (document.querySelector('style[data-ibh]')) return
     const style = el('style', { 'data-ibh': '1' })
-    style.textContent = '.img_detail_cont { touch-action: pan-y; }' + NATIVE_MARK_CSS + (CFG.nativeFeed ? FEED_CSS : '')
+    style.textContent = '.img_detail_cont { touch-action: pan-y; }' + NATIVE_MARK_CSS +
+      (CFG.videoScrub ? SCRUB_CSS : '') + (CFG.nativeFeed ? FEED_CSS : '')
     ;(document.head || document.documentElement).appendChild(style)
   }
 
@@ -1470,6 +1640,7 @@
   applyRule34ApiUnlock()
   hookFancybox()
   installGestures()
+  installVideoScrub()
   logSnapshot()
   if (CFG.originalThumbs) info('original thumbnails on: visible thumbnails load the full file')
   if (CFG.nativeFeed) info('one-column feed on: site pages show samples at full width')

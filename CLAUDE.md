@@ -65,10 +65,11 @@ Bugs do Masonry que este script contorna:
 7. **C.** Fancybox — `repairItems`, `wrapFancybox`, `installExtensionFallback`
 8. **D.** Gestos — ponteiros, swipe, toque duplo, pinça
 9. **E.** Miniatura original e feed nativo — `upgradeToOriginal`, `upgradeCandidates`, `sampleCandidates`, `probeOriginal`, `scanThumbs`
-10. Opcional: `applyRule34ApiUnlock`
-11. Diagnóstico — `probeVideoUrls`, `logSnapshot`
-12. Painel — Shadow DOM, `renderStatus`, `copyLog`
-13. Arranque e `window.__ibh`
+10. **F.** Prévia por arrasto na miniatura de vídeo — `onScrubDown/Move/Up`, `scrubVideoFor`, `seekTo`
+11. Opcional: `applyRule34ApiUnlock`
+12. Diagnóstico — `probeVideoUrls`, `logSnapshot`
+13. Painel — Shadow DOM, `renderStatus`, `copyLog`
+14. Arranque e `window.__ibh`
 
 ---
 
@@ -161,6 +162,6 @@ node tools/ffrdp.js eval rule34 'window.__ibh.log()'   # aba por índice ou trec
 ## Tarefas abertas
 
 - `HOSTS` só tem o rule34 mapeado. safebooru, xbooru e realbooru podem ter mirrors próprios; descobrir com **Testar URLs** e preencher.
-- Preview de vídeo no hover e no toque longo, reaproveitando um único elemento `<video>` — um por card derruba o Chrome do Android.
+- Prévia tocando (não só frames) no toque longo, reaproveitando o `<video>` compartilhado da seção F — um por card derruba o Chrome do Android.
 - GIF sem ícone no raspador do rule34: as tags só existem no HTML que o Masonry baixa. Interceptar o `fetch` da listagem e montar um mapa hash → tags resolveria isso e o item abaixo de uma vez.
 - Downloads no caminho do raspador continuam usando o `fileUrl` errado do app. Investigar se dá para corrigir interceptando `fetch` e reescrevendo o host das miniaturas no HTML antes do app parsear.

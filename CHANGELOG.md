@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.10.0
+
+- Video scrub (`videoScrub`, on): dragging a finger sideways across a video
+  thumbnail shows the frame at that point (left = start, right = end), with a
+  progress bar and the time. Works on Masonry cards and on the site's own
+  pages. It seeks the card's cover when one is open, otherwise a single shared
+  `<video>` released on lift; one seek at a time with `fastSeek`. Vertical
+  drags still scroll, and lifting after a scrub does not open the post
+
 ## 0.9.4
 
 - Site pages: real videos (tags `video`, `mp4`, `webm`) get the site's blue
