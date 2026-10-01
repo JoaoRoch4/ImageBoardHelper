@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.13.0
+
+- The thumbnail preview is now **hold for random frames**: holding a finger on
+  a video thumbnail for 0.25 s jumps between random points of the video (5% to
+  95%) every 0.4 s until the finger lifts, with the bar and time showing where
+  it is. Lifting does not open the post or the long-press menu; moving first
+  counts as a scroll. Replaces the sideways drag and the 2x autoplay
+- rule34 video hosts reordered by speed measured from the phone: `api-cdn`
+  (0.4 s to first byte, 0.3 s per MB, all test files present) now comes first;
+  `api-cdn-mp4`, previously first, was the slowest (1.9 s / 2.9 s). Covers and
+  thumbnail previews start several times faster
+- The shared preview video takes a slot of the decoder budget, closing another
+  card's cover if all are taken, instead of waiting for a free decoder; it is
+  reserved only once a hold is confirmed, so scrolling does not churn covers
+
 ## 0.12.0
 
 - Panel button **Free memory & cache**: closes video covers and the preview,

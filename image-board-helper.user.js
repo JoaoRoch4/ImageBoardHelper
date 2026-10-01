@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.12.0
+// @version      0.13.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -66,9 +66,9 @@
  *      for the original file, probing jpg/png/jpeg off-screen first. Sharper
  *      than the sample, at several times the data and memory.
  *
- *   F. VIDEO SCRUB
- *      Dragging sideways across a video thumbnail shows the frame at that
- *      point of the video, seeking the card's cover or one shared <video>.
+ *   F. VIDEO PREVIEW ON HOLD
+ *      Holding a finger on a video thumbnail shows random frames of the video
+ *      until it lifts, seeking the card's cover or one shared <video>.
  *
  * WHY @grant none: intercepting window.Fancybox and overriding
  * navigator.userAgent both require the page's own realm. Any @grant puts the
@@ -85,7 +85,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.12.0'
+  const VERSION = '0.13.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -101,7 +101,7 @@
     sharpThumbs:    true,   // enable "thumbnail uses large image" (needs reload)
     videoCovers:    true,   // overlay the real video frame on the card
     gifInline:      true,   // animate GIF cards while they are on screen
-    videoScrub:     true,   // drag sideways on a video thumbnail to preview its frames (needs reload)
+    videoScrub:     true,   // hold a video thumbnail to see random frames (needs reload)
     fixFancybox:    true,   // fill empty src in the alternate viewer
     gestures:       true,   // swipe, double tap and pinch
     originalThumbs: false,  // swap visible thumbnails for the original file (heavy, needs reload)
@@ -159,7 +159,7 @@
       filled: 'filled', empty: 'empty',
       coversFmt: (ok, bad, all) => `${ok} ok · ${bad} failed · ${all} videos`,
       tSharp: 'Large thumbnails', tCovers: 'Video covers', tGif: 'Animated GIFs in the grid',
-      tScrub: 'Drag to preview video',
+      tScrub: 'Hold for video frames',
       tFancybox: 'Repair Fancybox', tGestures: 'Touch gestures',
       tOriginal: 'Original thumbnails (heavy)',
       tFeed: 'One-column feed on site pages',
@@ -183,7 +183,7 @@
       filled: 'preenchida', empty: 'vazia',
       coversFmt: (ok, bad, all) => `${ok} ok · ${bad} falha · ${all} vídeos`,
       tSharp: 'Miniatura grande', tCovers: 'Capa de vídeo', tGif: 'GIF animado na grade',
-      tScrub: 'Arrastar p/ prévia do vídeo',
+      tScrub: 'Segurar p/ frames do vídeo',
       tFancybox: 'Consertar Fancybox', tGestures: 'Gestos de toque',
       tOriginal: 'Miniatura original (pesado)',
       tFeed: 'Feed de uma coluna no site',
@@ -305,14 +305,17 @@
     'rule34.xxx': {
       thumbsOnly: ['miami.rule34.xxx', 'ny.rule34.xxx'],
       fallback: 'https://wimg.rule34.xxx/images',
-      // Video mirrors, tried in order. wimg answers 403 for video files, so
-      // these come first. Post pages link to api-cdn-us-mp4 and ahri2mp4.
+      // Video mirrors, fastest first. wimg answers 403 for video files. Order
+      // measured from the phone's network (time to first byte / 1 MB):
+      // api-cdn 0.4 s / 0.3 s, nymp4 0.9 / 1.7, api-cdn-us-mp4 1.0 / 1.8,
+      // ahri2mp4 1.3 / 2.2, ws-cdn-video 1.5 / 2.7, api-cdn-mp4 1.9 / 2.9.
       videoHosts: [
-        'https://api-cdn-mp4.rule34.xxx/images',
+        'https://api-cdn.rule34.xxx/images',
+        'https://nymp4.rule34.xxx/images',
         'https://api-cdn-us-mp4.rule34.xxx/images',
         'https://ahri2mp4.rule34.xxx/images',
-        'https://nymp4.rule34.xxx/images',
         'https://ws-cdn-video.rule34.xxx/images',
+        'https://api-cdn-mp4.rule34.xxx/images',
       ],
     },
   }
@@ -639,7 +642,7 @@
           else delete card.dataset.ibhSeen
           if (isVideoCard(card) && card.dataset.ibhKind !== 'gif') {
             if (e.isIntersecting) { if (CFG.videoCovers) mountCover(card) }
-            else { stopPreview(card); unmountCover(card) }
+            else unmountCover(card)
           } else {
             e.isIntersecting ? playGif(card) : stopGif(card)
           }
@@ -651,12 +654,10 @@
     if (tracked.has(card)) return
     tracked.add(card)
     if (!STATE.masonry && isMasonryCard(card)) { STATE.masonry = true; touch() }
-    if (CFG.videoScrub && isVideoCard(card)) card.dataset.ibhVideo = '1'   // scrub target, see F
-    const isVideo = isVideoCard(card)
-    const video = CFG.videoCovers && isVideo
+    if (CFG.videoScrub && isVideoCard(card)) card.dataset.ibhVideo = '1'   // hold-preview target, see F
+    const video = CFG.videoCovers && isVideoCard(card)
     const gif = CFG.gifInline && isGifCard(card)
-    // Scrub-only video cards are still watched, so a preview stops off screen.
-    if (!video && !gif && !(CFG.videoScrub && isVideo)) return
+    if (!video && !gif) return
     if (video) { STATE.covers.tracked++; touch() }
     if (viewport) viewport.observe(card)
     else { card.dataset.ibhSeen = '1'; if (video) mountCover(card); else if (gif) playGif(card) }
@@ -1060,57 +1061,40 @@
   }
 
   // ═══════════════════════════════════════════════════════════
-  // F. Video scrub on the thumbnail
+  // F. Video preview on hold
   //
-  // Dragging a finger sideways across a video card shows the frame at that
-  // point: left edge = start, right edge = end. It seeks the card's own cover
-  // when one is open, otherwise a single shared <video> that is released on
-  // lift, so scrubbing never opens a decoder per card.
+  // Holding a finger on a video thumbnail shows random frames of the video,
+  // one after another, until the finger lifts. It seeks the card's own cover
+  // when one is open, otherwise a single shared <video> released on lift, so
+  // it never opens a decoder per card.
   // ═══════════════════════════════════════════════════════════
 
-  const SCRUB_START_PX = 8    // sideways travel before a drag counts as a scrub
-  let scrub = null            // the drag in progress
-  let scrubClickUntil = 0     // lifting after a scrub must not open the post
-  let sharedScrubVideo = null
+  const HOLD_MS = 250          // press this long to start; under the browser's long-press menu
+  const HOLD_SLOP = 10         // moving further first means it was a scroll
+  const FRAME_DWELL_MS = 400   // how long each frame stays before the next jump
+  let hold = null              // the press in progress
+  let holdClickUntil = 0       // lifting after a preview must not open the post
+  let sharedPreviewVideo = null
 
-  // One seek at a time: while the decoder is busy keep only the latest target,
-  // and apply it on "seeked". fastSeek jumps to the nearest keyframe, which is
-  // what keeps a finger drag responsive on a phone.
-  function seekTo(v, t) {
-    if (v.seeking) { v.dataset.ibhTarget = String(t); return }
-    if (typeof v.fastSeek === 'function') v.fastSeek(t)
-    else v.currentTime = t
-  }
-
-  function hookSeeks(v) {
-    if (v.dataset.ibhSeekHook) return
-    v.dataset.ibhSeekHook = '1'
-    v.addEventListener('seeked', () => {
-      const t = v.dataset.ibhTarget
-      if (t) { delete v.dataset.ibhTarget; seekTo(v, Number(t)) }
-    })
-  }
-
-  // Called on touch-down, before the drag is known to be a scrub, so the file
-  // is already on its way when the finger starts moving. A cover counts even
-  // while still loading: it began downloading when the card scrolled in, so it
-  // is ahead of any fresh request for the same file.
-  function scrubVideoFor(card) {
+  // Called on touch-down, before the press is known to be a hold, so the file
+  // is already on its way when the preview starts. A cover counts even while
+  // still loading: it began downloading when the card scrolled in.
+  function previewVideoFor(card) {
     const cover = card.querySelector('video[data-ibh]')
     if (cover && cover.getAttribute('src')) return { video: cover, shared: false }
 
     const pic = cardPicture(card)
     const urls = pic ? fileCandidates(pic.src, ['mp4', 'webm']) : []
     if (!urls.length) return null
-    if (!sharedScrubVideo) {
-      sharedScrubVideo = document.createElement('video')
-      sharedScrubVideo.muted = true
-      sharedScrubVideo.playsInline = true
-      sharedScrubVideo.style.cssText =
+    if (!sharedPreviewVideo) {
+      sharedPreviewVideo = document.createElement('video')
+      sharedPreviewVideo.muted = true
+      sharedPreviewVideo.playsInline = true
+      sharedPreviewVideo.style.cssText =
         'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none'
     }
-    const v = sharedScrubVideo
-    v.preload = 'metadata'   // only the index until the drag is confirmed
+    const v = sharedPreviewVideo
+    v.preload = 'metadata'   // only the index until the hold is confirmed
     let i = 0
     v.onerror = () => { if (i < urls.length) v.src = urls[i++] }   // walk the hosts, like covers
     v.src = urls[i++]
@@ -1122,6 +1106,23 @@
     v.removeAttribute('src')
     v.load()   // stop the download and hand the decoder back
     v.remove()
+    if (sharedHoldsSlot) { sharedHoldsSlot = false; releaseCover() }   // an evicted cover can come back
+  }
+
+  // The shared video counts against the same decoder budget as covers. With
+  // every slot taken it would sit waiting for a decoder, so close the cover of
+  // another card instead and queue it to come back when the preview ends.
+  let sharedHoldsSlot = false
+
+  function reserveDecoder(card) {
+    if (sharedHoldsSlot) return
+    sharedHoldsSlot = true
+    liveCovers++
+    if (liveCovers <= COVER_MAX_LIVE) return
+    const victim = [...document.querySelectorAll('[data-ibh-cover]')].find(c => c !== card)
+    if (!victim) return
+    unmountCover(victim)   // releaseCover inside sees the budget still full: nothing remounts
+    if (victim.dataset.ibhSeen) coverQueue.add(victim)
   }
 
   function progressBar() {
@@ -1131,155 +1132,111 @@
     return bar
   }
 
-  function startScrub() {
-    const found = scrub.found
-    if (!found) return false
-    Object.assign(scrub, found, { active: true })
-    scrub.video.pause()
-    if (found.shared) {
-      found.video.preload = 'auto'   // confirmed: buffer ahead so later seeks land faster
-      placeOverPicture(scrub.card, found.video)
-    }
-    hookSeeks(scrub.video)
-    const bar = progressBar()
-    const label = document.createElement('div')
-    label.style.cssText =
-      'position:absolute;left:4px;bottom:6px;padding:1px 5px;border-radius:3px;font:11px/1.4 ' +
-      'ui-monospace,monospace;color:#fff;background:rgba(0,0,0,.6);pointer-events:none'
-    placeOverPicture(scrub.card, bar)
-    placeOverPicture(scrub.card, label)
-    scrub.bar = bar
-    scrub.label = label
-    // A fresh shared video has no duration yet; seek once it knows.
-    scrub.video.addEventListener('loadedmetadata', () => { if (scrub) updateScrub(scrub.x) }, { once: true })
-    return true
-  }
-
   const clock = s => `${Math.floor(s / 60)}:${String(Math.floor(s % 60)).padStart(2, '0')}`
 
-  // After the finger lifts, the thumbnail keeps playing on its own from where
-  // it stopped: muted, looping, sped up. One at a time — it is the same video
-  // element the scrub used, so no extra decoder is opened.
-  const PREVIEW_RATE = 2
-  let preview = null
+  // Jump to a random point between 5% and 95%, so credits and black frames at
+  // the ends are skipped. fastSeek lands on the nearest keyframe: cheap to decode.
+  function nextFrame() {
+    if (!hold || !hold.active) return
+    const v = hold.video
+    const d = v.duration
+    if (!Number.isFinite(d) || d <= 0) { hold.label.textContent = '…'; return }   // loadedmetadata calls back
+    const t = d * (0.05 + 0.9 * Math.random())
+    hold.bar.style.width = `${(t / d) * 100}%`
+    hold.label.textContent = `${clock(t)} / ${clock(d)}`
+    hold.frames++
+    if (typeof v.fastSeek === 'function') v.fastSeek(t)
+    else v.currentTime = t
+  }
 
-  function startPreview(card, video, shared, bar) {
-    const onTime = () => {
-      if (video.duration) bar.style.width = `${(video.currentTime / video.duration) * 100}%`
+  function startHold() {
+    const h = hold
+    if (!h || !h.found) { finishHold(); return }
+    h.active = true
+    h.video = h.found.video
+    h.video.pause()
+    if (h.found.shared) {
+      // Only now, not on touch-down: every scroll starts with a touch, and
+      // evicting a cover for each one would keep reloading covers.
+      reserveDecoder(h.card)
+      h.video.preload = 'auto'   // confirmed: buffer ahead so the jumps land faster
+      placeOverPicture(h.card, h.video)
     }
-    video.addEventListener('timeupdate', onTime)
-    video.loop = true
-    video.defaultPlaybackRate = video.playbackRate = PREVIEW_RATE   // survives a reload of the source
-    video.style.opacity = '1'
-    const played = video.play()
-    if (played && played.catch) played.catch(e => dbg(`preview: ${describeError(e)}`))
-    preview = { card, video, shared, bar, onTime }
+    h.video.style.opacity = '1'
+    h.bar = progressBar()
+    h.label = document.createElement('div')
+    h.label.style.cssText =
+      'position:absolute;left:4px;bottom:6px;padding:1px 5px;border-radius:3px;font:11px/1.4 ' +
+      'ui-monospace,monospace;color:#fff;background:rgba(0,0,0,.6);pointer-events:none'
+    placeOverPicture(h.card, h.bar)
+    placeOverPicture(h.card, h.label)
+    // Each landed seek shows its frame for a moment, then jumps again.
+    h.onSeeked = () => { h.frameTimer = setTimeout(nextFrame, FRAME_DWELL_MS) }
+    h.onMeta = () => nextFrame()
+    h.video.addEventListener('seeked', h.onSeeked)
+    h.video.addEventListener('loadedmetadata', h.onMeta)
+    nextFrame()
   }
 
-  /** Stop the running preview; with keepVideo the caller takes the element over. */
-  function stopPreview(card, keepVideo) {
-    if (!preview || (card && preview.card !== card)) return null
-    const { video, shared, bar, onTime } = preview
-    preview = null
-    video.removeEventListener('timeupdate', onTime)
-    video.pause()
-    video.loop = false
-    video.defaultPlaybackRate = video.playbackRate = 1
-    bar.remove()
-    if (keepVideo) return { video, shared }
-    if (shared) releaseShared(video)
-    return null
+  /** End the press: tear down a running preview, or drop the warm-up of a non-hold. */
+  function finishHold() {
+    const h = hold
+    if (!h) return
+    hold = null
+    clearTimeout(h.timer)
+    clearTimeout(h.frameTimer)
+    if (h.video) {
+      h.video.removeEventListener('seeked', h.onSeeked)
+      h.video.removeEventListener('loadedmetadata', h.onMeta)
+    }
+    if (h.bar) h.bar.remove()
+    if (h.label) h.label.remove()
+    if (h.found && h.found.shared) releaseShared(h.found.video)
+    if (h.active) {
+      holdClickUntil = Date.now() + 400
+      dbg(`hold preview: ${h.frames} frames on ${h.card.tagName.toLowerCase()}`)
+    }
   }
 
-  function updateScrub(x) {
-    scrub.x = x
-    const r = scrub.card.getBoundingClientRect()
-    const f = Math.min(1, Math.max(0, (x - r.left) / r.width))
-    scrub.bar.style.width = `${f * 100}%`
-    const d = scrub.video.duration
-    if (!Number.isFinite(d) || d <= 0) { scrub.label.textContent = '…'; return }
-    scrub.label.textContent = `${clock(f * d)} / ${clock(d)}`
-    seekTo(scrub.video, f * d)
-  }
-
-  function endScrub() {
-    const { card, video, shared, bar, label } = scrub
-    label.remove()
-    dbg(`scrub: ${label.textContent} on ${card.tagName.toLowerCase()}, playing at ${PREVIEW_RATE}x`)
-    startPreview(card, video, shared, bar)   // the scrub bar becomes the playback bar
-  }
-
-  function onScrubDown(ev) {
-    if (scrub || detailOpen() || insidePanel(ev)) return
+  function onHoldDown(ev) {
+    if (hold || detailOpen() || insidePanel(ev)) return
     if (ev.pointerType === 'mouse' && ev.button !== 0) return
     const card = ev.target.closest && ev.target.closest('[data-ibh-video]')
     if (!card || card.dataset.ibhKind === 'gif') return
-    scrub = { card, id: ev.pointerId, x0: ev.clientX, y0: ev.clientY, x: ev.clientX, active: false }
-    // Touching the card that is already playing reuses its video; touching
-    // another card stops that preview first.
-    const inherited = stopPreview(card, true)
-    stopPreview()
-    scrub.inherited = !!inherited
-    scrub.found = inherited || scrubVideoFor(card)   // warm up now; dropped if this turns into a scroll or a tap
+    hold = { card, id: ev.pointerId, x0: ev.clientX, y0: ev.clientY, active: false, frames: 0 }
+    hold.found = previewVideoFor(card)   // warm up now; dropped if this is a scroll or a tap
+    hold.timer = setTimeout(startHold, HOLD_MS)
   }
 
-  // The touch was not a scrub: stop a warm-up download that nothing will use.
-  // A preview that was playing resumes (the touch was only a scroll).
-  function dropScrub() {
-    if (scrub && !scrub.active && scrub.found) {
-      const { video, shared } = scrub.found
-      if (scrub.inherited) {
-        const bar = progressBar()
-        placeOverPicture(scrub.card, bar)
-        startPreview(scrub.card, video, shared, bar)
-      } else if (shared) {
-        releaseShared(video)
-      }
-    }
-    scrub = null
+  function onHoldMove(ev) {
+    if (!hold || hold.active || ev.pointerId !== hold.id) return
+    if (Math.hypot(ev.clientX - hold.x0, ev.clientY - hold.y0) > HOLD_SLOP) finishHold()   // a scroll
   }
 
-  function onScrubMove(ev) {
-    if (!scrub || ev.pointerId !== scrub.id) return
-    if (!scrub.active) {
-      const dx = Math.abs(ev.clientX - scrub.x0)
-      const dy = Math.abs(ev.clientY - scrub.y0)
-      // Mostly vertical: it is a page scroll, let it go.
-      if (dy > SCRUB_START_PX && dy > dx) { dropScrub(); return }
-      if (dx < SCRUB_START_PX) return
-      if (!startScrub()) { dropScrub(); return }
-    }
-    updateScrub(ev.clientX)
+  function onHoldUp(ev) {
+    if (hold && ev.pointerId === hold.id) finishHold()   // a plain tap opens the post as usual
   }
 
-  function onScrubUp(ev) {
-    if (!scrub || ev.pointerId !== scrub.id) return
-    if (scrub.active) {
-      endScrub()
-      scrubClickUntil = Date.now() + 400
-      scrub = null
-    } else {
-      dropScrub()   // a plain tap opens the post as usual
-    }
-  }
-
-  function onScrubClick(ev) {
-    if (Date.now() < scrubClickUntil) {
-      scrubClickUntil = 0
+  // Lifting after a preview, and the browser's long-press menu during it, must
+  // not reach the page.
+  function onHoldSwallow(ev) {
+    if ((hold && hold.active) || Date.now() < holdClickUntil) {
+      if (ev.type === 'click') holdClickUntil = 0
       ev.stopPropagation()
       ev.preventDefault()
     }
   }
 
-  function installVideoScrub() {
+  function installVideoHold() {
     if (!CFG.videoScrub) return
     // On window, like the gestures: listeners on body die with replaceDocument().
-    window.addEventListener('pointerdown', onScrubDown, true)
-    window.addEventListener('pointermove', onScrubMove, true)
-    window.addEventListener('pointerup', onScrubUp, true)
-    window.addEventListener('pointercancel', onScrubUp, true)
-    window.addEventListener('click', onScrubClick, true)
-    info('video scrub active: drag sideways on a video thumbnail')
+    window.addEventListener('pointerdown', onHoldDown, true)
+    window.addEventListener('pointermove', onHoldMove, true)
+    window.addEventListener('pointerup', onHoldUp, true)
+    window.addEventListener('pointercancel', onHoldUp, true)
+    window.addEventListener('click', onHoldSwallow, true)
+    window.addEventListener('contextmenu', onHoldSwallow, true)
+    info('video hold preview active: hold a video thumbnail for random frames')
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -1357,7 +1314,7 @@
    */
   async function freeMemory() {
     const n = { covers: 0, gifs: 0, images: 0, caches: 0 }
-    stopPreview()
+    finishHold()
     document.querySelectorAll('[data-ibh-cover]').forEach(card => { unmountCover(card); n.covers++ })
     coverQueue.clear()
     // Animated GIFs keep every decoded frame; back to the still.
@@ -1723,15 +1680,16 @@
   // stylesheet lacks it (favorites), where the mark is added back.
   const NATIVE_MARK_CSS = '.image-list img.webm-thumb { border: 3px solid rgb(0, 0, 255); box-sizing: border-box; }'
 
-  // Without this the browser claims a sideways drag as a (no-op) pan and sends
-  // pointercancel. Vertical scrolling and pinch zoom stay with the browser.
-  const SCRUB_CSS = '[data-ibh-video] { touch-action: pan-y pinch-zoom; }'
+  // Holding a video thumbnail must not select it, drag the image or pop the
+  // touch callout while the preview runs.
+  const HOLD_CSS = '[data-ibh-video], [data-ibh-video] img { user-select: none; ' +
+    '-webkit-user-select: none; -webkit-touch-callout: none; -webkit-user-drag: none; }'
 
   function injectPageCSS() {
     if (document.querySelector('style[data-ibh]')) return
     const style = el('style', { 'data-ibh': '1' })
     style.textContent = '.img_detail_cont { touch-action: pan-y; }' + NATIVE_MARK_CSS +
-      (CFG.videoScrub ? SCRUB_CSS : '') + (CFG.nativeFeed ? FEED_CSS : '')
+      (CFG.videoScrub ? HOLD_CSS : '') + (CFG.nativeFeed ? FEED_CSS : '')
     ;(document.head || document.documentElement).appendChild(style)
   }
 
@@ -1755,7 +1713,7 @@
   applyRule34ApiUnlock()
   hookFancybox()
   installGestures()
-  installVideoScrub()
+  installVideoHold()
   logSnapshot()
   if (CFG.originalThumbs) info('original thumbnails on: visible thumbnails load the full file')
   if (CFG.nativeFeed) info('one-column feed on: site pages show samples at full width')

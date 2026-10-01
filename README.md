@@ -78,7 +78,7 @@ All of them live in the panel and are stored in `localStorage` under `IBH_CFG`.
 |---|---|---|
 | `sharpThumbs` | on | enables "thumbnail uses large image" (needs reload) |
 | `videoCovers` | on | overlays the real video frame, on Masonry cards and on the site's own pages |
-| `videoScrub` | on | drag a finger sideways across a video thumbnail to preview its frames; on lift it keeps playing on its own at 2x, on Masonry and on the site's own pages (needs reload) |
+| `videoScrub` | on | hold a finger on a video thumbnail to see random frames of the video until you lift it, on Masonry and on the site's own pages (needs reload) |
 | `gifInline` | on | GIF cards animate while on screen and go back to the still when they leave |
 | `fixFancybox` | on | fills empty `src` in Fancybox |
 | `gestures` | on | swipe, double tap and pinch |
