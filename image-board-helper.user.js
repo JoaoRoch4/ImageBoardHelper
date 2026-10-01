@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.8.1
+// @version      0.8.2
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -81,7 +81,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.8.1'
+  const VERSION = '0.8.2'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -359,7 +359,8 @@
     if (!thumbUrl) return null
     const m = thumbUrl.replace(/\?.*$/, '')
       .match(/\/(?:thumbnails|samples)\/(.+)\/(?:thumbnail|sample)_([^/]+)\.(?:jpe?g|png)$/i)
-    return m ? { dir: m[1], hash: m[2] } : null
+    // rule34 serves paths like //thumbnails//2389/; keep DIR free of extra slashes.
+    return m ? { dir: m[1].replace(/^\/+|\/+$/g, ''), hash: m[2] } : null
   }
 
   /** URLs to try, most likely first. */
@@ -400,17 +401,58 @@
   const hasTypeIcon = (card, d) =>
     [...card.querySelectorAll('.posts-image-type path')].some(p => p.getAttribute('d') === d)
   const isVideoCard = card => hasTypeIcon(card, ICON.video)
-  const isGifCard = card => hasTypeIcon(card, ICON.gif)
+  const isGifCard = card => hasTypeIcon(card, ICON.gif) || card.dataset.ibhKind === 'gif'
+
+  // Masonry's default layout draws cards with Vuetify's <v-img>: a div with a
+  // background-image and no <img> at all. Only the "virtual" and "justified"
+  // layouts use <img>. Read and replace the picture through either one.
+  function cardPicture(card) {
+    const img = card.querySelector('img')
+    if (img) return img.src ? { src: img.currentSrc || img.src, set: url => { img.src = url } } : null
+    const bg = card.querySelector('.v-image__image')
+    const m = bg && bg.style.backgroundImage.match(/url\(["']?(.*?)["']?\)/)
+    return m ? { src: m[1], set: url => { bg.style.backgroundImage = `url("${url}")` } } : null
+  }
+
+  // <v-img> only paints its background once the thumbnail has loaded, so a
+  // card can be on screen with no picture yet. Look again a few times.
+  function whenPictured(card, fn, tries = 0) {
+    if (cardPicture(card)) return fn(card)
+    if (tries >= 8 || !card.dataset.ibhSeen) return
+    setTimeout(() => whenPictured(card, fn, tries + 1), 500)
+  }
+
+  // Firefox for Android decodes about four videos at once on a mid-range phone;
+  // past that, new <video> elements sit at "metadata" forever or fail with a
+  // decode error. Keep covers under the limit, with one decoder spare for the
+  // viewer, and hand freed slots to cards still waiting on screen.
+  const COVER_MAX_LIVE = 3
+  let liveCovers = 0
+  const coverQueue = new Set()
+
+  function releaseCover() {
+    liveCovers = Math.max(0, liveCovers - 1)
+    for (const card of coverQueue) {
+      if (liveCovers >= COVER_MAX_LIVE) break
+      coverQueue.delete(card)
+      if (card.isConnected && card.dataset.ibhSeen) mountCover(card)
+    }
+  }
 
   function mountCover(card) {
     if (card.dataset.ibhCover) return
-    const img = card.querySelector('img')
-    if (!img || !img.src) return
+    // Masonry's rule34 scraper labels posts as video by tag, so some GIFs carry
+    // the video icon. Once a card proved to be one, go straight to the GIF path.
+    if (card.dataset.ibhKind === 'gif') { if (CFG.gifInline) playGif(card); return }
+    const pic = cardPicture(card)
+    if (!pic) { whenPictured(card, mountCover); return }
+    if (liveCovers >= COVER_MAX_LIVE) { coverQueue.add(card); return }
 
-    const urls = fileCandidates(img.src, ['mp4', 'webm'])
+    const urls = fileCandidates(pic.src, ['mp4', 'webm'])
     if (!urls.length) { dbg('video card outside the derivable pattern'); return }
 
     card.dataset.ibhCover = '1'
+    liveCovers++
     const v = document.createElement('video')
     v.dataset.ibh = '1'
     v.muted = true
@@ -420,16 +462,29 @@
       'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;' +
       'border-radius:4px;pointer-events:none;opacity:0;transition:opacity .2s'
 
+    const giveUp = () => {
+      v.remove()
+      delete card.dataset.ibhCover
+      releaseCover()
+    }
+
     // Walk the candidate hosts until one answers, instead of giving up on the
     // first 404 — that was what made covers vanish without a trace.
     let i = 0
     const tryNext = () => {
+      // A decode error means the file was there but no decoder was free; other
+      // hosts would fail the same way. The next time the card scrolls in retries.
+      if (v.error && v.error.code === 3) {
+        giveUp()
+        dbg(`cover: no decoder free for ${pic.src}`)
+        return
+      }
       if (i >= urls.length) {
-        v.remove()
-        delete card.dataset.ibhCover
-        STATE.covers.failed++
-        dbg(`no host answered for ${img.src}`)
-        touch()
+        giveUp()
+        card.dataset.ibhKind = 'gif'
+        dbg(`no video host answered for ${pic.src}; trying it as a GIF`)
+        if (CFG.gifInline) playGif(card)
+        else { STATE.covers.failed++; touch() }
         return
       }
       v.src = `${urls[i++]}#t=1`   // media fragment: jump straight to the frame
@@ -449,11 +504,14 @@
   }
 
   function unmountCover(card) {
+    coverQueue.delete(card)
     const v = card.querySelector('video[data-ibh]')
     if (!v) return
-    v.src = ''   // hand the decoder back; Android has few of them
+    v.removeAttribute('src')
+    v.load()   // hand the decoder back; Android has few of them
     v.remove()
     delete card.dataset.ibhCover
+    releaseCover()
   }
 
   // GIF cards show a still (sample or thumbnail .jpg). While on screen, swap in
@@ -461,9 +519,9 @@
   // out, because animated GIFs hold every decoded frame in memory.
   function playGif(card) {
     if (card.dataset.ibhGif) return   // loading, playing or failed
-    const img = card.querySelector('img')
-    if (!img || !img.src) return
-    const urls = fileCandidates(img.currentSrc || img.src, ['gif'])
+    const pic = cardPicture(card)
+    if (!pic) { whenPictured(card, playGif); return }
+    const urls = fileCandidates(pic.src, ['gif'])
     if (!urls.length) { dbg('gif card outside the derivable pattern'); return }
 
     card.dataset.ibhGif = 'loading'
@@ -473,16 +531,18 @@
       if (card.dataset.ibhGif !== 'loading') return   // scrolled away meanwhile
       if (i >= urls.length) {
         card.dataset.ibhGif = 'failed'
-        dbg(`gif: no host answered for ${img.src}`)
+        if (card.dataset.ibhKind === 'gif') { STATE.covers.failed++; touch() }
+        dbg(`gif: no host answered for ${pic.src}`)
         return
       }
       probe.src = urls[i++]
     }
     probe.onload = () => {
       if (card.dataset.ibhGif !== 'loading') return
-      img.dataset.ibhStill = img.src
-      img.src = probe.src
+      card.dataset.ibhStill = pic.src
+      cardPicture(card).set(probe.src)
       card.dataset.ibhGif = 'playing'
+      if (card.dataset.ibhKind === 'gif') { STATE.covers.ok++; touch() }
       dbg(`gif: playing ${probe.src}`)
     }
     probe.onerror = tryNext
@@ -491,9 +551,9 @@
 
   function stopGif(card) {
     const state = card.dataset.ibhGif
-    if (state === 'playing') {
-      const img = card.querySelector('img')
-      if (img && img.dataset.ibhStill) img.src = img.dataset.ibhStill
+    if (state === 'playing' && card.dataset.ibhStill) {
+      const pic = cardPicture(card)
+      if (pic) pic.set(card.dataset.ibhStill)
     }
     if (state === 'playing' || state === 'loading') delete card.dataset.ibhGif
   }
@@ -503,8 +563,13 @@
     ? new IntersectionObserver(entries => {
         for (const e of entries) {
           const card = e.target
-          if (isVideoCard(card)) e.isIntersecting ? mountCover(card) : unmountCover(card)
-          else e.isIntersecting ? playGif(card) : stopGif(card)
+          if (e.isIntersecting) card.dataset.ibhSeen = '1'
+          else delete card.dataset.ibhSeen
+          if (isVideoCard(card) && card.dataset.ibhKind !== 'gif') {
+            e.isIntersecting ? mountCover(card) : unmountCover(card)
+          } else {
+            e.isIntersecting ? playGif(card) : stopGif(card)
+          }
         }
       }, { rootMargin: '200px' })
     : null
@@ -518,7 +583,7 @@
     if (!video && !gif) return
     if (video) { STATE.covers.tracked++; touch() }
     if (viewport) viewport.observe(card)
-    else video ? mountCover(card) : playGif(card)
+    else { card.dataset.ibhSeen = '1'; video ? mountCover(card) : playGif(card) }
   }
 
   function scanCards(root) {
@@ -779,50 +844,59 @@
 
   const ORIGINAL_EXTS = ['jpg', 'png', 'jpeg']   // no gif: animated originals are heavy
   const ORIGINAL_MAX_INFLIGHT = 3                // concurrent probes, to spare the phone
-  const ORIGINAL_SELECTOR = '.posts-image-card img, img[src*="/thumbnails/"], img[src*="/samples/"]'
+  // Targets are Masonry cards (either layout) or <img> on the site's own pages.
+  const ORIGINAL_SELECTOR = '.posts-image-card, img[src*="/thumbnails/"], img[src*="/samples/"]'
   const originalQueue = []
   let originalInflight = 0
 
-  // Native pages put the tags in title/alt; Masonry marks videos with an icon.
-  function isAnimatedThumb(img) {
-    const card = img.closest('.posts-image-card')
-    if (card) return isVideoCard(card) || isGifCard(card)
-    return /(^|\s)(video|animated|webm|mp4|gif)(\s|$)/i.test(img.title || img.alt || '')
+  const isCard = el => el.classList.contains('posts-image-card')
+
+  function pictureOf(el) {
+    if (isCard(el)) return cardPicture(el)
+    return el.src ? { src: el.currentSrc || el.src, set: url => { el.src = url } } : null
   }
 
-  /** Returns true once the image needs no more watching. */
-  function upgradeToOriginal(img) {
-    if (img.dataset.ibhOrig) return true   // already queued, done or failed
+  // Native pages put the tags in title/alt; Masonry marks videos with an icon.
+  function isAnimatedThumb(el) {
+    if (isCard(el)) return isVideoCard(el) || isGifCard(el)
+    return /(^|\s)(video|animated|webm|mp4|gif)(\s|$)/i.test(el.title || el.alt || '')
+  }
+
+  /** Returns true once the element needs no more watching. */
+  function upgradeToOriginal(el) {
+    if (el.dataset.ibhOrig) return true   // already queued, done or failed
     // The detail viewer owns zoom and pan; leave its image alone.
-    if (img.closest('.img_detail_cont, .fancybox__container')) return true
-    if (isAnimatedThumb(img)) return true
-    // Masonry may not have set src yet; try again on the next intersection.
-    if (!thumbParts(img.currentSrc || img.src)) return false
-    img.dataset.ibhOrig = 'queued'
-    originalQueue.push(img)
+    if (el.closest('.img_detail_cont, .fancybox__container')) return true
+    if (isAnimatedThumb(el)) return true
+    // Masonry may not have painted the picture yet; try on the next intersection.
+    const pic = pictureOf(el)
+    if (!pic || !thumbParts(pic.src)) return false
+    el.dataset.ibhOrig = 'queued'
+    originalQueue.push(el)
     pumpOriginals()
     return true
   }
 
   function pumpOriginals() {
     while (originalInflight < ORIGINAL_MAX_INFLIGHT && originalQueue.length) {
-      const img = originalQueue.shift()
-      if (!img.isConnected) continue
+      const el = originalQueue.shift()
+      const pic = el.isConnected && pictureOf(el)
+      if (!pic) continue
       originalInflight++
-      probeOriginal(img, fileCandidates(img.currentSrc || img.src, ORIGINAL_EXTS), () => {
+      probeOriginal(el, pic.src, fileCandidates(pic.src, ORIGINAL_EXTS), () => {
         originalInflight--
         pumpOriginals()
       })
     }
   }
 
-  function probeOriginal(img, urls, done) {
+  function probeOriginal(el, from, urls, done) {
     const probe = new Image()
     let i = 0
     const tryNext = () => {
       if (i >= urls.length) {
-        img.dataset.ibhOrig = 'failed'
-        dbg(`original: nothing loaded for ${img.src}`)
+        el.dataset.ibhOrig = 'failed'
+        dbg(`original: nothing loaded for ${from}`)
         done()
         return
       }
@@ -831,13 +905,14 @@
     probe.onload = () => {
       // Off Masonry the thumbnail has no fixed box: pin its current size so the
       // full-resolution file does not blow up the page layout.
-      if (!img.closest('.posts-image-card') && img.clientWidth) {
-        img.style.width = `${img.clientWidth}px`
-        img.style.height = `${img.clientHeight}px`
-        img.style.objectFit = 'contain'
+      if (!isCard(el) && el.clientWidth) {
+        el.style.width = `${el.clientWidth}px`
+        el.style.height = `${el.clientHeight}px`
+        el.style.objectFit = 'contain'
       }
-      img.src = probe.src   // already in cache, so this paints at once
-      img.dataset.ibhOrig = 'done'
+      const pic = pictureOf(el)
+      if (pic) pic.set(probe.src)   // already in cache, so this paints at once
+      el.dataset.ibhOrig = 'done'
       dbg(`original: ${probe.src}`)
       done()
     }
@@ -857,12 +932,14 @@
 
   function scanThumbs(root) {
     if (!CFG.originalThumbs || !root || !root.querySelectorAll) return
-    const imgs = [...root.querySelectorAll(ORIGINAL_SELECTOR)]
-    if (root.matches && root.matches(ORIGINAL_SELECTOR)) imgs.push(root)
-    for (const img of imgs) {
-      if (watchedThumbs.has(img)) continue
-      watchedThumbs.add(img)
-      originalViewport ? originalViewport.observe(img) : upgradeToOriginal(img)
+    const found = [...root.querySelectorAll(ORIGINAL_SELECTOR)]
+    if (root.matches && root.matches(ORIGINAL_SELECTOR)) found.push(root)
+    for (const el of found) {
+      // An <img> inside a card is handled through the card.
+      if (!isCard(el) && el.closest('.posts-image-card')) continue
+      if (watchedThumbs.has(el)) continue
+      watchedThumbs.add(el)
+      originalViewport ? originalViewport.observe(el) : upgradeToOriginal(el)
     }
   }
 
@@ -909,13 +986,15 @@
 
   /** Test every candidate URL of the first video card and log the outcome. */
   function probeVideoUrls() {
-    const card = [...document.querySelectorAll('.posts-image-card')].find(isVideoCard)
+    // Prefer a card that is on screen, so the result matches what you see.
+    const cards = [...document.querySelectorAll('.posts-image-card')].filter(isVideoCard)
+    const card = cards.find(c => c.dataset.ibhSeen) || cards[0]
     if (!card) { warn('no video card on screen to test'); return }
-    const img = card.querySelector('img')
-    if (!img) { warn('video card has no <img>'); return }
+    const pic = cardPicture(card)
+    if (!pic) { warn('video card has no picture yet'); return }
 
-    const urls = fileCandidates(img.src, ['mp4', 'webm'])
-    info(`thumbnail: ${img.src}`)
+    const urls = fileCandidates(pic.src, ['mp4', 'webm'])
+    info(`thumbnail: ${pic.src}`)
     if (!urls.length) { warn('no URL derivable from that thumbnail'); return }
 
     urls.forEach(url => {

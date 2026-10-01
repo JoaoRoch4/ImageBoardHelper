@@ -39,7 +39,7 @@ Estes são fatos verificados no código do Masonry. Se algum quebrar, é porque 
 | Detalhe aberto | `.img_detail_cont` presente no DOM. |
 | Modo lupa | `.img_scale_scroll` presente. Nele o arrasto é pan, então swipe é ignorado. |
 | Vídeo tocando | `.img_detail_cont .dplayer` presente. |
-| Cards | `.posts-image-card`; o tipo vem do `d` do ícone em `.posts-image-type`. |
+| Cards | `.posts-image-card`; o tipo vem do `d` de **qualquer** ícone em `.posts-image-type` (no yande.re/konachan o ícone de pai/filho vem antes). No layout padrão o card é um `<v-img>` — `div.v-image__image` com `background-image`, sem `<img>`; só os layouts "virtual" e "justified" usam `<img>`. Leia e troque a imagem via `cardPicture()`. |
 | Configurações | `localStorage['YM_APP_SETTINGS']`, lido no arranque do app. |
 
 Bugs do Masonry que este script contorna:
@@ -47,7 +47,7 @@ Bugs do Masonry que este script contorna:
 - `getImgSrc` só usa `sampleUrl` se `isThumbSampleUrl || (colunas != 0 && colunas < 7)`. Colunas em "Automático" valem `0`, então a condição nunca passa — e automático é o padrão.
 - `fancyboxShow` monta itens com `src: e.jpegUrl || e.fileUrl`, mas vários adaptadores devolvem `fileUrl: ""` de propósito.
 - `isRule34Firefox()` usa `||`, então o Firefox cai no raspador de HTML mesmo com credencial de API.
-- Detecção de GIF e vídeo por tag (`tags.includes('gif')`) em vez de por `fileExt`, o que falha em sites que não tagueiam.
+- Detecção de GIF e vídeo por tag (`tags.includes('gif')`) em vez de por `fileExt`, o que falha em sites que não tagueiam. No raspador do rule34 (`src/api/rule34.ts`) o `fileExt` só pode ser `mp4` ou `jpg`: GIF com tag `video` ganha ícone de vídeo (a capa cai no caminho do GIF quando nenhum host de vídeo responde) e GIF sem essas tags não ganha ícone nenhum — esse caso ainda não tem solução.
 
 ---
 
@@ -80,6 +80,8 @@ Não sugira estas de novo sem um motivo novo.
 **Derivar o arquivo do host da miniatura.** Alguns boorus servem miniatura e arquivo de hosts diferentes, e certos mirrors só têm miniatura — `miami.rule34.xxx` e `ny.rule34.xxx` são os mapeados. Dá 404 silencioso. O `imageBase()` resolve o host separado, ignora mirrors conhecidos, cai num fallback e guarda por sete dias.
 
 **Forçar o caminho da API no rule34 por padrão.** Funciona, mas o raspador de HTML manda o cookie de sessão (`credentials: "include"`) e respeita a blacklist da conta, o `filter_ai` e o `post_threshold`. A API vai para `api.rule34.xxx`, host diferente, sem cookie. Trocar URL correta por perda dos filtros da conta é mau negócio; a opção existe mas vem desligada.
+
+**Abrir uma capa de vídeo por card visível, sem limite.** No Oppo A5 o Firefox decodifica uns quatro vídeos ao mesmo tempo; o resto fica em `readyState` 1 para sempre ou dá `MEDIA_ERR_DECODE`. Medido com 18 `<video>` simultâneos pela `ffrdp`. Daí `COVER_MAX_LIVE = 3` e a fila. Aba em segundo plano não decodifica nada — teste de vídeo só com o Firefox na frente.
 
 **Consertar o Fancybox em sites de detalhe tardio.** Em sankaku, anime-pictures, allgirl, hentaibooru e kusowanka a URL só existe após o fetch de detalhe e não é derivável. Sem acesso a `store.imageList`, não há solução externa. O patch correto está no README e é no script original.
 
@@ -157,4 +159,5 @@ node tools/ffrdp.js eval rule34 'window.__ibh.log()'   # aba por índice ou trec
 
 - `HOSTS` só tem o rule34 mapeado. safebooru, xbooru e realbooru podem ter mirrors próprios; descobrir com **Testar URLs** e preencher.
 - Preview de vídeo no hover e no toque longo, reaproveitando um único elemento `<video>` — um por card derruba o Chrome do Android.
+- GIF sem ícone no raspador do rule34: as tags só existem no HTML que o Masonry baixa. Interceptar o `fetch` da listagem e montar um mapa hash → tags resolveria isso e o item abaixo de uma vez.
 - Downloads no caminho do raspador continuam usando o `fileUrl` errado do app. Investigar se dá para corrigir interceptando `fetch` e reescrevendo o host das miniaturas no HTML antes do app parsear.

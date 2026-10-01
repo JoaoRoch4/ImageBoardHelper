@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.8.2
+
+Found by inspecting the live page on the phone through `tools/ffrdp.js`:
+
+- Masonry's default layout draws cards with `<v-img>` (a background-image,
+  no `<img>`), so covers, inline GIFs and original thumbnails never acted on
+  them. Cards are now read and updated through either form
+- At most three video covers are open at once, with a queue: Firefox for
+  Android decoded four videos at a time on the test phone, and the rest sat at
+  "metadata" forever or failed with a decode error
+- Masonry's rule34 scraper marks posts as video by tag, so some GIFs carry the
+  video icon. When no video host answers, the cover now tries the card as a GIF
+- `thumbParts` strips the doubled slashes rule34 uses (`//thumbnails//2389/`)
+- **Test URLs** reads `<v-img>` cards and prefers one on screen
+
 ## 0.8.1
 
 - Header aligned with Violentmonkey's metadata reference: `@inject-into page`
