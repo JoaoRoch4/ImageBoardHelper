@@ -79,6 +79,7 @@ All of them live in the panel and are stored in `localStorage` under `IBH_CFG`.
 |---|---|---|
 | `sharpThumbs` | on | enables "thumbnail uses large image" (needs reload) |
 | `videoCovers` | on | overlays the real video frame, on Masonry cards and on the site's own pages |
+| `memorySaver` | on | images two screens away go back to the thumbnail (upgraded again on return), videos Masonry removes are unloaded, and everything is released when the page is left (needs reload) |
 | `gifInline` | on | GIF cards animate while on screen and go back to the still when they leave |
 | `fixFancybox` | on | fills empty `src` in Fancybox |
 | `gestures` | on | swipe, double tap and pinch |

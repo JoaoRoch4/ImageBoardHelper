@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.16.1
+// @version      0.17.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -66,6 +66,11 @@
  *      for the original file, probing jpg/png/jpeg off-screen first. Sharper
  *      than the sample, at several times the data and memory.
  *
+ *   G. MEMORY MANAGEMENT
+ *      Images that scroll two screens away go back to the thumbnail and are
+ *      upgraded again on return; videos removed by Masonry are unloaded; the
+ *      page releases everything when it is left.
+ *
  * WHY @grant none: intercepting window.Fancybox and overriding
  * navigator.userAgent both require the page's own realm. Any @grant puts the
  * script in a sandbox where `window` is not the page's window, and both stop
@@ -81,7 +86,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.16.1'
+  const VERSION = '0.17.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -97,6 +102,7 @@
     sharpThumbs:    true,   // enable "thumbnail uses large image" (needs reload)
     videoCovers:    true,   // overlay the real video frame on the card
     gifInline:      true,   // animate GIF cards while they are on screen
+    memorySaver:    true,   // release far off-screen images and removed videos (needs reload)
     fixFancybox:    true,   // fill empty src in the alternate viewer
     gestures:       true,   // swipe, double tap and pinch
     originalThumbs: false,  // swap visible thumbnails for the original file (heavy, needs reload)
@@ -105,7 +111,7 @@
   }
 
   // Options that only take effect when the app boots.
-  const NEEDS_RELOAD = new Set(['sharpThumbs', 'forceRule34Api', 'originalThumbs', 'nativeFeed'])
+  const NEEDS_RELOAD = new Set(['sharpThumbs', 'forceRule34Api', 'originalThumbs', 'nativeFeed', 'memorySaver'])
 
   const CFG = Object.assign({}, DEFAULTS, readJSON(CFG_KEY, {}))
 
@@ -154,6 +160,7 @@
       filled: 'filled', empty: 'empty',
       coversFmt: (ok, bad, all) => `${ok} ok · ${bad} failed · ${all} videos`,
       tSharp: 'Large thumbnails', tCovers: 'Video covers', tGif: 'Animated GIFs in the grid',
+      tMemory: 'Release off-screen memory',
       tFancybox: 'Repair Fancybox', tGestures: 'Touch gestures',
       tOriginal: 'Original thumbnails (heavy)',
       tFeed: 'One-column feed on site pages',
@@ -177,6 +184,7 @@
       filled: 'preenchida', empty: 'vazia',
       coversFmt: (ok, bad, all) => `${ok} ok · ${bad} falha · ${all} vídeos`,
       tSharp: 'Miniatura grande', tCovers: 'Capa de vídeo', tGif: 'GIF animado na grade',
+      tMemory: 'Liberar memória fora da tela',
       tFancybox: 'Consertar Fancybox', tGestures: 'Gestos de toque',
       tOriginal: 'Miniatura original (pesado)',
       tFeed: 'Feed de uma coluna no site',
@@ -1047,6 +1055,8 @@
       if (pic) pic.set(probe.src)   // already in cache and decoded, so this paints at once
       el.dataset.ibhThumb = from    // what freeMemory() and redoThumbs() put back
       el.dataset.ibhOrig = 'done'
+      unpinHeight(el)
+      watchDistance(el)   // released again once it is far off screen, see G
       dbg(`original: ${probe.src}`)
       done()
     }
@@ -1075,6 +1085,114 @@
       watchedThumbs.add(el)
       originalViewport ? originalViewport.observe(el) : upgradeToOriginal(el)
     }
+  }
+
+  // ═══════════════════════════════════════════════════════════
+  // G. Memory management
+  //
+  // Upgraded images stay decoded while the page lives, so a long feed keeps
+  // every original it ever showed. Release what scrolled far away, unload
+  // videos Masonry throws out when it rebuilds the grid, and drop everything
+  // when the page is left.
+  // ═══════════════════════════════════════════════════════════
+
+  // Two screens of slack each way: far enough that a quick scroll back does
+  // not refetch, close enough that a long feed keeps only a few originals.
+  const FAR_MARGIN = '200% 0px'
+
+  const farViewport = 'IntersectionObserver' in window
+    ? new IntersectionObserver(entries => {
+        for (const e of entries) if (!e.isIntersecting) releaseFar(e.target)
+      }, { rootMargin: FAR_MARGIN })
+    : null
+
+  function watchDistance(el) {
+    if (CFG.memorySaver && farViewport) farViewport.observe(el)
+  }
+
+  // Going back to the thumbnail must not change the height of something above
+  // the viewport, or the page jumps. Hold the current height until the better
+  // file is back (inline !important beats the feed's height:auto !important).
+  function pinHeight(el) {
+    if (el.tagName !== 'IMG' || !el.clientHeight) return
+    el.style.setProperty('height', `${el.clientHeight}px`, 'important')
+    el.dataset.ibhPinned = '1'
+  }
+
+  function unpinHeight(el) {
+    if (!el.dataset.ibhPinned) return
+    el.style.removeProperty('height')
+    delete el.dataset.ibhPinned
+  }
+
+  let releasedCount = 0
+
+  function releaseFar(el) {
+    if (el.dataset.ibhOrig !== 'done') { farViewport.unobserve(el); return }
+    pinHeight(el)
+    resetUpgrade(el)
+    farViewport.unobserve(el)
+    if (originalViewport) originalViewport.observe(el)   // upgraded again when it comes back
+    releasedCount++
+    if (releasedCount % 10 === 1) dbg(`memory: released ${releasedCount} off-screen images so far`)
+  }
+
+  // Masonry rebuilds the grid without reloading the page. A removed <video>
+  // keeps its decoder until garbage collection, and the live-cover count never
+  // came back down, so covers stopped once it sat at the cap. Unload them and
+  // recount from what is actually in the document.
+  function onNodesRemoved(nodes) {
+    let unloaded = 0
+    for (const node of nodes) {
+      if (node.nodeType !== 1) continue
+      const vids = node.matches && node.matches('video[data-ibh]')
+        ? [node]
+        : (node.querySelectorAll ? [...node.querySelectorAll('video[data-ibh]')] : [])
+      for (const v of vids) { v.removeAttribute('src'); v.load(); unloaded++ }
+    }
+    if (!unloaded) return
+    liveCovers = document.querySelectorAll('video[data-ibh]').length
+    for (const card of coverQueue) if (!card.isConnected) coverQueue.delete(card)
+    dbg(`memory: unloaded ${unloaded} videos removed from the page`)
+  }
+
+  // Masonry changes page with history.pushState. What it learned about the
+  // old page (which video cards were GIFs) is of no use on the new one.
+  function onLocationChange() {
+    knownGifs.clear()
+    for (const card of coverQueue) if (!card.isConnected) coverQueue.delete(card)
+    liveCovers = document.querySelectorAll('video[data-ibh]').length
+    dbg(`memory: page changed to ${location.pathname}${location.search.slice(0, 60)}`)
+  }
+
+  // Leaving the page: release everything so the copy Firefox keeps for the
+  // back button is light. Coming back from that copy, start the page over.
+  function releaseAll() {
+    document.querySelectorAll('[data-ibh-cover]').forEach(card => unmountCover(card))
+    coverQueue.clear()
+    document.querySelectorAll('[data-ibh-gif="playing"]').forEach(card => stopGif(card))
+    document.querySelectorAll('[data-ibh-orig="done"]').forEach(el => {
+      resetUpgrade(el)
+      if (farViewport) farViewport.unobserve(el)
+      if (originalViewport) originalViewport.observe(el)
+    })
+  }
+
+  function installMemorySaver() {
+    if (!CFG.memorySaver) return
+    for (const name of ['pushState', 'replaceState']) {
+      const orig = history[name]
+      history[name] = function (...args) {
+        const before = location.href
+        const out = orig.apply(this, args)
+        if (location.href !== before) onLocationChange()
+        return out
+      }
+    }
+    window.addEventListener('popstate', onLocationChange)
+    window.addEventListener('pagehide', releaseAll)
+    window.addEventListener('pageshow', ev => { if (ev.persisted) redoThumbs() })
+    info('memory saver active: far off-screen images are released')
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -1449,6 +1567,7 @@
     body.appendChild(toggle('nativeFeed', t('tFeed'), t('noteReload')))
     body.appendChild(toggle('videoCovers', t('tCovers')))
     body.appendChild(toggle('gifInline', t('tGif')))
+    body.appendChild(toggle('memorySaver', t('tMemory'), t('noteReload')))
     body.appendChild(toggle('fixFancybox', t('tFancybox')))
     body.appendChild(toggle('gestures', t('tGestures')))
     body.appendChild(toggle('forceRule34Api', t('tApi'), t('noteReload')))
@@ -1584,6 +1703,7 @@
         else scanCards(node)
         scanThumbs(node)
       }
+      if (CFG.memorySaver && r.removedNodes.length) onNodesRemoved(r.removedNodes)
     }
     if (panelHost && !panelHost.isConnected) { panelHost = null; shadow = null }
     if (!panelHost) mountPanel()
@@ -1594,6 +1714,7 @@
   applyRule34ApiUnlock()
   hookFancybox()
   installGestures()
+  installMemorySaver()
   logSnapshot()
   if (CFG.originalThumbs) info('original thumbnails on: visible thumbnails load the full file')
   if (CFG.nativeFeed) info('one-column feed on: site pages show samples at full width')

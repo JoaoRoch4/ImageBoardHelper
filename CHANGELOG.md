@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.17.0
+
+- Memory management (`memorySaver`, on):
+  - upgraded images that scroll two screens away go back to the thumbnail,
+    with their height held so the page does not jump, and are upgraded again
+    when they come back; before, a long feed kept every original decoded
+  - videos inside nodes Masonry removes are unloaded, and the live-cover count
+    is recounted from the document; it never came back down, so covers could
+    stop appearing after Masonry rebuilt the grid
+  - Masonry page changes (`history.pushState`/`popstate`) drop per-page state;
+    leaving the page releases everything so the back-button copy is light, and
+    returning to it starts the thumbnails over
+
 ## 0.16.1
 
 - Feed: posts no longer overlap. The site injects

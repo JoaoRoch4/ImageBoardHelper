@@ -65,10 +65,11 @@ Bugs do Masonry que este script contorna:
 7. **C.** Fancybox — `repairItems`, `wrapFancybox`, `installExtensionFallback`
 8. **D.** Gestos — ponteiros, swipe, toque duplo, pinça
 9. **E.** Miniatura original e feed nativo — `upgradeToOriginal`, `upgradeCandidates`, `sampleCandidates`, `probeOriginal`, `scanThumbs`
-10. Opcional: `applyRule34ApiUnlock`
-11. Diagnóstico — `probeVideoUrls`, `logSnapshot`
-12. Painel — Shadow DOM, `renderStatus`, `copyLog`
-13. Arranque e `window.__ibh`
+10. **G.** Gerenciamento de memória — `farViewport`, `releaseFar`, `pinHeight`, `onNodesRemoved`, `onLocationChange`, `releaseAll`
+11. Opcional: `applyRule34ApiUnlock`
+12. Diagnóstico — `probeVideoUrls`, `logSnapshot`, `freeMemory`, `redoThumbs`
+13. Painel — Shadow DOM, `renderStatus`, `copyLog`
+14. Arranque e `window.__ibh`
 
 ---
 

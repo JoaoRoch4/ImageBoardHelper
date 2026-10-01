@@ -79,6 +79,7 @@ Todas ficam no painel e são gravadas em `localStorage` sob a chave `IBH_CFG`.
 |---|---|---|
 | `sharpThumbs` | ligado | liga "miniatura usa imagem grande" (requer recarregar) |
 | `videoCovers` | ligado | sobrepõe o frame real do vídeo, nos cards do Masonry e nas páginas do próprio site |
+| `memorySaver` | ligado | imagens a duas telas de distância voltam à miniatura (e são trocadas de novo ao voltar), vídeos que o Masonry remove são descarregados, e tudo é liberado ao sair da página (requer recarregar) |
 | `gifInline` | ligado | card de GIF anima enquanto está na tela e volta à imagem parada quando sai |
 | `fixFancybox` | ligado | preenche `src` vazio no Fancybox |
 | `gestures` | ligado | swipe, toque duplo e pinça |
