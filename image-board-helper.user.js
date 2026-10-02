@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.27.0
+// @version      0.27.1
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.27.0'
+  const VERSION = '0.27.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -177,7 +177,7 @@
       tModal: 'Open posts in a player over the page',
       mClose: 'Close', mOpen: 'Open the post', mPrev: 'Previous post', mNext: 'Next post',
       mLoading: 'Loading…', mFail: 'Could not load it',
-      mFav: 'Add to favorites', mUp: 'Upvote',
+      mFav: 'Add to favorites', mUp: 'Upvote', mFull: 'Fullscreen',
       tRotate: 'Landscape in player fullscreen',
       favAdded: 'Added to favorites', favAlready: 'Already in your favorites',
       favLogin: 'You are not logged in', favFail: 'Could not favorite',
@@ -213,7 +213,7 @@
       tModal: 'Abrir posts num player sobre a página',
       mClose: 'Fechar', mOpen: 'Abrir o post', mPrev: 'Post anterior', mNext: 'Próximo post',
       mLoading: 'Carregando…', mFail: 'Não foi possível carregar',
-      mFav: 'Favoritar', mUp: 'Votar positivo',
+      mFav: 'Favoritar', mUp: 'Votar positivo', mFull: 'Tela cheia',
       tRotate: 'Paisagem na tela cheia do player',
       favAdded: 'Adicionado aos favoritos', favAlready: 'Já está nos favoritos',
       favLogin: 'Você não está logado', favFail: 'Não foi possível favoritar',
@@ -1267,6 +1267,11 @@
     .stage.tall { justify-content: flex-start; }
     video, img { display: block; width: 100%; background: #000; }
     .vwrap { position: relative; }
+    /* Fullscreen goes to the wrapper so the gesture layer comes along. The video
+       fills it, which keeps the native controls along the screen's bottom,
+       right under the strip the layer leaves free. */
+    .vwrap:fullscreen { background: #000; }
+    .vwrap:fullscreen video { width: 100%; height: 100%; max-height: none; object-fit: contain; }
     /* Firefox's native video controls swallow touches on the video, so gestures
        go to this layer on top. The bottom strip stays uncovered: real taps
        there reach the controls (seek bar, sound, fullscreen). */
@@ -1319,6 +1324,7 @@
     const stage = el('div', { class: 'stage' }, [vwrap, image])
     const close = el('button', { text: '✕', title: t('mClose') })
     const post = el('a', { class: 'btn', text: '↗', title: t('mOpen') })
+    const full = el('button', { text: '⛶', title: t('mFull') })
     const count = el('span', { class: 'count' })
     const status = el('div', { class: 'status' })
     const fav = el('button', { text: '♡', title: t('mFav') })
@@ -1330,8 +1336,9 @@
     badge.hidden = true
     const prev = el('button', { class: 'side prev', text: '‹', title: t('mPrev') })
     const next = el('button', { class: 'side next', text: '›', title: t('mNext') })
-    const box = el('div', { class: 'm' }, [stage, status, el('div', { class: 'bar' }, [close, post, fav, up, count]), prev, next, toast, badge])
+    const box = el('div', { class: 'm' }, [stage, status, el('div', { class: 'bar' }, [close, post, full, fav, up, count]), prev, next, toast, badge])
     close.addEventListener('click', () => closeModal(false))
+    full.addEventListener('click', () => toggleModalFullscreen())
     fav.addEventListener('click', modalFavorite)
     up.addEventListener('click', modalUpvote)
     prev.addEventListener('click', () => stepModal(-1))
@@ -1627,12 +1634,30 @@
   // The player's own fullscreen button turns the screen for a wide video,
   // which Firefox allows only in fullscreen (Screen Orientation API). Outside
   // fullscreen nothing is turned.
+  // Fullscreen on the wrapper (video + gesture layer), from the ⛶ button.
+  function toggleModalFullscreen() {
+    if (modal.root.fullscreenElement) { document.exitFullscreen().catch(() => {}); return }
+    if (modal.video.hidden || !modal.vwrap.requestFullscreen) return
+    modal.vwrap.requestFullscreen().catch(e => dbg(`modal: fullscreen refused — ${describeError(e)}`))
+  }
+
   function onFullscreenChange() {
     if (!modal || !modal.open) return
     const v = modal.video
     const orientation = screen.orientation
-    // Inside our Shadow DOM the document sees the host; the root sees the video.
-    const full = modal.root.fullscreenElement === v || document.fullscreenElement === modal.host
+    // Inside our Shadow DOM the document sees the host; the root sees which
+    // element inside it is fullscreen.
+    const inside = modal.root.fullscreenElement
+    // The native controls' button makes the bare <video> fullscreen, which
+    // leaves the gesture layer behind. Hand fullscreen to the wrapper instead;
+    // the tap on that button still counts as the user gesture it needs.
+    if (inside === v && modal.vwrap.requestFullscreen) {
+      modal.vwrap.requestFullscreen().then(
+        () => dbg('modal: fullscreen moved to the gesture wrapper'),
+        e => dbg(`modal: could not move fullscreen — ${describeError(e)}`))
+      return   // the next fullscreenchange does the orientation
+    }
+    const full = !!inside || document.fullscreenElement === modal.host
     dbg(`modal: fullscreen ${full ? 'on' : 'off'} (${v.videoWidth}x${v.videoHeight})`)
     if (full) {
       if (CFG.rotateLandscape && v.videoWidth > v.videoHeight && orientation && orientation.lock) {
@@ -1680,6 +1705,8 @@
   // Show what the page already has at once, then the better file when it loads.
   function showImage(placeholder, urls) {
     const seq = modal.seq
+    // Swiped to an image while the video wrapper was fullscreen: leave it.
+    if (modal.root.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {})
     modal.video.hidden = true
     modal.vwrap.hidden = true
     modal.image.hidden = false

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.27.1
+
+- Video gestures in fullscreen: the native controls' fullscreen button puts
+  the bare `<video>` in fullscreen, leaving the gesture layer behind, so double
+  tap, hold and tap did nothing there. Fullscreen is now handed to the wrapper
+  holding the video and the layer, with the video filling it so the native
+  controls stay on the bottom strip. A ⛶ button in the modal bar enters it
+  directly. Swiping to an image leaves fullscreen
+
 ## 0.27.0
 
 - Opening the modal unloads the page underneath: video covers close, animated
