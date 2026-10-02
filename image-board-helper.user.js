@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.24.0
+// @version      0.25.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.24.0'
+  const VERSION = '0.25.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -1280,6 +1280,11 @@
     button.on { background: #5eead4; color: #0f1417; border-color: #5eead4; }
     button.up { width: auto; min-width: 42px; padding: 0 12px; border-radius: 21px; gap: 6px; display: flex; font-size: 16px; }
     .score { font-size: 13px; }
+    .badge {
+      position: absolute; left: 50%; top: 64px; transform: translateX(-50%);
+      padding: 6px 14px; border-radius: 16px; background: rgba(15, 20, 23, .9); color: #5eead4;
+      font-size: 15px; font-weight: 600; pointer-events: none;
+    }
     .toast {
       position: absolute; left: 50%; bottom: 84px; transform: translateX(-50%);
       padding: 8px 14px; border-radius: 18px; background: rgba(15, 20, 23, .92); color: #d7dee0;
@@ -1309,9 +1314,11 @@
     const up = el('button', { class: 'up', title: t('mUp') }, [el('span', { text: '▲' }), score])
     const toast = el('div', { class: 'toast' })
     toast.style.opacity = '0'
+    const badge = el('div', { class: 'badge' })
+    badge.hidden = true
     const prev = el('button', { class: 'side prev', text: '‹', title: t('mPrev') })
     const next = el('button', { class: 'side next', text: '›', title: t('mNext') })
-    const box = el('div', { class: 'm' }, [stage, status, el('div', { class: 'bar' }, [close, post, fav, up, count]), prev, next, toast])
+    const box = el('div', { class: 'm' }, [stage, status, el('div', { class: 'bar' }, [close, post, fav, up, count]), prev, next, toast, badge])
     close.addEventListener('click', () => closeModal(false))
     fav.addEventListener('click', modalFavorite)
     up.addEventListener('click', modalUpvote)
@@ -1321,8 +1328,9 @@
     stage.addEventListener('click', ev => { if (ev.target === stage) closeModal(false) })
     installModalSwipe(stage, video)
     installImageZoom(stage, image)
+    installVideoGestures(stage, video)
     root.append(style, box)
-    modal = { host, root, stage, video, image, post, count, status, fav, up, score, toast, open: false, link: null, seq: 0 }
+    modal = { host, root, stage, video, image, post, count, status, fav, up, score, toast, badge, open: false, link: null, seq: 0 }
   }
 
   let toastTimer = 0
@@ -1390,8 +1398,8 @@
     stage.addEventListener('pointercancel', () => { start = null })
     stage.addEventListener('pointerup', ev => {
       if (!start) return
-      // A pinch, or a drag on a zoomed image, is not a swipe.
-      if (zoom.scale > 1 || zoom.multi) { start = null; return }
+      // A pinch, a drag on a zoomed image, or the end of a 2x hold is not a swipe.
+      if (zoom.scale > 1 || zoom.multi || videoPress.held) { start = null; return }
       let dx = ev.clientX - start.x
       let dy = ev.clientY - start.y
       // With the phone turned left to watch a turned video, the viewer's
@@ -1503,12 +1511,94 @@
     stage.addEventListener('pointercancel', end)
   }
 
+  // On the modal video: hold for 2x while the finger stays down; double tap on
+  // the right or left third to jump 5 s forward or back. The control strip is
+  // left to the player. Turned, "left/right" follow the viewer, not the screen.
+  const HOLD_FAST_MS = 400
+  const HOLD_RATE = 2
+  const SEEK_STEP = 5
+  const videoPress = { held: false }
+
+  let badgeTimer = 0
+  function showBadge(text, sticky) {
+    modal.badge.textContent = text
+    modal.badge.hidden = false
+    clearTimeout(badgeTimer)
+    if (!sticky) badgeTimer = setTimeout(() => { modal.badge.hidden = true }, 700)
+  }
+
+  function installVideoGestures(stage, video) {
+    let press = null
+    let lastTap = { t: 0, side: 0 }
+    // Where the finger is along the viewer's horizontal axis, 0..1, or null
+    // when outside the video or on its control strip.
+    const viewerX = ev => {
+      if (video.hidden) return null
+      const r = video.getBoundingClientRect()
+      if (ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom) return null
+      if (video.classList.contains('rot')) {
+        if (ev.clientX < r.left + CONTROLS_BAND) return null
+        return (ev.clientY - r.top) / r.height   // viewer's right is the screen's bottom
+      }
+      if (ev.clientY > r.bottom - CONTROLS_BAND) return null
+      return (ev.clientX - r.left) / r.width
+    }
+    const release = () => {
+      if (!press) return
+      clearTimeout(press.timer)
+      if (videoPress.held) {
+        video.playbackRate = press.rate
+        modal.badge.hidden = true
+        dbg('modal: hold released, back to normal speed')
+      }
+      press = null
+      // Cleared after the swipe handler (registered first) has seen it.
+      setTimeout(() => { videoPress.held = false }, 0)
+    }
+
+    stage.addEventListener('pointerdown', ev => {
+      const fx = viewerX(ev)
+      if (fx === null || press) return
+      press = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, t: Date.now(), fx, rate: video.playbackRate || 1 }
+      press.timer = setTimeout(() => {
+        if (!press || video.paused) return
+        videoPress.held = true
+        video.playbackRate = HOLD_RATE
+        showBadge(`${HOLD_RATE}×`, true)
+      }, HOLD_FAST_MS)
+    })
+    stage.addEventListener('pointermove', ev => {
+      if (!press || videoPress.held || ev.pointerId !== press.id) return
+      if (Math.hypot(ev.clientX - press.x, ev.clientY - press.y) > 10) { clearTimeout(press.timer); press = null }   // a swipe
+    })
+    stage.addEventListener('pointercancel', release)
+    stage.addEventListener('pointerup', ev => {
+      if (!press || ev.pointerId !== press.id) return
+      const wasHold = videoPress.held
+      const quickTap = !wasHold && Date.now() - press.t < 250 && Math.hypot(ev.clientX - press.x, ev.clientY - press.y) < 10
+      const side = press.fx > 0.65 ? 1 : press.fx < 0.35 ? -1 : 0
+      release()
+      if (!quickTap) return
+      const now = Date.now()
+      if (side && lastTap.side === side && now - lastTap.t < 300) {
+        const d = Number.isFinite(video.duration) ? video.duration : Infinity
+        video.currentTime = Math.min(d, Math.max(0, video.currentTime + side * SEEK_STEP))
+        showBadge(side > 0 ? `+${SEEK_STEP}s` : `−${SEEK_STEP}s`)
+        lastTap = { t: 0, side: 0 }
+      } else {
+        lastTap = { t: now, side }
+      }
+    })
+  }
+
   // Stop whatever is showing and invalidate loads still in flight (seq).
   function resetMedia() {
     modal.seq++
     const v = modal.video
     v.pause()
     v.onerror = v.oncanplay = v.onloadedmetadata = null
+    v.playbackRate = 1
+    modal.badge.hidden = true
     v.classList.remove('rot')
     v.removeAttribute('src')
     v.load()   // hand the decoder back

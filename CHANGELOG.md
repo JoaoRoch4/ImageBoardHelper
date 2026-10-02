@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.25.0
+
+- Modal video gestures: hold on the video for 2x while the finger stays down
+  (a "2×" badge shows; lifting returns to normal speed and does not change
+  post); double-tap on the right or left third jumps 5 s forward or back.
+  The control strip is left alone, and with a turned video the sides follow
+  the viewer
+
 ## 0.24.0
 
 - Modal images zoom: pinch (1x to 6x, the point between the fingers stays put),
