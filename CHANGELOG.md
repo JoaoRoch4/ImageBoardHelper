@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.24.0
+
+- Modal images zoom: pinch (1x to 6x, the point between the fingers stays put),
+  one-finger pan while zoomed, double-tap to zoom 2.5x on that spot or back to
+  1x. Swipes do not change post while zoomed; zoom resets on the next post or
+  on close. The modal takes touches itself, which also disables the browser's
+  zoom, and that one would have scaled the whole page anyway
+
 ## 0.23.2
 
 - Modal fullscreen: entering the player's own fullscreen with a wide video

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.23.2
+// @version      0.24.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.23.2'
+  const VERSION = '0.24.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -1264,7 +1264,7 @@
       width: 100dvh;   /* 100vh counts the space behind Firefox's address bar */
       transform: translate(-50%, -50%) rotate(90deg); object-fit: contain;
     }
-    img { height: auto; -webkit-user-drag: none; user-select: none; }
+    img { height: auto; -webkit-user-drag: none; user-select: none; transform-origin: 0 0; }
     [hidden] { display: none !important; }
     .bar { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 8px; padding: 10px; pointer-events: none; }
     .bar > * { pointer-events: auto; }
@@ -1320,6 +1320,7 @@
     // Tap on the empty area around the media closes.
     stage.addEventListener('click', ev => { if (ev.target === stage) closeModal(false) })
     installModalSwipe(stage, video)
+    installImageZoom(stage, image)
     root.append(style, box)
     modal = { host, root, stage, video, image, post, count, status, fav, up, score, toast, open: false, link: null, seq: 0 }
   }
@@ -1389,6 +1390,8 @@
     stage.addEventListener('pointercancel', () => { start = null })
     stage.addEventListener('pointerup', ev => {
       if (!start) return
+      // A pinch, or a drag on a zoomed image, is not a swipe.
+      if (zoom.scale > 1 || zoom.multi) { start = null; return }
       let dx = ev.clientX - start.x
       let dy = ev.clientY - start.y
       // With the phone turned left to watch a turned video, the viewer's
@@ -1404,6 +1407,102 @@
     })
   }
 
+  // Pinch zoom on the modal image. The stage takes touches itself (touch-action),
+  // which also turns off the browser's zoom, and that one would scale the
+  // whole page anyway. transform-origin is the image's top-left, so its screen
+  // position is its layout position plus the translation.
+  const zoom = { scale: 1, x: 0, y: 0, multi: false }
+  const ZOOM_MAX = 6
+  const ZOOM_DOUBLE_TAP = 2.5
+
+  function applyZoom() {
+    const img = modal.image
+    img.style.transform = zoom.scale === 1 ? '' : `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.scale})`
+    // Zoomed, every drag pans the image; at 1x a tall image scrolls natively.
+    if (!img.hidden) modal.stage.style.touchAction = zoom.scale > 1 || !modal.stage.classList.contains('tall') ? 'none' : 'pan-y'
+  }
+
+  function resetZoom() {
+    zoom.scale = 1
+    zoom.x = zoom.y = 0
+    if (modal) applyZoom()
+  }
+
+  function installImageZoom(stage, img) {
+    const pts = new Map()
+    let pinch = null
+    let pan = null
+    let lastTap = { t: 0, x: 0, y: 0 }
+    // Layout top-left of the image on screen, transform taken out.
+    const origin = () => { const r = img.getBoundingClientRect(); return { left: r.left - zoom.x, top: r.top - zoom.y } }
+    const mid = () => { const [a, b] = [...pts.values()]; return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2, d: Math.hypot(a.x - b.x, a.y - b.y) } }
+
+    stage.addEventListener('pointerdown', ev => {
+      if (img.hidden) return
+      pts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY, t: Date.now() })
+      if (pts.size === 2) {
+        zoom.multi = true
+        const m = mid()
+        // The image point under the fingers' midpoint stays under it.
+        const o = origin()
+        pinch = { d: m.d, scale: zoom.scale, cx: (m.x - o.left - zoom.x) / zoom.scale, cy: (m.y - o.top - zoom.y) / zoom.scale, o }
+        pan = null
+      } else if (pts.size === 1 && zoom.scale > 1) {
+        pan = { x: ev.clientX, y: ev.clientY, zx: zoom.x, zy: zoom.y }
+      }
+    })
+
+    stage.addEventListener('pointermove', ev => {
+      const p = pts.get(ev.pointerId)
+      if (!p) return
+      p.x = ev.clientX
+      p.y = ev.clientY
+      if (pinch && pts.size >= 2) {
+        const m = mid()
+        zoom.scale = Math.min(ZOOM_MAX, Math.max(1, pinch.scale * (m.d / pinch.d)))
+        zoom.x = m.x - pinch.o.left - pinch.cx * zoom.scale
+        zoom.y = m.y - pinch.o.top - pinch.cy * zoom.scale
+        applyZoom()
+      } else if (pan) {
+        zoom.x = pan.zx + (ev.clientX - pan.x)
+        zoom.y = pan.zy + (ev.clientY - pan.y)
+        applyZoom()
+      }
+    })
+
+    const end = ev => {
+      const p = pts.get(ev.pointerId)
+      pts.delete(ev.pointerId)
+      if (pts.size < 2) pinch = null
+      if (pts.size === 0) {
+        pan = null
+        if (zoom.scale < 1.05) resetZoom()   // let go near 1x: snap back
+        // Double tap: zoom in on that spot, or back to 1x.
+        if (ev.type === 'pointerup' && p && !zoom.multi && Date.now() - p.t < 250 &&
+            Math.hypot(ev.clientX - p.x, ev.clientY - p.y) < 10) {
+          const now = Date.now()
+          if (now - lastTap.t < 300 && Math.hypot(ev.clientX - lastTap.x, ev.clientY - lastTap.y) < 30) {
+            if (zoom.scale > 1) resetZoom()
+            else {
+              const o = origin()
+              zoom.scale = ZOOM_DOUBLE_TAP
+              zoom.x = ev.clientX - o.left - (ev.clientX - o.left) * ZOOM_DOUBLE_TAP
+              zoom.y = ev.clientY - o.top - (ev.clientY - o.top) * ZOOM_DOUBLE_TAP
+              applyZoom()
+            }
+            lastTap.t = 0
+          } else {
+            lastTap = { t: now, x: ev.clientX, y: ev.clientY }
+          }
+        }
+        // Cleared after the swipe handler (registered first) has seen it.
+        setTimeout(() => { zoom.multi = false }, 0)
+      }
+    }
+    stage.addEventListener('pointerup', end)
+    stage.addEventListener('pointercancel', end)
+  }
+
   // Stop whatever is showing and invalidate loads still in flight (seq).
   function resetMedia() {
     modal.seq++
@@ -1416,6 +1515,7 @@
     modal.image.onerror = null
     modal.image.removeAttribute('src')
     modal.stage.scrollTop = 0
+    resetZoom()
   }
 
   // The player's own fullscreen button: there the real fix is turning the
@@ -1489,7 +1589,7 @@
       // A tall image (a comic) scrolls inside the modal; vertical drags scroll it.
       const tall = img.offsetHeight > modal.stage.clientHeight
       modal.stage.classList.toggle('tall', tall)
-      modal.stage.style.touchAction = tall ? 'pan-y' : 'none'
+      applyZoom()   // sets touch-action for the tall/short and zoom state
     }
     img.onload = fit
     img.src = placeholder
