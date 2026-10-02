@@ -88,6 +88,7 @@ Todas ficam no painel e são gravadas em `localStorage` sob a chave `IBH_CFG`.
 | `feedNav` | ligado | com o `nativeFeed`, botões redondos ⤒ ‹ › no canto inferior direito pulam para o topo da página, ou para o início do post anterior ou do próximo, por exemplo para passar um comic longo (requer recarregar) |
 | `sortButton` | ligado | botão ★ nas listagens de busca (site e Masonry): acrescenta `sort:score` à busca atual, ou tira, e recarrega na primeira página; fica aceso enquanto a busca está ordenada por score (requer recarregar) |
 | `videoModal` | ligado | nas páginas do próprio site, tocar numa miniatura abre o post num player sobre a página: vídeo com som, GIF animado, imagem no original (comic alto rola). Swipe de lado ou ‹ › para o próximo/anterior, swipe para baixo, ✕ ou o botão Voltar fecham, ↗ abre a página do post, ♡ favorita e ▲ vota positivo (mostrando o score novo). Vídeos sem tag de vídeo são detectados e o player vira vídeo (requer recarregar) |
+| `rotateLandscape` | ligado | no modal, vídeo mais largo que alto com a tela em pé é girado 90° para ocupar a tela; assista com o celular virado para a esquerda. Swipes e a faixa dos controles acompanham o giro. Com a tela já deitada, não gira |
 | `forceRule34Api` | **desligado** | ver abaixo (requer recarregar) |
 | `lang` | automático | idioma do painel: automático, português ou inglês |
 | `debug` | desligado | espelha o log no console do navegador |

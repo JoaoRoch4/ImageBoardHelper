@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.22.0
+// @version      0.23.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.22.0'
+  const VERSION = '0.23.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -111,6 +111,7 @@
     feedNav:        true,   // ⤒ ‹ › buttons: top of page, previous and next post in the feed (needs reload)
     sortButton:     true,   // ★ button on search listings: add or remove sort:score (needs reload)
     videoModal:     true,   // open posts from site pages in an overlay: video, GIF, image (needs reload)
+    rotateLandscape: true,  // in the modal, turn wide videos 90° on a portrait screen
     fixFancybox:    true,   // fill empty src in the alternate viewer
     gestures:       true,   // swipe, double tap and pinch
     originalThumbs: false,  // swap visible thumbnails for the original file (heavy, needs reload)
@@ -176,6 +177,7 @@
       mClose: 'Close', mOpen: 'Open the post', mPrev: 'Previous post', mNext: 'Next post',
       mLoading: 'Loading…', mFail: 'Could not load it',
       mFav: 'Add to favorites', mUp: 'Upvote',
+      tRotate: 'Turn wide videos in the player',
       favAdded: 'Added to favorites', favAlready: 'Already in your favorites',
       favLogin: 'You are not logged in', favFail: 'Could not favorite',
       voted: 'Upvoted', voteFail: 'Could not vote',
@@ -210,6 +212,7 @@
       mClose: 'Fechar', mOpen: 'Abrir o post', mPrev: 'Post anterior', mNext: 'Próximo post',
       mLoading: 'Carregando…', mFail: 'Não foi possível carregar',
       mFav: 'Favoritar', mUp: 'Votar positivo',
+      tRotate: 'Deitar vídeo largo no player',
       favAdded: 'Adicionado aos favoritos', favAlready: 'Já está nos favoritos',
       favLogin: 'Você não está logado', favFail: 'Não foi possível favoritar',
       voted: 'Voto registrado', voteFail: 'Não foi possível votar',
@@ -1254,6 +1257,12 @@
     .stage.tall { justify-content: flex-start; }
     video, img { display: block; width: 100%; background: #000; }
     video { max-height: 100vh; }
+    /* A wide video on a portrait screen: turned 90° clockwise to fill it, so it
+       reads upright with the phone turned to the left. */
+    video.rot {
+      position: fixed; top: 50%; left: 50%; width: 100vh; height: 100vw; max-height: none;
+      transform: translate(-50%, -50%) rotate(90deg); object-fit: contain;
+    }
     img { height: auto; -webkit-user-drag: none; user-select: none; }
     [hidden] { display: none !important; }
     .bar { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 8px; padding: 10px; pointer-events: none; }
@@ -1368,15 +1377,22 @@
     let start = null
     stage.addEventListener('pointerdown', ev => {
       const r = video.hidden ? null : video.getBoundingClientRect()
-      // Drags on the video's own controls are seeks, not swipes.
-      const onControls = r && ev.clientY > r.bottom - CONTROLS_BAND && ev.clientY <= r.bottom
-      start = onControls ? null : { x: ev.clientX, y: ev.clientY, t: Date.now(), top: stage.scrollTop }
+      const rotated = video.classList.contains('rot')
+      // Drags on the video's own controls are seeks, not swipes. Turned, the
+      // controls strip is along the left edge of the screen.
+      const onControls = r && (rotated
+        ? ev.clientX < r.left + CONTROLS_BAND && ev.clientX >= r.left
+        : ev.clientY > r.bottom - CONTROLS_BAND && ev.clientY <= r.bottom)
+      start = onControls ? null : { x: ev.clientX, y: ev.clientY, t: Date.now(), top: stage.scrollTop, rotated }
     })
     stage.addEventListener('pointercancel', () => { start = null })
     stage.addEventListener('pointerup', ev => {
       if (!start) return
-      const dx = ev.clientX - start.x
-      const dy = ev.clientY - start.y
+      let dx = ev.clientX - start.x
+      let dy = ev.clientY - start.y
+      // With the phone turned left to watch a turned video, the viewer's
+      // "right" is the screen's bottom and "down" is the screen's left.
+      if (start.rotated) [dx, dy] = [dy, -dx]
       const quick = Date.now() - start.t < 600
       const wasAtTop = start.top <= 0
       start = null
@@ -1392,12 +1408,21 @@
     modal.seq++
     const v = modal.video
     v.pause()
-    v.onerror = v.oncanplay = null
+    v.onerror = v.oncanplay = v.onloadedmetadata = null
+    v.classList.remove('rot')
     v.removeAttribute('src')
     v.load()   // hand the decoder back
     modal.image.onerror = null
     modal.image.removeAttribute('src')
     modal.stage.scrollTop = 0
+  }
+
+  function fitVideoOrientation() {
+    if (!modal || !modal.open) return
+    const v = modal.video
+    const wide = v.videoWidth > v.videoHeight
+    const portrait = window.innerHeight > window.innerWidth
+    v.classList.toggle('rot', CFG.rotateLandscape && !v.hidden && wide && portrait)
   }
 
   function showVideo(urls) {
@@ -1415,6 +1440,7 @@
       else modal.status.textContent = t('mFail')
     }
     v.oncanplay = () => { modal.status.hidden = true }
+    v.onloadedmetadata = fitVideoOrientation   // the size is known from here
     v.muted = false   // with sound, even if the previous video was muted from the controls
     v.src = urls[i++]
     // The tap that opened the modal is a user gesture, which is what lets the
@@ -1556,6 +1582,8 @@
     if (!CFG.videoModal) return
     window.addEventListener('click', onSiteLinkClick, true)
     window.addEventListener('popstate', () => { if (modal && modal.open) closeModal(true) })
+    // Turning the screen with auto-rotate on makes the turn unnecessary.
+    window.addEventListener('resize', fitVideoOrientation)
     info('post modal active: thumbnails on site pages open in place')
   }
 
@@ -1946,6 +1974,7 @@
     body.appendChild(toggle('feedNav', t('tNav'), t('noteReload')))
     body.appendChild(toggle('sortButton', t('tSortBtn'), t('noteReload')))
     body.appendChild(toggle('videoModal', t('tModal'), t('noteReload')))
+    body.appendChild(toggle('rotateLandscape', t('tRotate')))
     body.appendChild(toggle('videoCovers', t('tCovers')))
     body.appendChild(toggle('gifInline', t('tGif')))
     body.appendChild(toggle('memorySaver', t('tMemory'), t('noteReload')))

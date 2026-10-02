@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.23.0
+
+- Modal: a wide video (e.g. 16:9) on a portrait screen is turned 90° to fill
+  the screen, watched with the phone turned left (`rotateLandscape`, on).
+  Swipes are mapped to the viewer's directions and the controls strip moves
+  to the screen's left edge while turned. With the screen already landscape
+  (auto-rotate on) nothing is turned; it re-checks on resize
+
 ## 0.22.0
 
 - Modal buttons ♡ favorite and ▲ upvote, calling the same endpoints as the
