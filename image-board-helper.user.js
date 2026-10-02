@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.25.0
+// @version      0.25.1
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.25.0'
+  const VERSION = '0.25.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -111,7 +111,7 @@
     feedNav:        true,   // ⤒ ‹ › buttons: top of page, previous and next post in the feed (needs reload)
     sortButton:     true,   // ★ button on search listings: add or remove sort:score (needs reload)
     videoModal:     true,   // open posts from site pages in an overlay: video, GIF, image (needs reload)
-    rotateLandscape: true,  // in the modal, turn wide videos 90° on a portrait screen
+    rotateLandscape: true,  // in the modal player's fullscreen, lock wide videos to landscape
     fixFancybox:    true,   // fill empty src in the alternate viewer
     gestures:       true,   // swipe, double tap and pinch
     originalThumbs: false,  // swap visible thumbnails for the original file (heavy, needs reload)
@@ -177,7 +177,7 @@
       mClose: 'Close', mOpen: 'Open the post', mPrev: 'Previous post', mNext: 'Next post',
       mLoading: 'Loading…', mFail: 'Could not load it',
       mFav: 'Add to favorites', mUp: 'Upvote',
-      tRotate: 'Turn wide videos in the player',
+      tRotate: 'Landscape in player fullscreen',
       favAdded: 'Added to favorites', favAlready: 'Already in your favorites',
       favLogin: 'You are not logged in', favFail: 'Could not favorite',
       voted: 'Upvoted', voteFail: 'Could not vote',
@@ -212,7 +212,7 @@
       mClose: 'Fechar', mOpen: 'Abrir o post', mPrev: 'Post anterior', mNext: 'Próximo post',
       mLoading: 'Carregando…', mFail: 'Não foi possível carregar',
       mFav: 'Favoritar', mUp: 'Votar positivo',
-      tRotate: 'Deitar vídeo largo no player',
+      tRotate: 'Paisagem na tela cheia do player',
       favAdded: 'Adicionado aos favoritos', favAlready: 'Já está nos favoritos',
       favLogin: 'Você não está logado', favFail: 'Não foi possível favoritar',
       voted: 'Voto registrado', voteFail: 'Não foi possível votar',
@@ -1257,13 +1257,7 @@
     .stage.tall { justify-content: flex-start; }
     video, img { display: block; width: 100%; background: #000; }
     video { max-height: 100vh; }
-    /* A wide video on a portrait screen: turned 90° clockwise to fill it, so it
-       reads upright with the phone turned to the left. */
-    video.rot {
-      position: fixed; top: 50%; left: 50%; width: 100vh; height: 100vw; max-height: none;
-      width: 100dvh;   /* 100vh counts the space behind Firefox's address bar */
-      transform: translate(-50%, -50%) rotate(90deg); object-fit: contain;
-    }
+    video { -webkit-touch-callout: none; user-select: none; }
     img { height: auto; -webkit-user-drag: none; user-select: none; transform-origin: 0 0; }
     [hidden] { display: none !important; }
     .bar { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 8px; padding: 10px; pointer-events: none; }
@@ -1387,24 +1381,17 @@
     let start = null
     stage.addEventListener('pointerdown', ev => {
       const r = video.hidden ? null : video.getBoundingClientRect()
-      const rotated = video.classList.contains('rot')
-      // Drags on the video's own controls are seeks, not swipes. Turned, the
-      // controls strip is along the left edge of the screen.
-      const onControls = r && (rotated
-        ? ev.clientX < r.left + CONTROLS_BAND && ev.clientX >= r.left
-        : ev.clientY > r.bottom - CONTROLS_BAND && ev.clientY <= r.bottom)
-      start = onControls ? null : { x: ev.clientX, y: ev.clientY, t: Date.now(), top: stage.scrollTop, rotated }
+      // Drags on the video's own controls are seeks, not swipes.
+      const onControls = r && ev.clientY > r.bottom - CONTROLS_BAND && ev.clientY <= r.bottom
+      start = onControls ? null : { x: ev.clientX, y: ev.clientY, t: Date.now(), top: stage.scrollTop }
     })
     stage.addEventListener('pointercancel', () => { start = null })
     stage.addEventListener('pointerup', ev => {
       if (!start) return
       // A pinch, a drag on a zoomed image, or the end of a 2x hold is not a swipe.
       if (zoom.scale > 1 || zoom.multi || videoPress.held) { start = null; return }
-      let dx = ev.clientX - start.x
-      let dy = ev.clientY - start.y
-      // With the phone turned left to watch a turned video, the viewer's
-      // "right" is the screen's bottom and "down" is the screen's left.
-      if (start.rotated) [dx, dy] = [dy, -dx]
+      const dx = ev.clientX - start.x
+      const dy = ev.clientY - start.y
       const quick = Date.now() - start.t < 600
       const wasAtTop = start.top <= 0
       start = null
@@ -1536,10 +1523,6 @@
       if (video.hidden) return null
       const r = video.getBoundingClientRect()
       if (ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom) return null
-      if (video.classList.contains('rot')) {
-        if (ev.clientX < r.left + CONTROLS_BAND) return null
-        return (ev.clientY - r.top) / r.height   // viewer's right is the screen's bottom
-      }
       if (ev.clientY > r.bottom - CONTROLS_BAND) return null
       return (ev.clientX - r.left) / r.width
     }
@@ -1556,22 +1539,32 @@
       setTimeout(() => { videoPress.held = false }, 0)
     }
 
+    // A long press on a video opens the browser's media menu (save video...),
+    // which cancels the touch halfway through the hold. Keep it out of the modal.
+    stage.addEventListener('contextmenu', ev => ev.preventDefault())
+
     stage.addEventListener('pointerdown', ev => {
       const fx = viewerX(ev)
       if (fx === null || press) return
       press = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, t: Date.now(), fx, rate: video.playbackRate || 1 }
+      dbg(`modal: video press at ${Math.round(fx * 100)}%`)
       press.timer = setTimeout(() => {
-        if (!press || video.paused) return
+        if (!press) return
+        if (video.paused) { dbg('modal: hold ignored, video is paused'); return }
         videoPress.held = true
         video.playbackRate = HOLD_RATE
         showBadge(`${HOLD_RATE}×`, true)
+        dbg(`modal: hold, playing at ${HOLD_RATE}x`)
       }, HOLD_FAST_MS)
     })
     stage.addEventListener('pointermove', ev => {
       if (!press || videoPress.held || ev.pointerId !== press.id) return
-      if (Math.hypot(ev.clientX - press.x, ev.clientY - press.y) > 10) { clearTimeout(press.timer); press = null }   // a swipe
+      if (Math.hypot(ev.clientX - press.x, ev.clientY - press.y) > 10) {   // a swipe
+        clearTimeout(press.timer)
+        press = null
+      }
     })
-    stage.addEventListener('pointercancel', release)
+    stage.addEventListener('pointercancel', () => { if (press) dbg('modal: video press cancelled by the browser'); release() })
     stage.addEventListener('pointerup', ev => {
       if (!press || ev.pointerId !== press.id) return
       const wasHold = videoPress.held
@@ -1584,6 +1577,7 @@
         const d = Number.isFinite(video.duration) ? video.duration : Infinity
         video.currentTime = Math.min(d, Math.max(0, video.currentTime + side * SEEK_STEP))
         showBadge(side > 0 ? `+${SEEK_STEP}s` : `−${SEEK_STEP}s`)
+        dbg(`modal: double tap, ${side > 0 ? '+' : '-'}${SEEK_STEP}s`)
         lastTap = { t: 0, side: 0 }
       } else {
         lastTap = { t: now, side }
@@ -1599,7 +1593,6 @@
     v.onerror = v.oncanplay = v.onloadedmetadata = null
     v.playbackRate = 1
     modal.badge.hidden = true
-    v.classList.remove('rot')
     v.removeAttribute('src')
     v.load()   // hand the decoder back
     modal.image.onerror = null
@@ -1608,15 +1601,17 @@
     resetZoom()
   }
 
-  // The player's own fullscreen button: there the real fix is turning the
-  // screen, which Firefox allows only in fullscreen (Screen Orientation API).
-  // The CSS turn must be off meanwhile, or the two rotations add up.
+  // The player's own fullscreen button turns the screen for a wide video,
+  // which Firefox allows only in fullscreen (Screen Orientation API). Outside
+  // fullscreen nothing is turned.
   function onFullscreenChange() {
     if (!modal || !modal.open) return
     const v = modal.video
     const orientation = screen.orientation
-    if (modal.root.fullscreenElement === v) {
-      v.classList.remove('rot')
+    // Inside our Shadow DOM the document sees the host; the root sees the video.
+    const full = modal.root.fullscreenElement === v || document.fullscreenElement === modal.host
+    dbg(`modal: fullscreen ${full ? 'on' : 'off'} (${v.videoWidth}x${v.videoHeight})`)
+    if (full) {
       if (CFG.rotateLandscape && v.videoWidth > v.videoHeight && orientation && orientation.lock) {
         orientation.lock('landscape').then(
           () => dbg('modal: fullscreen locked to landscape'),
@@ -1624,17 +1619,7 @@
       }
     } else {
       try { if (orientation && orientation.unlock) orientation.unlock() } catch (e) { /* not locked */ }
-      fitVideoOrientation()
     }
-  }
-
-  function fitVideoOrientation() {
-    if (!modal || !modal.open) return
-    if (modal.root.fullscreenElement) return   // fullscreen handles it by turning the screen
-    const v = modal.video
-    const wide = v.videoWidth > v.videoHeight
-    const portrait = window.innerHeight > window.innerWidth
-    v.classList.toggle('rot', CFG.rotateLandscape && !v.hidden && wide && portrait)
   }
 
   function showVideo(urls) {
@@ -1652,7 +1637,6 @@
       else modal.status.textContent = t('mFail')
     }
     v.oncanplay = () => { modal.status.hidden = true }
-    v.onloadedmetadata = fitVideoOrientation   // the size is known from here
     v.muted = false   // with sound, even if the previous video was muted from the controls
     v.src = urls[i++]
     // The tap that opened the modal is a user gesture, which is what lets the
@@ -1795,8 +1779,6 @@
     if (!CFG.videoModal) return
     window.addEventListener('click', onSiteLinkClick, true)
     window.addEventListener('popstate', () => { if (modal && modal.open) closeModal(true) })
-    // Turning the screen with auto-rotate on makes the turn unnecessary.
-    window.addEventListener('resize', fitVideoOrientation)
     document.addEventListener('fullscreenchange', onFullscreenChange)
     info('post modal active: thumbnails on site pages open in place')
   }

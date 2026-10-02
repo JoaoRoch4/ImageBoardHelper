@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.25.1
+
+- Wide videos are no longer turned with CSS outside fullscreen; only the
+  player's own fullscreen turns the screen to landscape. Swipes and taps use
+  plain screen directions again
+- Hold for 2x: the browser's long-press media menu is blocked inside the modal,
+  since it cancelled the touch halfway through the hold. Each step of the video
+  gestures and fullscreen now writes a debug log line, to see where it stops
+
 ## 0.25.0
 
 - Modal video gestures: hold on the video for 2x while the finger stays down
