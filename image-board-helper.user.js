@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.20.0
+// @version      0.21.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -71,9 +71,10 @@
  *      upgraded again on return; videos removed by Masonry are unloaded; the
  *      page releases everything when it is left.
  *
- *   H. VIDEO MODAL
- *      On the site's own pages, tapping a video thumbnail plays it in an
- *      overlay; the back button closes it.
+ *   H. POST MODAL
+ *      On the site's own pages, tapping a thumbnail opens the post in an
+ *      overlay (video with sound, GIF, original image); swipe sideways for the
+ *      next post, down or the back button to close.
  *
  * WHY @grant none: intercepting window.Fancybox and overriding
  * navigator.userAgent both require the page's own realm. Any @grant puts the
@@ -90,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.20.0'
+  const VERSION = '0.21.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -109,7 +110,7 @@
     memorySaver:    true,   // release far off-screen images and removed videos (needs reload)
     feedNav:        true,   // ⤒ ‹ › buttons: top of page, previous and next post in the feed (needs reload)
     sortButton:     true,   // ★ button on search listings: add or remove sort:score (needs reload)
-    videoModal:     true,   // play videos from site pages in an overlay instead of the post page (needs reload)
+    videoModal:     true,   // open posts from site pages in an overlay: video, GIF, image (needs reload)
     fixFancybox:    true,   // fill empty src in the alternate viewer
     gestures:       true,   // swipe, double tap and pinch
     originalThumbs: false,  // swap visible thumbnails for the original file (heavy, needs reload)
@@ -171,9 +172,9 @@
       tNav: 'Top / previous / next buttons',
       navPrev: 'Previous post', navNext: 'Next post', navTop: 'Top of the page',
       tSortBtn: 'Sort-by-score button', navSort: 'Sort by score (tap again to undo)',
-      tModal: 'Videos in a player over the page',
-      mClose: 'Close', mOpen: 'Open the post', mPrev: 'Previous video', mNext: 'Next video',
-      mLoading: 'Loading…', mFail: 'Could not load the video',
+      tModal: 'Open posts in a player over the page',
+      mClose: 'Close', mOpen: 'Open the post', mPrev: 'Previous post', mNext: 'Next post',
+      mLoading: 'Loading…', mFail: 'Could not load it',
       tFancybox: 'Repair Fancybox', tGestures: 'Touch gestures',
       tOriginal: 'Original thumbnails (heavy)',
       tFeed: 'One-column feed on site pages',
@@ -201,9 +202,9 @@
       tNav: 'Botões topo / anterior / próximo',
       navPrev: 'Post anterior', navNext: 'Próximo post', navTop: 'Topo da página',
       tSortBtn: 'Botão ordenar por score', navSort: 'Ordenar por score (toque de novo para desfazer)',
-      tModal: 'Vídeo em player sobre a página',
-      mClose: 'Fechar', mOpen: 'Abrir o post', mPrev: 'Vídeo anterior', mNext: 'Próximo vídeo',
-      mLoading: 'Carregando…', mFail: 'Não foi possível carregar o vídeo',
+      tModal: 'Abrir posts num player sobre a página',
+      mClose: 'Fechar', mOpen: 'Abrir o post', mPrev: 'Post anterior', mNext: 'Próximo post',
+      mLoading: 'Carregando…', mFail: 'Não foi possível carregar',
       tFancybox: 'Consertar Fancybox', tGestures: 'Gestos de toque',
       tOriginal: 'Miniatura original (pesado)',
       tFeed: 'Feed de uma coluna no site',
@@ -1218,29 +1219,39 @@
   }
 
   // ═══════════════════════════════════════════════════════════
-  // H. Video modal on site pages
+  // H. Post modal on site pages
   //
-  // Tapping a video thumbnail on the site's own pages plays the video in an
-  // overlay instead of leaving for the post page. It has its own Shadow DOM
-  // host, so it works with the panel turned off. Masonry has its own viewer.
+  // Tapping a thumbnail on the site's own pages opens the post in an overlay
+  // instead of leaving the page: videos play with sound, GIFs animate, images
+  // show the original. Swipe sideways for the next/previous post, down to
+  // close. Own Shadow DOM host, so it works with the panel off. Masonry has its
+  // own viewer.
   // ═══════════════════════════════════════════════════════════
 
   const SITE_LINK = '.image-list span.thumb a'
+  const SWIPE_MIN = 60        // px sideways to change post
+  const CONTROLS_BAND = 56    // bottom strip of the video: drags there are seeks
   let modal = null
 
-  const siteVideoLinks = () => [...document.querySelectorAll(SITE_LINK)].filter(a => isVideoCard(a))
+  const siteLinks = () => [...document.querySelectorAll(SITE_LINK)]
 
   const MODAL_CSS = `
     :host { all: initial; }
     * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
-    .m {
-      position: fixed; inset: 0; z-index: 2147483600; background: rgba(0, 0, 0, .94);
-      display: flex; align-items: center; justify-content: center;
+    .m { position: fixed; inset: 0; z-index: 2147483600; background: rgba(0, 0, 0, .95); }
+    .stage {
+      position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain;
+      display: flex; flex-direction: column; justify-content: center;
     }
-    video { width: 100%; max-height: 100vh; background: #000; }
-    .bar { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 8px; padding: 10px; }
-    .count { margin-left: auto; color: #a8b8bb; font-size: 13px; }
-    .status { position: absolute; color: #a8b8bb; font-size: 14px; pointer-events: none; }
+    .stage.tall { justify-content: flex-start; }
+    video, img { display: block; width: 100%; background: #000; }
+    video { max-height: 100vh; }
+    img { height: auto; -webkit-user-drag: none; user-select: none; }
+    [hidden] { display: none !important; }
+    .bar { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 8px; padding: 10px; pointer-events: none; }
+    .bar > * { pointer-events: auto; }
+    .count { margin-left: auto; color: #a8b8bb; font-size: 13px; text-shadow: 0 1px 3px #000; }
+    .status { position: absolute; left: 0; right: 0; top: 50%; text-align: center; color: #a8b8bb; font-size: 14px; pointer-events: none; }
     button, a.btn {
       width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center;
       border: 1px solid #2a3a3f; background: rgba(15, 20, 23, .85); color: #5eead4;
@@ -1260,38 +1271,70 @@
     video.controls = true
     video.loop = true
     video.playsInline = true
+    const image = document.createElement('img')
+    image.draggable = false
+    const stage = el('div', { class: 'stage' }, [video, image])
     const close = el('button', { text: '✕', title: t('mClose') })
     const post = el('a', { class: 'btn', text: '↗', title: t('mOpen') })
     const count = el('span', { class: 'count' })
     const status = el('div', { class: 'status' })
     const prev = el('button', { class: 'side prev', text: '‹', title: t('mPrev') })
     const next = el('button', { class: 'side next', text: '›', title: t('mNext') })
-    const box = el('div', { class: 'm' }, [video, status, el('div', { class: 'bar' }, [close, post, count]), prev, next])
-    close.addEventListener('click', () => closeVideoModal(false))
+    const box = el('div', { class: 'm' }, [stage, status, el('div', { class: 'bar' }, [close, post, count]), prev, next])
+    close.addEventListener('click', () => closeModal(false))
     prev.addEventListener('click', () => stepModal(-1))
     next.addEventListener('click', () => stepModal(1))
-    box.addEventListener('click', ev => { if (ev.target === box) closeVideoModal(false) })   // tap outside the video
+    // Tap on the empty area around the media closes.
+    stage.addEventListener('click', ev => { if (ev.target === stage) closeModal(false) })
+    installModalSwipe(stage, video)
     root.append(style, box)
-    modal = { host, video, post, count, status, open: false, link: null }
+    modal = { host, stage, video, image, post, count, status, open: false, link: null, seq: 0 }
   }
 
-  function openVideoModal(link) {
-    const pic = cardPicture(link)
-    const urls = pic ? fileCandidates(pic.src, ['mp4', 'webm']) : []
-    if (!urls.length) { location.href = link.href; return }   // nothing derivable: go to the post
-    if (!modal) buildModal()
+  function installModalSwipe(stage, video) {
+    let start = null
+    stage.addEventListener('pointerdown', ev => {
+      const r = video.hidden ? null : video.getBoundingClientRect()
+      // Drags on the video's own controls are seeks, not swipes.
+      const onControls = r && ev.clientY > r.bottom - CONTROLS_BAND && ev.clientY <= r.bottom
+      start = onControls ? null : { x: ev.clientX, y: ev.clientY, t: Date.now(), top: stage.scrollTop }
+    })
+    stage.addEventListener('pointercancel', () => { start = null })
+    stage.addEventListener('pointerup', ev => {
+      if (!start) return
+      const dx = ev.clientX - start.x
+      const dy = ev.clientY - start.y
+      const quick = Date.now() - start.t < 600
+      const wasAtTop = start.top <= 0
+      start = null
+      if (!quick) return
+      if (Math.abs(dx) > SWIPE_MIN && Math.abs(dx) > Math.abs(dy) * 1.5) stepModal(dx < 0 ? 1 : -1)
+      // Down closes, but inside a tall image only from its top: otherwise it is scrolling.
+      else if (dy > 90 && dy > Math.abs(dx) * 1.5 && wasAtTop) closeModal(false)
+    })
+  }
 
+  // Stop whatever is showing and invalidate loads still in flight (seq).
+  function resetMedia() {
+    modal.seq++
+    const v = modal.video
+    v.pause()
+    v.onerror = v.oncanplay = null
+    v.removeAttribute('src')
+    v.load()   // hand the decoder back
+    modal.image.onerror = null
+    modal.image.removeAttribute('src')
+    modal.stage.scrollTop = 0
+  }
+
+  function showVideo(urls) {
     // The phone decodes about four videos at once; the modal gets one of them.
     document.querySelectorAll('[data-ibh-cover]').forEach(card => unmountCover(card))
     coverQueue.clear()
-
-    modal.link = link
-    modal.post.href = link.href
-    const list = siteVideoLinks()
-    modal.count.textContent = `${list.indexOf(link) + 1} / ${list.length}`
-    modal.status.textContent = t('mLoading')
-    modal.status.hidden = false
-
+    modal.image.hidden = true
+    modal.video.hidden = false
+    modal.stage.classList.remove('tall')
+    modal.stage.style.touchAction = 'none'   // all drags are ours; the controls still work
     const v = modal.video
     let i = 0
     v.onerror = () => {
@@ -1313,6 +1356,82 @@
         v.play().catch(() => {})
       })
     }
+  }
+
+  // Show what the page already has at once, then the better file when it loads.
+  function showImage(placeholder, urls) {
+    const seq = modal.seq
+    modal.video.hidden = true
+    modal.image.hidden = false
+    const img = modal.image
+    const fit = () => {
+      // A tall image (a comic) scrolls inside the modal; vertical drags scroll it.
+      const tall = img.offsetHeight > modal.stage.clientHeight
+      modal.stage.classList.toggle('tall', tall)
+      modal.stage.style.touchAction = tall ? 'pan-y' : 'none'
+    }
+    img.onload = fit
+    img.src = placeholder
+    modal.status.hidden = true
+    const probe = new Image()
+    probe.decoding = 'async'
+    let i = 0
+    probe.onerror = () => { if (i < urls.length) probe.src = urls[i++] }
+    probe.onload = () => {
+      if (modal.seq !== seq) return   // the user moved on
+      const decoded = typeof probe.decode === 'function' ? probe.decode().catch(() => {}) : Promise.resolve()
+      decoded.then(() => { if (modal.seq === seq) img.src = probe.src })
+    }
+    if (urls.length) probe.src = urls[i++]
+  }
+
+  // Some videos carry no video tag and no .webm-thumb, so they look like images.
+  // While the image shows, check quietly whether the post has an .mp4; if it
+  // does, turn the modal into the video. No delay on the tap itself.
+  function sniffVideo(src, link) {
+    const seq = modal.seq
+    const urls = fileCandidates(src, ['mp4']).slice(0, 2)
+    if (!urls.length) return
+    const v = document.createElement('video')
+    v.muted = true
+    v.preload = 'metadata'
+    let i = 0
+    const done = () => { v.onerror = v.onloadedmetadata = null; v.removeAttribute('src'); v.load() }
+    v.onerror = () => { if (i < urls.length) v.src = urls[i++]; else done() }
+    v.onloadedmetadata = () => {
+      done()
+      if (modal.seq !== seq || !modal.open) return
+      info(`modal: post ${postId(link)} is an untagged video`)
+      showVideo(fileCandidates(src, ['mp4', 'webm']))
+    }
+    v.src = urls[i++]
+  }
+
+  const postId = link => (link.href.match(/id=(\d+)/) || [])[1] || '?'
+
+  function openModal(link) {
+    const thumb = link.querySelector('img')
+    const pic = thumb && cardPicture(link)
+    if (!pic || !thumbParts(pic.src)) { location.href = link.href; return }   // nothing derivable: go to the post
+    if (!modal) buildModal()
+    resetMedia()
+
+    modal.link = link
+    modal.post.href = link.href
+    const list = siteLinks()
+    modal.count.textContent = `${list.indexOf(link) + 1} / ${list.length}`
+    modal.status.textContent = t('mLoading')
+    modal.status.hidden = false
+
+    const kind = thumbKind(thumb)
+    if (kind === 'video') {
+      showVideo(fileCandidates(pic.src, ['mp4', 'webm']))
+    } else if (kind === 'gif') {
+      showImage(thumb.currentSrc || pic.src, fileCandidates(pic.src, ['gif']))
+    } else {
+      showImage(thumb.currentSrc || pic.src, fileCandidates(pic.src, ORIGINAL_EXTS))
+      sniffVideo(pic.src, link)
+    }
 
     if (!modal.open) {
       modal.open = true
@@ -1322,21 +1441,17 @@
       // An entry for the back button to close the modal instead of the page.
       history.pushState({ ibhModal: true }, '')
     }
-    info(`modal: post ${(link.href.match(/id=(\d+)/) || [])[1] || '?'}`)
+    info(`modal: ${kind} post ${postId(link)}`)
   }
 
-  function closeVideoModal(fromBack) {
+  function closeModal(fromBack) {
     if (!modal || !modal.open) return
     modal.open = false
-    const v = modal.video
-    v.pause()
-    v.onerror = null
-    v.removeAttribute('src')
-    v.load()   // hand the decoder back
+    resetMedia()
     modal.host.style.display = 'none'
     document.documentElement.style.removeProperty('overflow')
     if (!fromBack && history.state && history.state.ibhModal) history.back()
-    // Leave the page on the post that was playing, then bring covers back.
+    // Leave the page on the post last shown, then bring covers back.
     if (modal.link && modal.link.isConnected) modal.link.scrollIntoView({ block: 'center' })
     if (CFG.videoCovers) {
       document.querySelectorAll('[data-ibh-seen]').forEach(card => { if (isVideoCard(card)) mountCover(card) })
@@ -1344,27 +1459,27 @@
   }
 
   function stepModal(dir) {
-    const list = siteVideoLinks()
+    const list = siteLinks()
     const target = list[list.indexOf(modal.link) + dir]
-    if (target) openVideoModal(target)
+    if (target) openModal(target)
   }
 
   // Capture on window: runs before the link's own onclick (favorites navigate
   // from an inline handler) and survives Masonry replacing the body.
-  function onVideoLinkClick(ev) {
+  function onSiteLinkClick(ev) {
     if (ev.defaultPrevented || ev.button !== 0) return
     const link = ev.target.closest && ev.target.closest(SITE_LINK)
-    if (!link || !isVideoCard(link)) return
+    if (!link) return
     ev.preventDefault()
     ev.stopPropagation()
-    openVideoModal(link)
+    openModal(link)
   }
 
   function installVideoModal() {
     if (!CFG.videoModal) return
-    window.addEventListener('click', onVideoLinkClick, true)
-    window.addEventListener('popstate', () => { if (modal && modal.open) closeVideoModal(true) })
-    info('video modal active: video thumbnails on site pages play in place')
+    window.addEventListener('click', onSiteLinkClick, true)
+    window.addEventListener('popstate', () => { if (modal && modal.open) closeModal(true) })
+    info('post modal active: thumbnails on site pages open in place')
   }
 
   // ═══════════════════════════════════════════════════════════

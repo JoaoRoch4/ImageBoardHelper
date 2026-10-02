@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.21.0
+
+- The modal now opens every post on site pages, not only videos: GIFs animate,
+  images show what the feed already has at once and swap to the original when
+  it loads (tall comics scroll inside the modal)
+- Swipe in the modal: sideways for the next/previous post (‹ › and the counter
+  now cover every post on the page), down to close (from the top of a tall
+  image). Drags on the video's control strip stay seeks
+- Videos with no video tag and no `.webm-thumb` open as an image, while the
+  modal quietly checks for an `.mp4`; if there is one it switches to the video
+
 ## 0.20.0
 
 - Video modal (`videoModal`, on): on the site's own pages, tapping a video
