@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.22.0
+
+- Modal buttons ♡ favorite and ▲ upvote, calling the same endpoints as the
+  post page with the site's login cookie: `public/addfav.php?id=` (3 added,
+  1 already there, 2 not logged in) and `index.php?page=post&s=vote&id=&type=up`
+  (answers with the new score, shown next to ▲). A short message confirms
+
 ## 0.21.0
 
 - The modal now opens every post on site pages, not only videos: GIFs animate,

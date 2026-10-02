@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.21.0
+// @version      0.22.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.21.0'
+  const VERSION = '0.22.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -175,6 +175,10 @@
       tModal: 'Open posts in a player over the page',
       mClose: 'Close', mOpen: 'Open the post', mPrev: 'Previous post', mNext: 'Next post',
       mLoading: 'Loading…', mFail: 'Could not load it',
+      mFav: 'Add to favorites', mUp: 'Upvote',
+      favAdded: 'Added to favorites', favAlready: 'Already in your favorites',
+      favLogin: 'You are not logged in', favFail: 'Could not favorite',
+      voted: 'Upvoted', voteFail: 'Could not vote',
       tFancybox: 'Repair Fancybox', tGestures: 'Touch gestures',
       tOriginal: 'Original thumbnails (heavy)',
       tFeed: 'One-column feed on site pages',
@@ -205,6 +209,10 @@
       tModal: 'Abrir posts num player sobre a página',
       mClose: 'Fechar', mOpen: 'Abrir o post', mPrev: 'Post anterior', mNext: 'Próximo post',
       mLoading: 'Carregando…', mFail: 'Não foi possível carregar',
+      mFav: 'Favoritar', mUp: 'Votar positivo',
+      favAdded: 'Adicionado aos favoritos', favAlready: 'Já está nos favoritos',
+      favLogin: 'Você não está logado', favFail: 'Não foi possível favoritar',
+      voted: 'Voto registrado', voteFail: 'Não foi possível votar',
       tFancybox: 'Consertar Fancybox', tGestures: 'Gestos de toque',
       tOriginal: 'Miniatura original (pesado)',
       tFeed: 'Feed de uma coluna no site',
@@ -1259,6 +1267,14 @@
     }
     .side { position: absolute; top: 50%; transform: translateY(-50%); font-size: 26px; padding-bottom: 3px; }
     .prev { left: 6px; } .next { right: 6px; }
+    button.on { background: #5eead4; color: #0f1417; border-color: #5eead4; }
+    button.up { width: auto; min-width: 42px; padding: 0 12px; border-radius: 21px; gap: 6px; display: flex; font-size: 16px; }
+    .score { font-size: 13px; }
+    .toast {
+      position: absolute; left: 50%; bottom: 84px; transform: translateX(-50%);
+      padding: 8px 14px; border-radius: 18px; background: rgba(15, 20, 23, .92); color: #d7dee0;
+      font-size: 13px; pointer-events: none; transition: opacity .2s;
+    }
   `
 
   function buildModal() {
@@ -1278,17 +1294,74 @@
     const post = el('a', { class: 'btn', text: '↗', title: t('mOpen') })
     const count = el('span', { class: 'count' })
     const status = el('div', { class: 'status' })
+    const fav = el('button', { text: '♡', title: t('mFav') })
+    const score = el('span', { class: 'score' })
+    const up = el('button', { class: 'up', title: t('mUp') }, [el('span', { text: '▲' }), score])
+    const toast = el('div', { class: 'toast' })
+    toast.style.opacity = '0'
     const prev = el('button', { class: 'side prev', text: '‹', title: t('mPrev') })
     const next = el('button', { class: 'side next', text: '›', title: t('mNext') })
-    const box = el('div', { class: 'm' }, [stage, status, el('div', { class: 'bar' }, [close, post, count]), prev, next])
+    const box = el('div', { class: 'm' }, [stage, status, el('div', { class: 'bar' }, [close, post, fav, up, count]), prev, next, toast])
     close.addEventListener('click', () => closeModal(false))
+    fav.addEventListener('click', modalFavorite)
+    up.addEventListener('click', modalUpvote)
     prev.addEventListener('click', () => stepModal(-1))
     next.addEventListener('click', () => stepModal(1))
     // Tap on the empty area around the media closes.
     stage.addEventListener('click', ev => { if (ev.target === stage) closeModal(false) })
     installModalSwipe(stage, video)
     root.append(style, box)
-    modal = { host, stage, video, image, post, count, status, open: false, link: null, seq: 0 }
+    modal = { host, stage, video, image, post, count, status, fav, up, score, toast, open: false, link: null, seq: 0 }
+  }
+
+  let toastTimer = 0
+  function flash(text) {
+    modal.toast.textContent = text
+    modal.toast.style.opacity = '1'
+    clearTimeout(toastTimer)
+    toastTimer = setTimeout(() => { modal.toast.style.opacity = '0' }, 1800)
+  }
+
+  // The same endpoints the post page calls, so the site's login cookie goes
+  // along. Answers decoded from the site's own addFav: 3 added, 1 already
+  // there, 2 not logged in (Masonry reads them the same way).
+  async function modalFavorite() {
+    const id = postId(modal.link)
+    try {
+      const res = await fetch(`/public/addfav.php?id=${encodeURIComponent(id)}`, { credentials: 'same-origin' })
+      const code = (await res.text()).trim()
+      if (code === '3' || code === '1') {
+        modal.fav.textContent = '♥'
+        modal.fav.classList.add('on')
+        flash(t(code === '3' ? 'favAdded' : 'favAlready'))
+      } else {
+        flash(code === '2' ? t('favLogin') : `${t('favFail')} (${res.status} ${code.slice(0, 20)})`)
+      }
+      info(`modal: favorite post ${id} -> ${code.slice(0, 20)}`)
+    } catch (e) {
+      flash(t('favFail'))
+      warn(`modal: favorite failed — ${describeError(e)}`)
+    }
+  }
+
+  // Answers with the new score as plain text, which the post page shows.
+  async function modalUpvote() {
+    const id = postId(modal.link)
+    try {
+      const res = await fetch(`/index.php?page=post&s=vote&id=${encodeURIComponent(id)}&type=up`, { credentials: 'same-origin' })
+      const score = parseInt(await res.text(), 10)
+      if (res.ok && Number.isFinite(score)) {
+        modal.score.textContent = String(score)
+        modal.up.classList.add('on')
+        flash(t('voted'))
+      } else {
+        flash(`${t('voteFail')} (${res.status})`)
+      }
+      info(`modal: upvote post ${id} -> ${Number.isFinite(score) ? score : res.status}`)
+    } catch (e) {
+      flash(t('voteFail'))
+      warn(`modal: upvote failed — ${describeError(e)}`)
+    }
   }
 
   function installModalSwipe(stage, video) {
@@ -1418,6 +1491,10 @@
 
     modal.link = link
     modal.post.href = link.href
+    modal.fav.textContent = '♡'   // state is per post; the site gives no cheap way to read it
+    modal.fav.classList.remove('on')
+    modal.up.classList.remove('on')
+    modal.score.textContent = ''
     const list = siteLinks()
     modal.count.textContent = `${list.indexOf(link) + 1} / ${list.length}`
     modal.status.textContent = t('mLoading')
