@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.23.0
+// @version      0.23.1
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.23.0'
+  const VERSION = '0.23.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -1261,6 +1261,7 @@
        reads upright with the phone turned to the left. */
     video.rot {
       position: fixed; top: 50%; left: 50%; width: 100vh; height: 100vw; max-height: none;
+      width: 100dvh;   /* 100vh counts the space behind Firefox's address bar */
       transform: translate(-50%, -50%) rotate(90deg); object-fit: contain;
     }
     img { height: auto; -webkit-user-drag: none; user-select: none; }

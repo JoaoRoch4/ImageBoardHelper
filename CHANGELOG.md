@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.23.1
+
+- The turned video is sized to the visible height (`100dvh`): `100vh` on Firefox
+  for Android includes the space behind the address bar, so the turned video
+  ran 64 px past the screen
+
 ## 0.23.0
 
 - Modal: a wide video (e.g. 16:9) on a portrait screen is turned 90° to fill
