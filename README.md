@@ -88,7 +88,7 @@ All of them live in the panel and are stored in `localStorage` under `IBH_CFG`.
 | `feedNav` | on | with `nativeFeed`, round buttons ⤒ ‹ › in the bottom-right corner jump to the top of the page, or to the start of the previous or next post, e.g. to skip a long comic (needs reload) |
 | `sortButton` | on | ★ button on search listings (site and Masonry): adds `sort:score` to the current search, or removes it, and reloads on the first page; lit while the search is sorted by score (needs reload) |
 | `videoModal` | on | on the site's own pages, tapping a thumbnail opens the post in a player over the page: videos with sound, GIFs animated, images in the original (tall comics scroll). Swipe sideways or ‹ › for the next/previous post, swipe down, ✕ or the back button to close, ↗ opens the post page, ♡ favorites and ▲ upvotes it (showing the new score). Videos without any video tag are detected and switch the player to video (needs reload) |
-| `rotateLandscape` | on | in the modal, a video wider than tall on a portrait screen is turned 90° to fill it; watch with the phone turned left. Swipes and the controls strip follow the turn. Not needed, and not done, when the screen itself is landscape |
+| `rotateLandscape` | on | in the modal, a video wider than tall on a portrait screen is turned 90° to fill it; watch with the phone turned left. Swipes and the controls strip follow the turn. Not needed, and not done, when the screen itself is landscape. In the player's fullscreen the screen itself is locked to landscape instead |
 | `forceRule34Api` | **off** | see below (needs reload) |
 | `lang` | automatic | panel language: automatic, Portuguese or English |
 | `debug` | off | mirrors the log into the browser console |

@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.23.2
+
+- Modal fullscreen: entering the player's own fullscreen with a wide video
+  locks the screen to landscape (Screen Orientation API, allowed by Firefox
+  only in fullscreen) and unlocks it on exit; the CSS turn is off meanwhile so
+  the rotations do not add up. Closing the modal leaves fullscreen first
+
 ## 0.23.1
 
 - The turned video is sized to the visible height (`100dvh`): `100vh` on Firefox

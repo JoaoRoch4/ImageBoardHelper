@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.23.1
+// @version      0.23.2
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.23.1'
+  const VERSION = '0.23.2'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -1321,7 +1321,7 @@
     stage.addEventListener('click', ev => { if (ev.target === stage) closeModal(false) })
     installModalSwipe(stage, video)
     root.append(style, box)
-    modal = { host, stage, video, image, post, count, status, fav, up, score, toast, open: false, link: null, seq: 0 }
+    modal = { host, root, stage, video, image, post, count, status, fav, up, score, toast, open: false, link: null, seq: 0 }
   }
 
   let toastTimer = 0
@@ -1418,8 +1418,29 @@
     modal.stage.scrollTop = 0
   }
 
+  // The player's own fullscreen button: there the real fix is turning the
+  // screen, which Firefox allows only in fullscreen (Screen Orientation API).
+  // The CSS turn must be off meanwhile, or the two rotations add up.
+  function onFullscreenChange() {
+    if (!modal || !modal.open) return
+    const v = modal.video
+    const orientation = screen.orientation
+    if (modal.root.fullscreenElement === v) {
+      v.classList.remove('rot')
+      if (CFG.rotateLandscape && v.videoWidth > v.videoHeight && orientation && orientation.lock) {
+        orientation.lock('landscape').then(
+          () => dbg('modal: fullscreen locked to landscape'),
+          e => dbg(`modal: orientation lock refused — ${describeError(e)}`))
+      }
+    } else {
+      try { if (orientation && orientation.unlock) orientation.unlock() } catch (e) { /* not locked */ }
+      fitVideoOrientation()
+    }
+  }
+
   function fitVideoOrientation() {
     if (!modal || !modal.open) return
+    if (modal.root.fullscreenElement) return   // fullscreen handles it by turning the screen
     const v = modal.video
     const wide = v.videoWidth > v.videoHeight
     const portrait = window.innerHeight > window.innerWidth
@@ -1550,6 +1571,7 @@
 
   function closeModal(fromBack) {
     if (!modal || !modal.open) return
+    if (modal.root.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {})
     modal.open = false
     resetMedia()
     modal.host.style.display = 'none'
@@ -1585,6 +1607,7 @@
     window.addEventListener('popstate', () => { if (modal && modal.open) closeModal(true) })
     // Turning the screen with auto-rotate on makes the turn unnecessary.
     window.addEventListener('resize', fitVideoOrientation)
+    document.addEventListener('fullscreenchange', onFullscreenChange)
     info('post modal active: thumbnails on site pages open in place')
   }
 
