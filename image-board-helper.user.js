@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.25.1
+// @version      0.25.2
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.25.1'
+  const VERSION = '0.25.2'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -1256,6 +1256,12 @@
     }
     .stage.tall { justify-content: flex-start; }
     video, img { display: block; width: 100%; background: #000; }
+    .vwrap { position: relative; }
+    /* Firefox's native video controls swallow touches on the video, so gestures
+       go to this layer on top. The bottom strip stays uncovered: real taps
+       there reach the controls (seek bar, sound, fullscreen). */
+    .vlayer { position: absolute; left: 0; right: 0; top: 0; bottom: ${CONTROLS_BAND}px;
+      -webkit-touch-callout: none; user-select: none; }
     video { max-height: 100vh; }
     video { -webkit-touch-callout: none; user-select: none; }
     img { height: auto; -webkit-user-drag: none; user-select: none; transform-origin: 0 0; }
@@ -1298,7 +1304,9 @@
     video.playsInline = true
     const image = document.createElement('img')
     image.draggable = false
-    const stage = el('div', { class: 'stage' }, [video, image])
+    const layer = el('div', { class: 'vlayer' })
+    const vwrap = el('div', { class: 'vwrap' }, [video, layer])
+    const stage = el('div', { class: 'stage' }, [vwrap, image])
     const close = el('button', { text: '✕', title: t('mClose') })
     const post = el('a', { class: 'btn', text: '↗', title: t('mOpen') })
     const count = el('span', { class: 'count' })
@@ -1322,9 +1330,9 @@
     stage.addEventListener('click', ev => { if (ev.target === stage) closeModal(false) })
     installModalSwipe(stage, video)
     installImageZoom(stage, image)
-    installVideoGestures(stage, video)
+    installVideoGestures(layer, video)
     root.append(style, box)
-    modal = { host, root, stage, video, image, post, count, status, fav, up, score, toast, badge, open: false, link: null, seq: 0 }
+    modal = { host, root, stage, vwrap, video, image, post, count, status, fav, up, score, toast, badge, open: false, link: null, seq: 0 }
   }
 
   let toastTimer = 0
@@ -1514,17 +1522,12 @@
     if (!sticky) badgeTimer = setTimeout(() => { modal.badge.hidden = true }, 700)
   }
 
-  function installVideoGestures(stage, video) {
+  function installVideoGestures(layer, video) {
     let press = null
-    let lastTap = { t: 0, side: 0 }
-    // Where the finger is along the viewer's horizontal axis, 0..1, or null
-    // when outside the video or on its control strip.
+    let tap = null   // a first tap waiting to see whether a second one follows
     const viewerX = ev => {
-      if (video.hidden) return null
-      const r = video.getBoundingClientRect()
-      if (ev.clientX < r.left || ev.clientX > r.right || ev.clientY < r.top || ev.clientY > r.bottom) return null
-      if (ev.clientY > r.bottom - CONTROLS_BAND) return null
-      return (ev.clientX - r.left) / r.width
+      const r = layer.getBoundingClientRect()
+      return Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width))
     }
     const release = () => {
       if (!press) return
@@ -1535,17 +1538,16 @@
         dbg('modal: hold released, back to normal speed')
       }
       press = null
-      // Cleared after the swipe handler (registered first) has seen it.
+      // Cleared after the swipe handler on the stage has seen this pointerup.
       setTimeout(() => { videoPress.held = false }, 0)
     }
 
-    // A long press on a video opens the browser's media menu (save video...),
-    // which cancels the touch halfway through the hold. Keep it out of the modal.
-    stage.addEventListener('contextmenu', ev => ev.preventDefault())
+    // A long press would open the browser's media menu and cancel the hold.
+    layer.addEventListener('contextmenu', ev => ev.preventDefault())
 
-    stage.addEventListener('pointerdown', ev => {
+    layer.addEventListener('pointerdown', ev => {
+      if (press) return
       const fx = viewerX(ev)
-      if (fx === null || press) return
       press = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, t: Date.now(), fx, rate: video.playbackRate || 1 }
       dbg(`modal: video press at ${Math.round(fx * 100)}%`)
       press.timer = setTimeout(() => {
@@ -1557,31 +1559,42 @@
         dbg(`modal: hold, playing at ${HOLD_RATE}x`)
       }, HOLD_FAST_MS)
     })
-    stage.addEventListener('pointermove', ev => {
+    layer.addEventListener('pointermove', ev => {
       if (!press || videoPress.held || ev.pointerId !== press.id) return
-      if (Math.hypot(ev.clientX - press.x, ev.clientY - press.y) > 10) {   // a swipe
+      if (Math.hypot(ev.clientX - press.x, ev.clientY - press.y) > 10) {   // a swipe, handled on the stage
         clearTimeout(press.timer)
         press = null
       }
     })
-    stage.addEventListener('pointercancel', () => { if (press) dbg('modal: video press cancelled by the browser'); release() })
-    stage.addEventListener('pointerup', ev => {
+    layer.addEventListener('pointercancel', () => { if (press) dbg('modal: video press cancelled by the browser'); release() })
+    layer.addEventListener('pointerup', ev => {
       if (!press || ev.pointerId !== press.id) return
-      const wasHold = videoPress.held
-      const quickTap = !wasHold && Date.now() - press.t < 250 && Math.hypot(ev.clientX - press.x, ev.clientY - press.y) < 10
+      const quickTap = !videoPress.held && Date.now() - press.t < 250 &&
+        Math.hypot(ev.clientX - press.x, ev.clientY - press.y) < 10
       const side = press.fx > 0.65 ? 1 : press.fx < 0.35 ? -1 : 0
       release()
       if (!quickTap) return
-      const now = Date.now()
-      if (side && lastTap.side === side && now - lastTap.t < 300) {
-        const d = Number.isFinite(video.duration) ? video.duration : Infinity
-        video.currentTime = Math.min(d, Math.max(0, video.currentTime + side * SEEK_STEP))
-        showBadge(side > 0 ? `+${SEEK_STEP}s` : `−${SEEK_STEP}s`)
-        dbg(`modal: double tap, ${side > 0 ? '+' : '-'}${SEEK_STEP}s`)
-        lastTap = { t: 0, side: 0 }
-      } else {
-        lastTap = { t: now, side }
+      // Second tap within 300 ms: a double tap. On a side it seeks; the
+      // pending single-tap action is cancelled either way.
+      if (tap && Date.now() - tap.t < 300) {
+        clearTimeout(tap.timer)
+        if (side && side === tap.side) {
+          const d = Number.isFinite(video.duration) ? video.duration : Infinity
+          video.currentTime = Math.min(d, Math.max(0, video.currentTime + side * SEEK_STEP))
+          showBadge(side > 0 ? `+${SEEK_STEP}s` : `−${SEEK_STEP}s`)
+          dbg(`modal: double tap, ${side > 0 ? '+' : '-'}${SEEK_STEP}s`)
+        }
+        tap = null
+        return
       }
+      // A single tap plays or pauses, once it is clear no second tap follows.
+      tap = { t: Date.now(), side }
+      tap.timer = setTimeout(() => {
+        tap = null
+        if (video.paused) { video.play().catch(() => {}); showBadge('▶') }
+        else { video.pause(); showBadge('❚❚') }
+        dbg(`modal: tap, ${video.paused ? 'paused' : 'playing'}`)
+      }, 300)
     })
   }
 
@@ -1628,6 +1641,7 @@
     coverQueue.clear()
     modal.image.hidden = true
     modal.video.hidden = false
+    modal.vwrap.hidden = false
     modal.stage.classList.remove('tall')
     modal.stage.style.touchAction = 'none'   // all drags are ours; the controls still work
     const v = modal.video
@@ -1657,6 +1671,7 @@
   function showImage(placeholder, urls) {
     const seq = modal.seq
     modal.video.hidden = true
+    modal.vwrap.hidden = true
     modal.image.hidden = false
     const img = modal.image
     const fit = () => {

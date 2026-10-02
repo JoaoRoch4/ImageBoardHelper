@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.25.2
+
+- Fix: video gestures in the modal never fired with a real finger. Firefox's
+  native video controls swallow touches on the video and only toggle their
+  bar; the synthetic test events had been dispatched straight to the element.
+  A transparent layer over the video now takes the gestures (tap to play or
+  pause, hold for 2x, double-tap a side for ±5 s, swipes), leaving the bottom
+  strip uncovered so real taps there still reach the native controls
+
 ## 0.25.1
 
 - Wide videos are no longer turned with CSS outside fullscreen; only the

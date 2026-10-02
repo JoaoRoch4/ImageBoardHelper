@@ -90,6 +90,8 @@ Não sugira estas de novo sem um motivo novo.
 
 **`touch()` dentro do que o painel chama ao se desenhar.** `renderStatus` → `readMasonryState` → `touch()` → `renderStatus` entrava em laço até estourar a pilha com o painel aberto, e a lista de status sumia sem aviso. O painel lê com `readMasonryState(false)` e `renderStatus` tem trava de reentrada.
 
+**Ouvir toques direto no `<video controls>`.** Os controles nativos do Firefox engolem o toque real (só mostram/escondem a barra) e o evento não sobe para a página. Evento sintético despachado no elemento passa, então teste sintético não prova nada aqui. Os gestos ficam numa camada própria por cima do vídeo, com a faixa de baixo livre para os controles.
+
 **Consertar o Fancybox em sites de detalhe tardio.** Em sankaku, anime-pictures, allgirl, hentaibooru e kusowanka a URL só existe após o fetch de detalhe e não é derivável. Sem acesso a `store.imageList`, não há solução externa. O patch correto está no README e é no script original.
 
 ---
