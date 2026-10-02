@@ -66,7 +66,7 @@ Bugs do Masonry que este script contorna:
 8. **D.** Gestos — ponteiros, swipe, toque duplo, pinça
 9. **E.** Miniatura original e feed nativo — `upgradeToOriginal`, `upgradeCandidates`, `sampleCandidates`, `probeOriginal`, `scanThumbs`
 10. **G.** Gerenciamento de memória — `farViewport`, `releaseFar`, `pinHeight`, `onNodesRemoved`, `onLocationChange`, `releaseAll`
-11. **H.** Modal de post nas páginas do site (vídeo, GIF, imagem, swipe) — `openModal`, `closeModal`, `stepModal`, `showVideo`, `showImage`, `sniffVideo`, `installModalSwipe`, `installImageZoom`
+11. **H.** Modal de post nas páginas do site (vídeo, GIF, imagem, swipe) — `openModal`, `closeModal`, `stepModal`, `showVideo`, `showImage`, `sniffVideo`, `installModalSwipe`, `installImageZoom`, `suspendPage`, `resumePage`
 12. Opcional: `applyRule34ApiUnlock`
 13. Diagnóstico — `probeVideoUrls`, `logSnapshot`, `freeMemory`, `redoThumbs`
 14. Painel — Shadow DOM, `renderStatus`, `copyLog`; botões ★ ⤒ ‹ › (`buildFeedNav`, `jumpPost`, `toggleSortScore`)

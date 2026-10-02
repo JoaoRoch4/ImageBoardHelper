@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.26.0
+// @version      0.27.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.26.0'
+  const VERSION = '0.27.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -1079,6 +1079,14 @@
       decoded.then(swap)
     }
     const swap = () => {
+      // The modal unloads the page while it is open: drop this upgrade and let
+      // it run again when the modal closes.
+      if (modal && modal.open) {
+        delete el.dataset.ibhOrig
+        suspended.push(el)
+        done()
+        return
+      }
       // Off Masonry the thumbnail has no fixed box: pin its current size so the
       // full-resolution file does not blow up the page layout.
       if (!isCard(el) && !inFeed(el) && el.clientWidth) {
@@ -1751,6 +1759,7 @@
 
     if (!modal.open) {
       modal.open = true
+      suspendPage()
       if (!modal.host.isConnected) document.documentElement.appendChild(modal.host)
       modal.host.style.display = ''
       document.documentElement.style.setProperty('overflow', 'hidden', 'important')
@@ -1768,11 +1777,42 @@
     modal.host.style.display = 'none'
     document.documentElement.style.removeProperty('overflow')
     if (!fromBack && history.state && history.state.ibhModal) history.back()
-    // Leave the page on the post last shown, then bring covers back.
+    // Leave the page on the post last shown, then bring back what is on screen.
     if (modal.link && modal.link.isConnected) modal.link.scrollIntoView({ block: 'center' })
-    if (CFG.videoCovers) {
-      document.querySelectorAll('[data-ibh-seen]').forEach(card => { if (isVideoCard(card)) mountCover(card) })
-    }
+    resumePage()
+  }
+
+  // While the modal is open the page underneath is invisible, so it gives its
+  // memory to the modal: covers closed, GIFs stilled, upgraded images back to
+  // the thumbnail (heights held so the layout does not move), pending
+  // upgrades dropped. resumePage() brings back what is on screen on close.
+  const suspended = []
+
+  function suspendPage() {
+    const n = { covers: 0, gifs: 0, images: 0 }
+    document.querySelectorAll('[data-ibh-cover]').forEach(card => { unmountCover(card); n.covers++ })
+    coverQueue.clear()
+    document.querySelectorAll('[data-ibh-gif="playing"]').forEach(card => { stopGif(card); n.gifs++ })
+    originalQueue.length = 0
+    document.querySelectorAll('[data-ibh-orig]').forEach(el => {
+      const state = el.dataset.ibhOrig
+      if (state === 'failed') return
+      if (state === 'done') { pinHeight(el); resetUpgrade(el); n.images++ }
+      else delete el.dataset.ibhOrig   // queued: start over later
+      if (farViewport) farViewport.unobserve(el)
+      if (originalViewport) originalViewport.unobserve(el)   // or it would upgrade again under the modal
+      suspended.push(el)
+    })
+    dbg(`modal: page unloaded (${n.covers} covers, ${n.gifs} GIFs, ${n.images} images)`)
+  }
+
+  function resumePage() {
+    // observe() reports what is already on screen at once, so that upgrades now.
+    for (const el of suspended.splice(0)) if (el.isConnected && originalViewport) originalViewport.observe(el)
+    document.querySelectorAll('[data-ibh-seen]').forEach(card => {
+      if (CFG.videoCovers && isVideoCard(card)) mountCover(card)
+      else if (CFG.gifInline && isGifCard(card)) playGif(card)
+    })
   }
 
   function stepModal(dir) {

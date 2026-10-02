@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.27.0
+
+- Opening the modal unloads the page underneath: video covers close, animated
+  GIFs go back to their still, upgraded images return to the thumbnail with
+  their heights held, and pending upgrades are dropped (one finishing while the
+  modal is open is discarded). On close, whatever is on screen loads again
+
 ## 0.26.0
 
 - Feed buttons gain ⤓ (bottom of the page) and « » (previous/next page), now in
