@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.20.0
+
+- Video modal (`videoModal`, on): on the site's own pages, tapping a video
+  thumbnail plays it with sound in an overlay instead of opening the post page.
+  ✕ closes, ↗ opens the post, ‹ › move to the previous/next video on the page;
+  tapping outside the video or the Android back button closes it, leaving the
+  page on that post. Covers are closed while it plays to free a decoder. Falls
+  back to muted if the autoplay policy blocks sound
+- rule34 video hosts are speed-ordered again (`api-cdn` first); the 0.14.0
+  rollback had taken that change out along with the preview
+
 ## 0.19.0
 
 - ★ button (`sortButton`, on) on search listings, on the site and on Masonry:

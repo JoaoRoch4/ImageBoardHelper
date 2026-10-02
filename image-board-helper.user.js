@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.19.0
+// @version      0.20.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -71,6 +71,10 @@
  *      upgraded again on return; videos removed by Masonry are unloaded; the
  *      page releases everything when it is left.
  *
+ *   H. VIDEO MODAL
+ *      On the site's own pages, tapping a video thumbnail plays it in an
+ *      overlay; the back button closes it.
+ *
  * WHY @grant none: intercepting window.Fancybox and overriding
  * navigator.userAgent both require the page's own realm. Any @grant puts the
  * script in a sandbox where `window` is not the page's window, and both stop
@@ -86,7 +90,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.19.0'
+  const VERSION = '0.20.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -105,6 +109,7 @@
     memorySaver:    true,   // release far off-screen images and removed videos (needs reload)
     feedNav:        true,   // ⤒ ‹ › buttons: top of page, previous and next post in the feed (needs reload)
     sortButton:     true,   // ★ button on search listings: add or remove sort:score (needs reload)
+    videoModal:     true,   // play videos from site pages in an overlay instead of the post page (needs reload)
     fixFancybox:    true,   // fill empty src in the alternate viewer
     gestures:       true,   // swipe, double tap and pinch
     originalThumbs: false,  // swap visible thumbnails for the original file (heavy, needs reload)
@@ -113,7 +118,7 @@
   }
 
   // Options that only take effect when the app boots.
-  const NEEDS_RELOAD = new Set(['sharpThumbs', 'forceRule34Api', 'originalThumbs', 'nativeFeed', 'memorySaver', 'feedNav', 'sortButton'])
+  const NEEDS_RELOAD = new Set(['sharpThumbs', 'forceRule34Api', 'originalThumbs', 'nativeFeed', 'memorySaver', 'feedNav', 'sortButton', 'videoModal'])
 
   const CFG = Object.assign({}, DEFAULTS, readJSON(CFG_KEY, {}))
 
@@ -166,6 +171,9 @@
       tNav: 'Top / previous / next buttons',
       navPrev: 'Previous post', navNext: 'Next post', navTop: 'Top of the page',
       tSortBtn: 'Sort-by-score button', navSort: 'Sort by score (tap again to undo)',
+      tModal: 'Videos in a player over the page',
+      mClose: 'Close', mOpen: 'Open the post', mPrev: 'Previous video', mNext: 'Next video',
+      mLoading: 'Loading…', mFail: 'Could not load the video',
       tFancybox: 'Repair Fancybox', tGestures: 'Touch gestures',
       tOriginal: 'Original thumbnails (heavy)',
       tFeed: 'One-column feed on site pages',
@@ -193,6 +201,9 @@
       tNav: 'Botões topo / anterior / próximo',
       navPrev: 'Post anterior', navNext: 'Próximo post', navTop: 'Topo da página',
       tSortBtn: 'Botão ordenar por score', navSort: 'Ordenar por score (toque de novo para desfazer)',
+      tModal: 'Vídeo em player sobre a página',
+      mClose: 'Fechar', mOpen: 'Abrir o post', mPrev: 'Vídeo anterior', mNext: 'Próximo vídeo',
+      mLoading: 'Carregando…', mFail: 'Não foi possível carregar o vídeo',
       tFancybox: 'Consertar Fancybox', tGestures: 'Gestos de toque',
       tOriginal: 'Miniatura original (pesado)',
       tFeed: 'Feed de uma coluna no site',
@@ -316,14 +327,17 @@
     'rule34.xxx': {
       thumbsOnly: ['miami.rule34.xxx', 'ny.rule34.xxx'],
       fallback: 'https://wimg.rule34.xxx/images',
-      // Video mirrors, tried in order. wimg answers 403 for video files, so
-      // these come first. Post pages link to api-cdn-us-mp4 and ahri2mp4.
+      // Video mirrors, fastest first. wimg answers 403 for video files. Order
+      // measured from the phone's network (time to first byte / 1 MB):
+      // api-cdn 0.4 s / 0.3 s, nymp4 0.9 / 1.7, api-cdn-us-mp4 1.0 / 1.8,
+      // ahri2mp4 1.3 / 2.2, ws-cdn-video 1.5 / 2.7, api-cdn-mp4 1.9 / 2.9.
       videoHosts: [
-        'https://api-cdn-mp4.rule34.xxx/images',
+        'https://api-cdn.rule34.xxx/images',
+        'https://nymp4.rule34.xxx/images',
         'https://api-cdn-us-mp4.rule34.xxx/images',
         'https://ahri2mp4.rule34.xxx/images',
-        'https://nymp4.rule34.xxx/images',
         'https://ws-cdn-video.rule34.xxx/images',
+        'https://api-cdn-mp4.rule34.xxx/images',
       ],
     },
   }
@@ -1204,6 +1218,156 @@
   }
 
   // ═══════════════════════════════════════════════════════════
+  // H. Video modal on site pages
+  //
+  // Tapping a video thumbnail on the site's own pages plays the video in an
+  // overlay instead of leaving for the post page. It has its own Shadow DOM
+  // host, so it works with the panel turned off. Masonry has its own viewer.
+  // ═══════════════════════════════════════════════════════════
+
+  const SITE_LINK = '.image-list span.thumb a'
+  let modal = null
+
+  const siteVideoLinks = () => [...document.querySelectorAll(SITE_LINK)].filter(a => isVideoCard(a))
+
+  const MODAL_CSS = `
+    :host { all: initial; }
+    * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
+    .m {
+      position: fixed; inset: 0; z-index: 2147483600; background: rgba(0, 0, 0, .94);
+      display: flex; align-items: center; justify-content: center;
+    }
+    video { width: 100%; max-height: 100vh; background: #000; }
+    .bar { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 8px; padding: 10px; }
+    .count { margin-left: auto; color: #a8b8bb; font-size: 13px; }
+    .status { position: absolute; color: #a8b8bb; font-size: 14px; pointer-events: none; }
+    button, a.btn {
+      width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center;
+      border: 1px solid #2a3a3f; background: rgba(15, 20, 23, .85); color: #5eead4;
+      font-size: 20px; line-height: 1; text-decoration: none; padding: 0;
+    }
+    .side { position: absolute; top: 50%; transform: translateY(-50%); font-size: 26px; padding-bottom: 3px; }
+    .prev { left: 6px; } .next { right: 6px; }
+  `
+
+  function buildModal() {
+    const host = el('div')
+    host.style.cssText = 'all:initial;position:static'
+    const root = host.attachShadow({ mode: 'open' })
+    const style = document.createElement('style')
+    style.textContent = MODAL_CSS
+    const video = document.createElement('video')
+    video.controls = true
+    video.loop = true
+    video.playsInline = true
+    const close = el('button', { text: '✕', title: t('mClose') })
+    const post = el('a', { class: 'btn', text: '↗', title: t('mOpen') })
+    const count = el('span', { class: 'count' })
+    const status = el('div', { class: 'status' })
+    const prev = el('button', { class: 'side prev', text: '‹', title: t('mPrev') })
+    const next = el('button', { class: 'side next', text: '›', title: t('mNext') })
+    const box = el('div', { class: 'm' }, [video, status, el('div', { class: 'bar' }, [close, post, count]), prev, next])
+    close.addEventListener('click', () => closeVideoModal(false))
+    prev.addEventListener('click', () => stepModal(-1))
+    next.addEventListener('click', () => stepModal(1))
+    box.addEventListener('click', ev => { if (ev.target === box) closeVideoModal(false) })   // tap outside the video
+    root.append(style, box)
+    modal = { host, video, post, count, status, open: false, link: null }
+  }
+
+  function openVideoModal(link) {
+    const pic = cardPicture(link)
+    const urls = pic ? fileCandidates(pic.src, ['mp4', 'webm']) : []
+    if (!urls.length) { location.href = link.href; return }   // nothing derivable: go to the post
+    if (!modal) buildModal()
+
+    // The phone decodes about four videos at once; the modal gets one of them.
+    document.querySelectorAll('[data-ibh-cover]').forEach(card => unmountCover(card))
+    coverQueue.clear()
+
+    modal.link = link
+    modal.post.href = link.href
+    const list = siteVideoLinks()
+    modal.count.textContent = `${list.indexOf(link) + 1} / ${list.length}`
+    modal.status.textContent = t('mLoading')
+    modal.status.hidden = false
+
+    const v = modal.video
+    let i = 0
+    v.onerror = () => {
+      if (i < urls.length) v.src = urls[i++]   // walk the hosts, like covers
+      else modal.status.textContent = t('mFail')
+    }
+    v.oncanplay = () => { modal.status.hidden = true }
+    v.muted = false   // with sound, even if the previous video was muted from the controls
+    v.src = urls[i++]
+    // The tap that opened the modal is a user gesture, which is what lets the
+    // browser play with sound. If its autoplay policy still blocks audio, play
+    // muted rather than not at all: the controls' speaker button unmutes.
+    const played = v.play()
+    if (played && played.catch) {
+      played.catch(e => {
+        if (e.name !== 'NotAllowedError') return
+        dbg('modal: sound blocked by the autoplay policy, playing muted')
+        v.muted = true
+        v.play().catch(() => {})
+      })
+    }
+
+    if (!modal.open) {
+      modal.open = true
+      if (!modal.host.isConnected) document.documentElement.appendChild(modal.host)
+      modal.host.style.display = ''
+      document.documentElement.style.setProperty('overflow', 'hidden', 'important')
+      // An entry for the back button to close the modal instead of the page.
+      history.pushState({ ibhModal: true }, '')
+    }
+    info(`modal: post ${(link.href.match(/id=(\d+)/) || [])[1] || '?'}`)
+  }
+
+  function closeVideoModal(fromBack) {
+    if (!modal || !modal.open) return
+    modal.open = false
+    const v = modal.video
+    v.pause()
+    v.onerror = null
+    v.removeAttribute('src')
+    v.load()   // hand the decoder back
+    modal.host.style.display = 'none'
+    document.documentElement.style.removeProperty('overflow')
+    if (!fromBack && history.state && history.state.ibhModal) history.back()
+    // Leave the page on the post that was playing, then bring covers back.
+    if (modal.link && modal.link.isConnected) modal.link.scrollIntoView({ block: 'center' })
+    if (CFG.videoCovers) {
+      document.querySelectorAll('[data-ibh-seen]').forEach(card => { if (isVideoCard(card)) mountCover(card) })
+    }
+  }
+
+  function stepModal(dir) {
+    const list = siteVideoLinks()
+    const target = list[list.indexOf(modal.link) + dir]
+    if (target) openVideoModal(target)
+  }
+
+  // Capture on window: runs before the link's own onclick (favorites navigate
+  // from an inline handler) and survives Masonry replacing the body.
+  function onVideoLinkClick(ev) {
+    if (ev.defaultPrevented || ev.button !== 0) return
+    const link = ev.target.closest && ev.target.closest(SITE_LINK)
+    if (!link || !isVideoCard(link)) return
+    ev.preventDefault()
+    ev.stopPropagation()
+    openVideoModal(link)
+  }
+
+  function installVideoModal() {
+    if (!CFG.videoModal) return
+    window.addEventListener('click', onVideoLinkClick, true)
+    window.addEventListener('popstate', () => { if (modal && modal.open) closeVideoModal(true) })
+    info('video modal active: video thumbnails on site pages play in place')
+  }
+
+  // ═══════════════════════════════════════════════════════════
   // Optional: unlock the API path on rule34
   //
   //   isRule34Firefox() = hostname == "rule34.xxx"
@@ -1589,6 +1753,7 @@
     body.appendChild(toggle('nativeFeed', t('tFeed'), t('noteReload')))
     body.appendChild(toggle('feedNav', t('tNav'), t('noteReload')))
     body.appendChild(toggle('sortButton', t('tSortBtn'), t('noteReload')))
+    body.appendChild(toggle('videoModal', t('tModal'), t('noteReload')))
     body.appendChild(toggle('videoCovers', t('tCovers')))
     body.appendChild(toggle('gifInline', t('tGif')))
     body.appendChild(toggle('memorySaver', t('tMemory'), t('noteReload')))
@@ -1830,6 +1995,7 @@
   hookFancybox()
   installGestures()
   installMemorySaver()
+  installVideoModal()
   logSnapshot()
   if (CFG.originalThumbs) info('original thumbnails on: visible thumbnails load the full file')
   if (CFG.nativeFeed) info('one-column feed on: site pages show samples at full width')

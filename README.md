@@ -87,6 +87,7 @@ All of them live in the panel and are stored in `localStorage` under `IBH_CFG`.
 | `nativeFeed` | **off** | on the site's own pages (rule34, safebooru, xbooru and other Gelbooru 0.2 sites): one image per row at the full screen width, upgraded to the sample (or the original when there is none) (needs reload) |
 | `feedNav` | on | with `nativeFeed`, round buttons ⤒ ‹ › in the bottom-right corner jump to the top of the page, or to the start of the previous or next post, e.g. to skip a long comic (needs reload) |
 | `sortButton` | on | ★ button on search listings (site and Masonry): adds `sort:score` to the current search, or removes it, and reloads on the first page; lit while the search is sorted by score (needs reload) |
+| `videoModal` | on | on the site's own pages, tapping a video thumbnail plays it with sound in a player over the page (✕ close, ↗ open the post, ‹ › previous/next video); the back button closes it (needs reload) |
 | `forceRule34Api` | **off** | see below (needs reload) |
 | `lang` | automatic | panel language: automatic, Portuguese or English |
 | `debug` | off | mirrors the log into the browser console |
