@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.26.0
+
+- Feed buttons gain ⤓ (bottom of the page) and « » (previous/next page), now in
+  two rows. The page buttons follow the site's own paginator, reading the
+  address from href or, on favorites, from the onclick; without one they step
+  pid by the number of posts on the page. « is dimmed on the first page
+
 ## 0.25.2
 
 - Fix: video gestures in the modal never fired with a real finger. Firefox's

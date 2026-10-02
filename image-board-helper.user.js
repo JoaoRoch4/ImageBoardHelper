@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.25.2
+// @version      0.26.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.25.2'
+  const VERSION = '0.26.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -171,7 +171,8 @@
       tSharp: 'Large thumbnails', tCovers: 'Video covers', tGif: 'Animated GIFs in the grid',
       tMemory: 'Release off-screen memory',
       tNav: 'Top / previous / next buttons',
-      navPrev: 'Previous post', navNext: 'Next post', navTop: 'Top of the page',
+      navPrev: 'Previous post', navNext: 'Next post', navTop: 'Top of the page', navBottom: 'Bottom of the page',
+      navPrevPage: 'Previous page', navNextPage: 'Next page',
       tSortBtn: 'Sort-by-score button', navSort: 'Sort by score (tap again to undo)',
       tModal: 'Open posts in a player over the page',
       mClose: 'Close', mOpen: 'Open the post', mPrev: 'Previous post', mNext: 'Next post',
@@ -206,7 +207,8 @@
       tSharp: 'Miniatura grande', tCovers: 'Capa de vídeo', tGif: 'GIF animado na grade',
       tMemory: 'Liberar memória fora da tela',
       tNav: 'Botões topo / anterior / próximo',
-      navPrev: 'Post anterior', navNext: 'Próximo post', navTop: 'Topo da página',
+      navPrev: 'Post anterior', navNext: 'Próximo post', navTop: 'Topo da página', navBottom: 'Fim da página',
+      navPrevPage: 'Página anterior', navNextPage: 'Próxima página',
       tSortBtn: 'Botão ordenar por score', navSort: 'Ordenar por score (toque de novo para desfazer)',
       tModal: 'Abrir posts num player sobre a página',
       mClose: 'Fechar', mOpen: 'Abrir o post', mPrev: 'Post anterior', mNext: 'Próximo post',
@@ -1975,16 +1977,18 @@
 
     .feednav {
       position: fixed; right: 12px; bottom: 12px; z-index: 2147483000;
-      display: flex; gap: 10px;
+      display: flex; flex-direction: column; align-items: flex-end; gap: 8px;
     }
+    .feednav .row { display: flex; gap: 8px; }
     .feednav button {
-      width: 46px; height: 46px; border-radius: 50%;
+      width: 44px; height: 44px; border-radius: 50%;
       border: 1px solid #2a3a3f; background: rgba(15, 20, 23, .8); color: #5eead4;
       font-size: 26px; line-height: 1; display: grid; place-items: center;
       padding: 0 0 3px; box-shadow: 0 4px 14px rgba(0,0,0,.5);
     }
     .feednav button:active { background: #16211f; }
     .feednav button.on { background: #5eead4; color: #0f1417; border-color: #5eead4; }
+    .feednav button:disabled { opacity: .35; }
     .feednav.raised { bottom: 76px; }
 
     .panel {
@@ -2291,6 +2295,13 @@
     }
     // Masonry's refresh button sits in the same corner; stay above it.
     if (nav) nav.classList.toggle('raised', !!document.querySelector('.v-application'))
+    // The paginator comes after the post list in the page, so its state is
+    // refreshed as the page fills in rather than fixed when the buttons appear.
+    const pp = nav && nav.querySelector('.pp')
+    if (pp) {
+      pp.disabled = !pageTarget(-1)
+      nav.querySelector('.np').disabled = !pageTarget(1)
+    }
   }
 
   const wantsFeedButtons = () => CFG.feedNav && CFG.nativeFeed && !!document.querySelector(FEED_POST)
@@ -2337,24 +2348,69 @@
     dbg(`feed: jumped to the ${dir > 0 ? 'next' : 'previous'} post`)
   }
 
-  function buildFeedNav(feed, sort) {
-    const buttons = []
-    if (sort) {
-      const star = el('button', { text: '★', title: t('navSort') })
-      if (sortedByScore()) star.classList.add('on')
-      star.addEventListener('click', toggleSortScore)
-      buttons.push(star)
+  // The site's own pagination link for the next (dir 1) or previous page.
+  // Favorites put the address in an onclick (href is just "#"). Without a
+  // usable link, step pid by the number of posts on this page.
+  function pageTarget(dir) {
+    const box = document.querySelector('#paginator, .pagination')
+    if (box) {
+      const want = dir > 0 ? /^(>|›|next)$/i : /^(<|‹|back|prev(ious)?)$/i
+      const a = [...box.querySelectorAll('a')].find(x => want.test(x.textContent.trim()) || want.test(x.getAttribute('alt') || ''))
+      if (a) {
+        const href = a.getAttribute('href')
+        if (href && href !== '#') return new URL(href, location.href).href
+        const m = (a.getAttribute('onclick') || '').match(/location\s*=\s*['"]([^'"]+)['"]/)
+        if (m) return new URL(m[1], location.href).href
+      }
+      if (box.querySelector('a')) return null   // paginator present but no such link: first or last page
     }
+    const url = new URL(location.href)
+    const pid = Number(url.searchParams.get('pid')) || 0
+    const per = document.querySelectorAll(FEED_POST).length
+    if (!per || (dir < 0 && pid === 0)) return null
+    url.searchParams.set('pid', String(Math.max(0, pid + dir * per)))
+    return url.href
+  }
+
+  function goPage(dir) {
+    const target = pageTarget(dir)
+    if (!target) return
+    info(`feed: ${dir > 0 ? 'next' : 'previous'} page`)
+    location.href = target
+  }
+
+  function buildFeedNav(feed, sort) {
+    const rows = []
     if (feed) {
       const top = el('button', { text: '⤒', title: t('navTop') })
       const prev = el('button', { text: '‹', title: t('navPrev') })
       const next = el('button', { text: '›', title: t('navNext') })
+      const bottom = el('button', { text: '⤓', title: t('navBottom') })
       top.addEventListener('click', () => { window.scrollTo({ top: 0, behavior: 'auto' }); dbg('feed: jumped to the top') })
       prev.addEventListener('click', () => jumpPost(-1))
       next.addEventListener('click', () => jumpPost(1))
-      buttons.push(top, prev, next)
+      bottom.addEventListener('click', () => {
+        window.scrollTo({ top: document.documentElement.scrollHeight, behavior: 'auto' })
+        dbg('feed: jumped to the bottom')
+      })
+      rows.push(el('div', { class: 'row' }, [top, prev, next, bottom]))
     }
-    return el('div', { class: 'feednav' }, buttons)
+    const second = []
+    if (sort) {
+      const star = el('button', { text: '★', title: t('navSort') })
+      if (sortedByScore()) star.classList.add('on')
+      star.addEventListener('click', toggleSortScore)
+      second.push(star)
+    }
+    if (feed) {
+      const prevPage = el('button', { class: 'pp', text: '«', title: t('navPrevPage') })
+      const nextPage = el('button', { class: 'np', text: '»', title: t('navNextPage') })
+      prevPage.addEventListener('click', () => goPage(-1))
+      nextPage.addEventListener('click', () => goPage(1))
+      second.push(prevPage, nextPage)
+    }
+    if (second.length) rows.push(el('div', { class: 'row' }, second))
+    return el('div', { class: 'feednav' }, rows)
   }
 
   /** Labels are baked when the panel is built, so switching language rebuilds it. */
