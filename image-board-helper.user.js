@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.29.0
+// @version      0.29.1
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.29.0'
+  const VERSION = '0.29.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -1490,8 +1490,10 @@
     .vctl {
       position: absolute; left: 0; right: 0; bottom: 0; height: ${CONTROLS_BAND}px;
       display: flex; align-items: center; gap: 8px; padding: 0 8px;
-      background: linear-gradient(transparent, rgba(0, 0, 0, .75));
+      background: linear-gradient(transparent, rgba(0, 0, 0, .45));
+      opacity: .8; transition: opacity .3s;
     }
+    .vctl.hide { opacity: 0; pointer-events: none; }
     .vctl button { width: 36px; height: 36px; border: none; background: transparent; font-size: 17px; }
     .vtime { color: #d7dee0; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
     .vseek { flex: 1; min-width: 0; accent-color: #5eead4; }
@@ -1547,7 +1549,7 @@
     const muteBtn = el('button', { text: '🔊', title: t('mMute') })
     const ctl = el('div', { class: 'vctl' }, [playBtn, time, seek, muteBtn])
     const vwrap = el('div', { class: 'vwrap' }, [video, layer, ctl])
-    installVideoControls(video, playBtn, time, seek, muteBtn)
+    const controls = installVideoControls(video, ctl, playBtn, time, seek, muteBtn)
     const stage = el('div', { class: 'stage' }, [vwrap, image])
     const close = el('button', { text: '✕', title: t('mClose') })
     const post = el('a', { class: 'btn', text: '↗', title: t('mOpen') })
@@ -1576,7 +1578,7 @@
     installImageZoom(stage, image)
     installVideoGestures(layer, video)
     root.append(style, box)
-    modal = { host, root, box, stage, vwrap, video, image, post, count, status, fav, up, score, toast, badge, open: false, link: null, seq: 0 }
+    modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, score, toast, badge, open: false, link: null, seq: 0 }
   }
 
   let toastTimer = 0
@@ -1841,8 +1843,11 @@
       tap = { t: Date.now(), side }
       tap.timer = setTimeout(() => {
         tap = null
+        // Controls hidden: the tap only brings them back.
+        if (!modal.controls.shown()) { modal.controls.poke(); return }
         if (video.paused) { video.play().catch(() => {}); showBadge('▶') }
         else { video.pause(); showBadge('❚❚') }
+        modal.controls.poke()
         dbg(`modal: tap, ${video.paused ? 'paused' : 'playing'}`)
       }, 300)
     })
@@ -1850,8 +1855,18 @@
 
   const mmss = sec => Number.isFinite(sec) ? `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}` : '0:00'
 
-  function installVideoControls(video, playBtn, time, seek, muteBtn) {
+  const CONTROLS_HIDE_MS = 2000
+
+  // Returns { shown(), poke() }: the bar fades after 2 s without interaction
+  // while playing, and stays up while paused or while the seek bar is dragged.
+  function installVideoControls(video, ctl, playBtn, time, seek, muteBtn) {
     let dragging = false
+    let hideTimer = 0
+    const poke = () => {
+      ctl.classList.remove('hide')
+      clearTimeout(hideTimer)
+      hideTimer = setTimeout(() => { if (!dragging && !video.paused) ctl.classList.add('hide') }, CONTROLS_HIDE_MS)
+    }
     const sync = () => {
       playBtn.textContent = video.paused ? '▶' : '❚❚'
       muteBtn.textContent = video.muted ? '🔇' : '🔊'
@@ -1867,8 +1882,14 @@
       dragging = true
       if (video.duration) video.currentTime = (Number(seek.value) / 1000) * video.duration
       sync()
+      poke()
     })
-    seek.addEventListener('change', () => { dragging = false })
+    seek.addEventListener('change', () => { dragging = false; poke() })
+    ctl.addEventListener('pointerdown', poke)
+    video.addEventListener('play', poke)
+    video.addEventListener('pause', () => { clearTimeout(hideTimer); ctl.classList.remove('hide') })
+    video.addEventListener('emptied', () => { clearTimeout(hideTimer); ctl.classList.remove('hide') })
+    return { shown: () => !ctl.classList.contains('hide'), poke }
   }
 
   // In fullscreen the bar and side buttons hide; a single tap on an image

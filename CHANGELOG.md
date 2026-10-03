@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.29.1
+
+- Modal video controls are lighter (80% opacity, fainter background) and fade
+  after 2 s without interaction while playing; they stay up while paused or
+  while seeking. With them hidden, a tap on the video only brings them back;
+  with them shown, it plays or pauses as before
+
 ## 0.29.0
 
 - Modal video has its own controls — play/pause, time, a draggable seek bar
