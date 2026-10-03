@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.30.3
+
+- Scrub bar and time show on site pages: they were inserted right after the
+  picture, before the card's cover video, which then painted over them. They
+  now sit on top (`z-index`), so the bar and time follow the finger while the
+  scenes change
+
 ## 0.30.2
 
 - Scrub on site pages: the thumbnail is an `<img>` in a link, and a sideways

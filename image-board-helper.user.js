@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.30.2
+// @version      0.30.3
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.30.2'
+  const VERSION = '0.30.3'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -1506,14 +1506,18 @@
       scrub.video = previewLoad(holder, urls, hash)
       scrub.shared = true
     }
+    // z-index: the card's cover video comes later in the DOM and would paint
+    // over them otherwise (it did on site pages, where every video has one).
     scrub.bar = document.createElement('div')
-    scrub.bar.style.cssText = 'position:absolute;left:0;bottom:0;height:3px;width:0;background:#5eead4;pointer-events:none'
+    scrub.bar.style.cssText =
+      'position:absolute;left:0;bottom:0;height:4px;width:0;background:#5eead4;pointer-events:none;z-index:3'
     scrub.label = document.createElement('div')
     scrub.label.style.cssText =
-      'position:absolute;left:4px;bottom:7px;padding:1px 6px;border-radius:3px;font:12px/1.4 ' +
-      'ui-monospace,monospace;color:#fff;background:rgba(0,0,0,.6);pointer-events:none'
-    placeOverPicture(card, scrub.bar)
-    placeOverPicture(card, scrub.label)
+      'position:absolute;left:4px;bottom:8px;padding:1px 6px;border-radius:3px;font:12px/1.4 ' +
+      'ui-monospace,monospace;color:#fff;background:rgba(0,0,0,.6);pointer-events:none;z-index:3'
+    if (getComputedStyle(card).position === 'static') card.style.position = 'relative'
+    card.appendChild(scrub.bar)
+    card.appendChild(scrub.label)
     scrub.on = true
     return true
   }
