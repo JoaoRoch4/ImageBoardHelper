@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.28.2
+// @version      0.28.3
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.28.2'
+  const VERSION = '0.28.3'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -1882,9 +1882,10 @@
     }
   }
 
-  function showVideo(candidates, hash) {
+  function showVideo(candidates, hash, onMissing) {
     const vcached = cacheGet('video', hash)
     const urls = cachedFirst(candidates, vcached)
+    const seq = modal.seq
     // The phone decodes about four videos at once; the modal gets one of them.
     document.querySelectorAll('[data-ibh-cover]').forEach(card => unmountCover(card))
     coverQueue.clear()
@@ -1897,9 +1898,13 @@
     let i = 0
     v.onerror = () => {
       if (i < urls.length) { v.src = urls[i++]; return }   // walk the hosts, like covers
-      modal.status.textContent = t('mFail')
       // No decoder free (3) or a network drop (2) is not "missing".
-      if (!(v.error && (v.error.code === 3 || v.error.code === 2))) cacheSet('video', hash, null)
+      const missing = !(v.error && (v.error.code === 3 || v.error.code === 2))
+      if (missing) cacheSet('video', hash, null)
+      // No host has a video file: posts tagged "animated" but not "gif" are
+      // often GIFs, so try that before showing the failure.
+      if (missing && onMissing && modal.seq === seq) { onMissing(); return }
+      modal.status.textContent = t('mFail')
     }
     v.oncanplay = () => { modal.status.hidden = true }
     v.onloadedmetadata = () => cacheSet('video', hash, urls[i - 1], vcached)
@@ -2032,10 +2037,17 @@
     modal.status.textContent = t('mLoading')
     modal.status.hidden = false
 
-    const kind = thumbKind(thumb)
+    let kind = thumbKind(thumb)
     const hash = thumbParts(pic.src).hash
+    const asGif = () => {
+      link.dataset.ibhKind = 'gif'   // the page's cover/GIF code agrees from now on
+      info(`modal: post ${postId(link)} has no video file, showing it as a GIF`)
+      showImage(thumb.currentSrc || pic.src, fileCandidates(pic.src, ['gif']), 'gif', hash)
+    }
+    // Known from an earlier try: no video file for it.
+    if (kind === 'video' && cacheGet('video', hash) === null) kind = 'gif'
     if (kind === 'video') {
-      showVideo(fileCandidates(pic.src, ['mp4', 'webm']), hash)
+      showVideo(fileCandidates(pic.src, ['mp4', 'webm']), hash, asGif)
     } else if (kind === 'gif') {
       showImage(thumb.currentSrc || pic.src, fileCandidates(pic.src, ['gif']), 'gif', hash)
     } else {

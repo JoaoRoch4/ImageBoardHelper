@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.28.3
+
+- Modal: a post treated as video (tag "animated" without "gif") whose video
+  files all come back missing now falls back to its `.gif` instead of showing
+  "No video with supported format and MIME type found"; the outcome is cached,
+  so the next open goes straight to the GIF. Network and decoder errors still
+  show the failure, since they say nothing about the file
+
 ## 0.28.2
 
 - URL cache no longer trusts a single run of failures: a Wi-Fi handoff fails
