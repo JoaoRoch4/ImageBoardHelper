@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.31.0
+
+- Scene preview gesture is now an option (`scrubMode`, panel select): drag
+  sideways as before, or hold a video thumbnail still for 0.25 s to play its
+  scenes as a slideshow, 5% to 95% in order and looping, each shown 0.6 s once
+  painted. Lifting the finger stops it without opening the post; moving before
+  the hold starts still scrolls. In hold mode the long-press menu is blocked on
+  video thumbnails
+
 ## 0.30.4
 
 - Faster scrub frames: a seek into a part of the file not downloaded yet took

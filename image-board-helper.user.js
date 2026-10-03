@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.30.4
+// @version      0.31.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.30.4'
+  const VERSION = '0.31.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -107,7 +107,8 @@
     sharpThumbs:    true,   // enable "thumbnail uses large image" (needs reload)
     videoCovers:    true,   // overlay the real video frame on the card
     gifInline:      true,   // animate GIF cards while they are on screen
-    videoScrub:     true,   // drag sideways on a video thumbnail to see its scenes (needs reload)
+    videoScrub:     true,   // scene preview on video thumbnails (needs reload)
+    scrubMode:      'drag', // 'drag': finger position picks the scene; 'hold': hold for a slideshow
     memorySaver:    true,   // release far off-screen images and removed videos (needs reload)
     urlCache:       true,   // remember which candidate URL worked for each file
     feedNav:        true,   // ⤒ ‹ › buttons: top of page, previous and next post in the feed (needs reload)
@@ -171,7 +172,8 @@
       filled: 'filled', empty: 'empty',
       coversFmt: (ok, bad, all) => `${ok} ok · ${bad} failed · ${all} videos`,
       tSharp: 'Large thumbnails', tCovers: 'Video covers', tGif: 'Animated GIFs in the grid',
-      tScrub: 'Drag a video thumbnail for scenes',
+      tScrub: 'Scene preview on video thumbnails',
+      tScrubMode: 'scene preview gesture', modeDrag: 'Drag sideways', modeHold: 'Hold (slideshow)',
       tMemory: 'Release off-screen memory',
       tUrlCache: 'Remember working file URLs',
       tNav: 'Top / previous / next buttons',
@@ -210,7 +212,8 @@
       filled: 'preenchida', empty: 'vazia',
       coversFmt: (ok, bad, all) => `${ok} ok · ${bad} falha · ${all} vídeos`,
       tSharp: 'Miniatura grande', tCovers: 'Capa de vídeo', tGif: 'GIF animado na grade',
-      tScrub: 'Arrastar miniatura de vídeo p/ cenas',
+      tScrub: 'Prévia de cenas nas miniaturas de vídeo',
+      tScrubMode: 'gesto da prévia de cenas', modeDrag: 'Arrastar de lado', modeHold: 'Segurar (slideshow)',
       tMemory: 'Liberar memória fora da tela',
       tUrlCache: 'Lembrar endereços que funcionaram',
       tNav: 'Botões topo / anterior / próximo',
@@ -1488,6 +1491,44 @@
     const card = ev.target.closest && ev.target.closest('[data-ibh-video]')
     if (!card || card.dataset.ibhKind === 'gif') return
     scrub = { card, id: ev.pointerId, x0: ev.clientX, y0: ev.clientY, on: false }
+    // Hold mode: a still finger for HOLD_MS starts the slideshow.
+    if (CFG.scrubMode === 'hold') scrub.holdTimer = setTimeout(startSlideshow, HOLD_MS)
+  }
+
+  // ── Hold for a slideshow ──
+  // The scenes step through 5%, 15% … 95% and loop, each shown for a moment
+  // once painted; lifting the finger stops it.
+  const HOLD_MS = 250
+  const SLIDE_DWELL_MS = 600
+  const SLIDE_STEPS = [0.05, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95]
+
+  function startSlideshow() {
+    if (!scrub || scrub.on) return
+    if (!startScrub()) { scrub = null; return }
+    scrub.step = 0
+    nextSlide()
+  }
+
+  function nextSlide() {
+    const s = scrub
+    if (!s || !s.on) return
+    const f = SLIDE_STEPS[s.step++ % SLIDE_STEPS.length]
+    s.bar.style.width = `${f * 100}%`
+    const at = seekFraction(s.video, f)
+    s.label.textContent = at ? `${mmss(at.t)} / ${mmss(at.d)}` : '…'
+    // Next scene once this one is painted, or after a while if the network is slow.
+    let advanced = false
+    const go = () => {
+      if (advanced) return
+      advanced = true
+      clearTimeout(s.slideTimer)
+      s.video.removeEventListener('seeked', onSeeked)
+      s.slideTimer = setTimeout(nextSlide, SLIDE_DWELL_MS)
+    }
+    const onSeeked = () => go()
+    s.video.addEventListener('seeked', onSeeked)
+    s.slideOff = () => s.video.removeEventListener('seeked', onSeeked)
+    s.slideTimer = setTimeout(go, 2500)
   }
 
   function startScrub() {
@@ -1539,7 +1580,11 @@
   function endScrub() {
     const s = scrub
     scrub = null
-    if (!s || !s.on) return
+    if (!s) return
+    clearTimeout(s.holdTimer)
+    clearTimeout(s.slideTimer)
+    if (s.slideOff) s.slideOff()
+    if (!s.on) return
     s.bar.remove()
     s.label.remove()
     if (s.shared) { previewStop(); s.holder.remove(); returnDecoder() }
@@ -1549,6 +1594,11 @@
 
   function onScrubMove(ev) {
     if (!scrub || ev.pointerId !== scrub.id) return
+    if (CFG.scrubMode === 'hold') {
+      // Moving before the hold starts makes it a scroll; once it runs, ignore moves.
+      if (!scrub.on && Math.hypot(ev.clientX - scrub.x0, ev.clientY - scrub.y0) > SCRUB_SLOP) endScrub()
+      return
+    }
     if (!scrub.on) {
       const dx = Math.abs(ev.clientX - scrub.x0)
       const dy = Math.abs(ev.clientY - scrub.y0)
@@ -1586,11 +1636,15 @@
     window.addEventListener('pointerup', onScrubUp, true)
     window.addEventListener('pointercancel', onScrubUp, true)
     window.addEventListener('click', onScrubClick, true)
+    // Hold mode: the long press is ours, so the browser's long-press menu stays out.
+    window.addEventListener('contextmenu', ev => {
+      if (CFG.scrubMode === 'hold' && ev.target.closest && ev.target.closest('[data-ibh-video]')) ev.preventDefault()
+    }, true)
     // Belt and braces for the drag-and-drop that cancels a scrub on site pages.
     window.addEventListener('dragstart', ev => {
       if (ev.target.closest && ev.target.closest('[data-ibh-video]')) ev.preventDefault()
     }, true)
-    info('video scrub active: drag sideways on a video thumbnail to see its scenes')
+    info(`video scene preview active: ${CFG.scrubMode === 'hold' ? 'hold a video thumbnail for a slideshow' : 'drag sideways on a video thumbnail'}`)
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -2795,6 +2849,7 @@
     label.tog .note { margin-left: auto; color: #4e6469; font-size: 10px; }
 
     .lang { padding: 4px 12px 8px; }
+    .lang .lbl { color: #4e6469; font-size: 11px; padding-bottom: 4px; }
     .lang select {
       width: 100%; padding: 7px 8px; font-size: 12px;
       background: #0a0e10; color: #d7dee0;
@@ -2905,6 +2960,18 @@
     return row
   }
 
+  // Gesture for the scene preview on thumbnails: drag sideways, or hold.
+  function scrubModeSelect() {
+    const sel = el('select')
+    for (const [value, label] of [['drag', t('modeDrag')], ['hold', t('modeHold')]]) {
+      const option = el('option', { value, text: label })
+      if (CFG.scrubMode === value) option.setAttribute('selected', '')
+      sel.appendChild(option)
+    }
+    sel.addEventListener('change', () => setCfg('scrubMode', sel.value))
+    return el('div', { class: 'lang' }, [el('div', { class: 'lbl', text: t('tScrubMode') }), sel])
+  }
+
   function languageSelect() {
     const sel = el('select')
     for (const [value, label] of [['', t('auto')], ['pt-BR', 'Português'], ['en', 'English']]) {
@@ -2953,6 +3020,7 @@
     body.appendChild(toggle('videoCovers', t('tCovers')))
     body.appendChild(toggle('gifInline', t('tGif')))
     body.appendChild(toggle('videoScrub', t('tScrub'), t('noteReload')))
+    body.appendChild(scrubModeSelect())
     body.appendChild(toggle('memorySaver', t('tMemory'), t('noteReload')))
     body.appendChild(toggle('urlCache', t('tUrlCache')))
     body.appendChild(toggle('fixFancybox', t('tFancybox')))
