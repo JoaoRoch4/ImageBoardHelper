@@ -66,7 +66,7 @@ Bugs do Masonry que este script contorna:
 8. **C.** Fancybox — `repairItems`, `wrapFancybox`, `installExtensionFallback`
 9. **D.** Gestos — ponteiros, swipe, toque duplo, pinça
 10. **E.** Miniatura original e feed nativo — `upgradeToOriginal`, `upgradeCandidates`, `sampleCandidates`, `probeOriginal`, `scanThumbs`
-11. **F.** Prévia de cenas — arraste na miniatura e prévia na barra do modal: `seekFraction`, `previewLoad`, `previewStop`, `borrowDecoder`, `onScrubDown/Move/Up`
+11. **F.** Prévia de cenas — arraste na miniatura (ou segurar, `scrubMode`: slideshow com dois vídeos em revezamento, `startSlideshow`, `tickSlide`) e prévia na barra do modal: `seekFraction`, `previewLoad`, `previewStop`, `borrowDecoder`, `onScrubDown/Move/Up`
 12. **G.** Gerenciamento de memória — `farViewport`, `releaseFar`, `pinHeight`, `onNodesRemoved`, `onLocationChange`, `releaseAll`
 13. **H.** Modal de post nas páginas do site (vídeo, GIF, imagem, swipe) — `openModal`, `closeModal`, `stepModal`, `showVideo`, `showImage`, `sniffVideo`, `installModalSwipe`, `installImageZoom`, `suspendPage`, `resumePage`
 14. Opcional: `applyRule34ApiUnlock`
