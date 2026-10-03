@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.30.1
+// @version      0.30.2
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.30.1'
+  const VERSION = '0.30.2'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -906,7 +906,14 @@
     if (tracked.has(card)) return
     tracked.add(card)
     if (!STATE.masonry && isMasonryCard(card)) { STATE.masonry = true; touch() }
-    if (CFG.videoScrub && isVideoCard(card)) card.dataset.ibhVideo = '1'   // scrub target, see F
+    if (CFG.videoScrub && isVideoCard(card)) {
+      card.dataset.ibhVideo = '1'   // scrub target, see F
+      // On site pages the thumbnail is an <img> in a link, and a sideways drag
+      // starts the browser's drag-and-drop, which cancels the touch mid-scrub.
+      card.setAttribute('draggable', 'false')
+      const img = card.querySelector('img')
+      if (img) img.draggable = false
+    }
     const video = CFG.videoCovers && isVideoCard(card)
     const gif = CFG.gifInline && isGifCard(card)
     if (!video && !gif) return
@@ -1559,7 +1566,8 @@
 
   // The browser hands sideways drags on video cards to the page; vertical
   // scrolling and pinch zoom stay with it.
-  const SCRUB_CSS = '[data-ibh-video] { touch-action: pan-y pinch-zoom; }'
+  const SCRUB_CSS = '[data-ibh-video] { touch-action: pan-y pinch-zoom; }' +
+    '[data-ibh-video], [data-ibh-video] img { -webkit-user-drag: none; user-select: none; -webkit-touch-callout: none; }'
 
   function installVideoScrub() {
     if (!CFG.videoScrub) return
@@ -1568,6 +1576,10 @@
     window.addEventListener('pointerup', onScrubUp, true)
     window.addEventListener('pointercancel', onScrubUp, true)
     window.addEventListener('click', onScrubClick, true)
+    // Belt and braces for the drag-and-drop that cancels a scrub on site pages.
+    window.addEventListener('dragstart', ev => {
+      if (ev.target.closest && ev.target.closest('[data-ibh-video]')) ev.preventDefault()
+    }, true)
     info('video scrub active: drag sideways on a video thumbnail to see its scenes')
   }
 

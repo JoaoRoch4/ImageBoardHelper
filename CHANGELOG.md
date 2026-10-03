@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.30.2
+
+- Scrub on site pages: the thumbnail is an `<img>` in a link, and a sideways
+  drag started the browser's drag-and-drop, which cancelled the touch, so the
+  bar showed once and vanished (Masonry's CSS backgrounds were unaffected).
+  Video thumbnails are no longer draggable and `dragstart` is cancelled on them
+
 ## 0.30.1
 
 - Scene preview follows the finger: fastSeek lands on the nearest keyframe,
