@@ -81,6 +81,7 @@ All of them live in the panel and are stored in `localStorage` under `IBH_CFG`.
 | `videoCovers` | on | overlays the real video frame, on Masonry cards and on the site's own pages |
 | `memorySaver` | on | images two screens away go back to the thumbnail (upgraded again on return), videos Masonry removes are unloaded, and everything is released when the page is left (needs reload) |
 | `urlCache` | on | remembers which candidate URL worked for each file (original, sample, poster, GIF, video) and, for a day, which have none (a miss counts only when it repeats a minute later, and nothing is stored offline or on a network error), so images released by the memory saver or the modal come back with one request instead of walking every host and extension again. Expired entries delete themselves; at most 1500 are kept. **Redo thumbnails** drops the remembered misses, **Clear host** and **Free memory & cache** drop everything |
+| `videoScrub` | on | drag a finger sideways across a video thumbnail to see its scenes (left = start, right = end), on Masonry and on the site's own pages; vertical drags still scroll and a tap still opens the post. In the modal, dragging the seek bar shows the frame under the finger (needs reload) |
 | `gifInline` | on | GIF cards animate while on screen and go back to the still when they leave; a GIF that breaks under memory pressure frees what is off screen and is rebuilt, twice at most |
 | `fixFancybox` | on | fills empty `src` in Fancybox |
 | `gestures` | on | swipe, double tap and pinch |

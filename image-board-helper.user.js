@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.29.1
+// @version      0.30.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.29.1'
+  const VERSION = '0.30.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -107,6 +107,7 @@
     sharpThumbs:    true,   // enable "thumbnail uses large image" (needs reload)
     videoCovers:    true,   // overlay the real video frame on the card
     gifInline:      true,   // animate GIF cards while they are on screen
+    videoScrub:     true,   // drag sideways on a video thumbnail to see its scenes (needs reload)
     memorySaver:    true,   // release far off-screen images and removed videos (needs reload)
     urlCache:       true,   // remember which candidate URL worked for each file
     feedNav:        true,   // ⤒ ‹ › buttons: top of page, previous and next post in the feed (needs reload)
@@ -121,7 +122,7 @@
   }
 
   // Options that only take effect when the app boots.
-  const NEEDS_RELOAD = new Set(['sharpThumbs', 'forceRule34Api', 'originalThumbs', 'nativeFeed', 'memorySaver', 'feedNav', 'sortButton', 'videoModal'])
+  const NEEDS_RELOAD = new Set(['sharpThumbs', 'forceRule34Api', 'originalThumbs', 'nativeFeed', 'memorySaver', 'feedNav', 'sortButton', 'videoModal', 'videoScrub'])
 
   const CFG = Object.assign({}, DEFAULTS, readJSON(CFG_KEY, {}))
 
@@ -170,6 +171,7 @@
       filled: 'filled', empty: 'empty',
       coversFmt: (ok, bad, all) => `${ok} ok · ${bad} failed · ${all} videos`,
       tSharp: 'Large thumbnails', tCovers: 'Video covers', tGif: 'Animated GIFs in the grid',
+      tScrub: 'Drag a video thumbnail for scenes',
       tMemory: 'Release off-screen memory',
       tUrlCache: 'Remember working file URLs',
       tNav: 'Top / previous / next buttons',
@@ -208,6 +210,7 @@
       filled: 'preenchida', empty: 'vazia',
       coversFmt: (ok, bad, all) => `${ok} ok · ${bad} falha · ${all} vídeos`,
       tSharp: 'Miniatura grande', tCovers: 'Capa de vídeo', tGif: 'GIF animado na grade',
+      tScrub: 'Arrastar miniatura de vídeo p/ cenas',
       tMemory: 'Liberar memória fora da tela',
       tUrlCache: 'Lembrar endereços que funcionaram',
       tNav: 'Botões topo / anterior / próximo',
@@ -903,6 +906,7 @@
     if (tracked.has(card)) return
     tracked.add(card)
     if (!STATE.masonry && isMasonryCard(card)) { STATE.masonry = true; touch() }
+    if (CFG.videoScrub && isVideoCard(card)) card.dataset.ibhVideo = '1'   // scrub target, see F
     const video = CFG.videoCovers && isVideoCard(card)
     const gif = CFG.gifInline && isGifCard(card)
     if (!video && !gif) return
@@ -1346,6 +1350,215 @@
   }
 
   // ═══════════════════════════════════════════════════════════
+  // F. Scene preview
+  //
+  // Drag a finger sideways across a video thumbnail to see its scenes (left
+  // edge = start, right edge = end), and drag the modal's seek bar to see the
+  // frame under the finger. Both use the same tools: a card's own cover when
+  // it is loaded, otherwise one small shared preview <video>, so previews
+  // never cost more than one decoder.
+  // ═══════════════════════════════════════════════════════════
+
+  // One seek at a time per video: while it is busy keep only the latest target.
+  // fastSeek lands on the nearest keyframe, cheap enough to follow a finger.
+  const seekState = new WeakMap()
+
+  function seekFraction(v, f) {
+    let st = seekState.get(v)
+    if (!st) {
+      st = { wanted: null, pending: null }
+      seekState.set(v, st)
+      v.addEventListener('seeked', () => {
+        if (st.wanted === null) return
+        const t = st.wanted
+        st.wanted = null
+        fastSeek(v, t)
+      })
+      // Asked before the duration was known: seek once it is.
+      v.addEventListener('loadedmetadata', () => {
+        if (st.pending === null) return
+        const p = st.pending
+        st.pending = null
+        seekFraction(v, p)
+      })
+    }
+    const d = v.duration
+    if (!Number.isFinite(d) || d <= 0) { st.pending = f; return null }
+    const t = f * d
+    if (v.seeking) st.wanted = t
+    else fastSeek(v, t)
+    return { t, d }
+  }
+
+  function fastSeek(v, t) {
+    if (typeof v.fastSeek === 'function') v.fastSeek(t)
+    else v.currentTime = t
+  }
+
+  // The shared preview video.
+  let previewEl = null
+
+  function previewLoad(container, urls, hash) {
+    if (!previewEl) {
+      previewEl = document.createElement('video')
+      previewEl.muted = true
+      previewEl.playsInline = true
+      previewEl.preload = 'auto'
+      previewEl.style.cssText =
+        'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;pointer-events:none;background:#000'
+    }
+    const v = previewEl
+    let i = 0
+    v.onerror = () => { if (i < urls.length) v.src = urls[i++] }   // walk the hosts, like covers
+    v.onloadedmetadata = () => { if (hash) cacheSet('video', hash, urls[i - 1]) }
+    v.src = urls[i++]
+    container.insertBefore(v, container.firstChild)
+    return v
+  }
+
+  function previewStop() {
+    if (!previewEl) return
+    previewEl.onerror = previewEl.onloadedmetadata = null
+    previewEl.removeAttribute('src')
+    previewEl.load()   // hand the decoder back
+    previewEl.remove()
+  }
+
+  // The preview needs a decoder of its own on the page. With every cover slot
+  // taken, close the cover of another card and queue it to come back.
+  let decoderBorrowed = false
+
+  function borrowDecoder(card) {
+    if (decoderBorrowed) return
+    decoderBorrowed = true
+    liveCovers++
+    if (liveCovers <= COVER_MAX_LIVE) return
+    const victim = [...document.querySelectorAll('[data-ibh-cover]')].find(c => c !== card)
+    if (!victim) return
+    unmountCover(victim)   // its releaseCover sees the budget still full: nothing remounts
+    if (victim.dataset.ibhSeen) coverQueue.add(victim)
+  }
+
+  function returnDecoder() {
+    if (!decoderBorrowed) return
+    decoderBorrowed = false
+    releaseCover()   // a queued cover takes the slot back
+  }
+
+  // Right above the picture: Masonry's icons and buttons come later in the
+  // card with no z-index, so they keep painting on top.
+  function placeOverPicture(card, node) {
+    if (getComputedStyle(card).position === 'static') card.style.position = 'relative'
+    const picEl = card.querySelector(':scope > .v-image, :scope > img')
+    if (picEl) picEl.after(node)
+    else card.appendChild(node)
+  }
+
+  // ── Scrubbing a thumbnail ──
+  const SCRUB_SLOP = 8   // px of travel before a drag counts as a scrub or a scroll
+  let scrub = null
+  let scrubClickUntil = 0
+
+  function onScrubDown(ev) {
+    if (scrub || detailOpen() || insidePanel(ev) || (modal && modal.open)) return
+    if (ev.pointerType === 'mouse' && ev.button !== 0) return
+    const card = ev.target.closest && ev.target.closest('[data-ibh-video]')
+    if (!card || card.dataset.ibhKind === 'gif') return
+    scrub = { card, id: ev.pointerId, x0: ev.clientX, y0: ev.clientY, on: false }
+  }
+
+  function startScrub() {
+    const { card } = scrub
+    const pic = cardPicture(card)
+    if (!pic) return false
+    const cover = card.querySelector('video[data-ibh]')
+    if (cover && cover.readyState >= 1) {
+      scrub.video = cover   // already loaded: instant, and no extra decoder
+    } else {
+      const hash = (thumbParts(pic.src) || {}).hash
+      const urls = cachedFirst(fileCandidates(pic.src, ['mp4', 'webm']), cacheGet('video', hash))
+      if (!urls.length) return false
+      borrowDecoder(card)
+      const holder = document.createElement('div')
+      holder.style.cssText = 'position:absolute;inset:0;pointer-events:none'
+      placeOverPicture(card, holder)
+      scrub.holder = holder
+      scrub.video = previewLoad(holder, urls, hash)
+      scrub.shared = true
+    }
+    scrub.bar = document.createElement('div')
+    scrub.bar.style.cssText = 'position:absolute;left:0;bottom:0;height:3px;width:0;background:#5eead4;pointer-events:none'
+    scrub.label = document.createElement('div')
+    scrub.label.style.cssText =
+      'position:absolute;left:4px;bottom:7px;padding:1px 6px;border-radius:3px;font:12px/1.4 ' +
+      'ui-monospace,monospace;color:#fff;background:rgba(0,0,0,.6);pointer-events:none'
+    placeOverPicture(card, scrub.bar)
+    placeOverPicture(card, scrub.label)
+    scrub.on = true
+    return true
+  }
+
+  function moveScrub(x) {
+    const r = scrub.card.getBoundingClientRect()
+    const f = Math.min(1, Math.max(0, (x - r.left) / r.width))
+    scrub.bar.style.width = `${f * 100}%`
+    const at = seekFraction(scrub.video, f)
+    scrub.label.textContent = at ? `${mmss(at.t)} / ${mmss(at.d)}` : '…'
+  }
+
+  function endScrub() {
+    const s = scrub
+    scrub = null
+    if (!s || !s.on) return
+    s.bar.remove()
+    s.label.remove()
+    if (s.shared) { previewStop(); s.holder.remove(); returnDecoder() }
+    // A cover keeps the frame where the finger stopped.
+    dbg(`scrub: stopped at ${s.label.textContent}`)
+  }
+
+  function onScrubMove(ev) {
+    if (!scrub || ev.pointerId !== scrub.id) return
+    if (!scrub.on) {
+      const dx = Math.abs(ev.clientX - scrub.x0)
+      const dy = Math.abs(ev.clientY - scrub.y0)
+      if (dy > SCRUB_SLOP && dy > dx) { scrub = null; return }   // a page scroll
+      if (dx < SCRUB_SLOP) return
+      if (!startScrub()) { scrub = null; return }
+    }
+    moveScrub(ev.clientX)
+  }
+
+  function onScrubUp(ev) {
+    if (!scrub || ev.pointerId !== scrub.id) return
+    // After a scrub, the click that follows must not open the post or the modal.
+    if (scrub.on && ev.type === 'pointerup') scrubClickUntil = Date.now() + 400
+    endScrub()
+  }
+
+  // Registered before the modal's click handler, so stopping it here wins.
+  function onScrubClick(ev) {
+    if (Date.now() > scrubClickUntil) return
+    scrubClickUntil = 0
+    ev.preventDefault()
+    ev.stopImmediatePropagation()
+  }
+
+  // The browser hands sideways drags on video cards to the page; vertical
+  // scrolling and pinch zoom stay with it.
+  const SCRUB_CSS = '[data-ibh-video] { touch-action: pan-y pinch-zoom; }'
+
+  function installVideoScrub() {
+    if (!CFG.videoScrub) return
+    window.addEventListener('pointerdown', onScrubDown, true)
+    window.addEventListener('pointermove', onScrubMove, true)
+    window.addEventListener('pointerup', onScrubUp, true)
+    window.addEventListener('pointercancel', onScrubUp, true)
+    window.addEventListener('click', onScrubClick, true)
+    info('video scrub active: drag sideways on a video thumbnail to see its scenes')
+  }
+
+  // ═══════════════════════════════════════════════════════════
   // G. Memory management
   //
   // Upgraded images stay decoded while the page lives, so a long feed keeps
@@ -1497,6 +1710,14 @@
     .vctl button { width: 36px; height: 36px; border: none; background: transparent; font-size: 17px; }
     .vtime { color: #d7dee0; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
     .vseek { flex: 1; min-width: 0; accent-color: #5eead4; }
+    .vprev {
+      position: absolute; bottom: ${CONTROLS_BAND + 6}px; width: 160px; height: 90px;
+      border: 1px solid #2a3a3f; border-radius: 6px; overflow: hidden; background: #000; pointer-events: none;
+    }
+    .vprev span {
+      position: absolute; left: 0; right: 0; bottom: 0; text-align: center; font-size: 11px;
+      color: #fff; background: rgba(0, 0, 0, .55); padding: 1px 0;
+    }
     /* Fullscreen shows only the post; a tap on an image brings the bar back. */
     .bar, .side { transition: opacity .2s; }
     .m.clean .bar, .m.clean .side { opacity: 0; pointer-events: none; }
@@ -1548,8 +1769,10 @@
     const seek = el('input', { class: 'vseek', type: 'range', min: '0', max: '1000', value: '0' })
     const muteBtn = el('button', { text: '🔊', title: t('mMute') })
     const ctl = el('div', { class: 'vctl' }, [playBtn, time, seek, muteBtn])
-    const vwrap = el('div', { class: 'vwrap' }, [video, layer, ctl])
-    const controls = installVideoControls(video, ctl, playBtn, time, seek, muteBtn)
+    const prevBox = el('div', { class: 'vprev' }, [el('span')])
+    prevBox.hidden = true
+    const vwrap = el('div', { class: 'vwrap' }, [video, layer, prevBox, ctl])
+    const controls = installVideoControls(video, ctl, playBtn, time, seek, muteBtn, prevBox, vwrap)
     const stage = el('div', { class: 'stage' }, [vwrap, image])
     const close = el('button', { text: '✕', title: t('mClose') })
     const post = el('a', { class: 'btn', text: '↗', title: t('mOpen') })
@@ -1859,7 +2082,7 @@
 
   // Returns { shown(), poke() }: the bar fades after 2 s without interaction
   // while playing, and stays up while paused or while the seek bar is dragged.
-  function installVideoControls(video, ctl, playBtn, time, seek, muteBtn) {
+  function installVideoControls(video, ctl, playBtn, time, seek, muteBtn, prevBox, vwrap) {
     let dragging = false
     let hideTimer = 0
     const poke = () => {
@@ -1878,13 +2101,34 @@
     }
     playBtn.addEventListener('click', () => { if (video.paused) video.play().catch(() => {}); else video.pause() })
     muteBtn.addEventListener('click', () => { video.muted = !video.muted })
+    // While the seek bar is dragged, only the preview box follows the finger;
+    // the main video jumps once, on release.
+    const PREV_W = 160
     seek.addEventListener('input', () => {
       dragging = true
-      if (video.duration) video.currentTime = (Number(seek.value) / 1000) * video.duration
-      sync()
+      const f = Number(seek.value) / 1000
+      if (prevBox.hidden && video.currentSrc) {
+        prevBox.hidden = false
+        previewLoad(prevBox, [video.currentSrc], null)
+      }
+      const sr = seek.getBoundingClientRect()
+      const wr = vwrap.getBoundingClientRect()
+      const x = sr.left - wr.left + f * sr.width - PREV_W / 2
+      prevBox.style.left = `${Math.min(wr.width - PREV_W - 4, Math.max(4, x))}px`
+      if (previewEl && previewEl.isConnected) seekFraction(previewEl, f)
+      const d = video.duration
+      prevBox.lastChild.textContent = mmss(f * d)
+      time.textContent = `${mmss(f * d)} / ${mmss(d)}`
       poke()
     })
-    seek.addEventListener('change', () => { dragging = false; poke() })
+    seek.addEventListener('change', () => {
+      dragging = false
+      const d = video.duration
+      if (d) video.currentTime = (Number(seek.value) / 1000) * d
+      previewStop()
+      prevBox.hidden = true
+      poke()
+    })
     ctl.addEventListener('pointerdown', poke)
     video.addEventListener('play', poke)
     video.addEventListener('pause', () => { clearTimeout(hideTimer); ctl.classList.remove('hide') })
@@ -2673,6 +2917,7 @@
     body.appendChild(toggle('rotateLandscape', t('tRotate')))
     body.appendChild(toggle('videoCovers', t('tCovers')))
     body.appendChild(toggle('gifInline', t('tGif')))
+    body.appendChild(toggle('videoScrub', t('tScrub'), t('noteReload')))
     body.appendChild(toggle('memorySaver', t('tMemory'), t('noteReload')))
     body.appendChild(toggle('urlCache', t('tUrlCache')))
     body.appendChild(toggle('fixFancybox', t('tFancybox')))
@@ -2938,7 +3183,8 @@
   function injectPageCSS() {
     if (document.querySelector('style[data-ibh]')) return
     const style = el('style', { 'data-ibh': '1' })
-    style.textContent = '.img_detail_cont { touch-action: pan-y; }' + NATIVE_MARK_CSS + (CFG.nativeFeed ? FEED_CSS : '')
+    style.textContent = '.img_detail_cont { touch-action: pan-y; }' + NATIVE_MARK_CSS +
+      (CFG.videoScrub ? SCRUB_CSS : '') + (CFG.nativeFeed ? FEED_CSS : '')
     ;(document.head || document.documentElement).appendChild(style)
   }
 
@@ -2965,6 +3211,7 @@
   hookFancybox()
   installGestures()
   installMemorySaver()
+  installVideoScrub()   // before the modal: its click guard must run first
   installVideoModal()
   logSnapshot()
   if (CFG.originalThumbs) info('original thumbnails on: visible thumbnails load the full file')

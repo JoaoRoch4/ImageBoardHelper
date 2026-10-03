@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.30.0
+
+- Scene preview, written from scratch (`videoScrub`, on):
+  - dragging a finger sideways across a video thumbnail shows its scenes, with
+    a progress bar and the time; vertical drags still scroll, and the click
+    after a drag does not open the post or the modal
+  - in the modal, dragging the seek bar shows a preview box with the frame and
+    time above the finger; the main video jumps once, on release
+- Both use the card's own cover when it is loaded, otherwise a single shared
+  preview video (the URL cache's winner first), so a preview never costs more
+  than one decoder; with every cover slot taken it borrows the farthest
+  cover's and gives it back on release. Seeks use fastSeek, one at a time
+
 ## 0.29.1
 
 - Modal video controls are lighter (80% opacity, fainter background) and fade
