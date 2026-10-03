@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.30.3
+// @version      0.30.4
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.30.3'
+  const VERSION = '0.30.4'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -1366,19 +1366,28 @@
   // never cost more than one decoder.
   // ═══════════════════════════════════════════════════════════
 
-  // One seek at a time per video: while it is busy keep only the latest target.
-  // fastSeek lands on the nearest keyframe, and short clips often have one
-  // every several seconds, so the frame barely changed under the finger.
-  // Clips up to a minute seek exactly; longer ones use fastSeek while the
-  // finger moves and an exact seek once it rests.
+  // Seeking under a finger. Measured on the phone: a seek into a part of the
+  // file not downloaded yet took 4-5 s (about 500 KB/s, and Firefox fetches a
+  // large chunk per seek). So:
+  //  - a target already buffered is seeked at once;
+  //  - otherwise wait until the finger rests (180 ms) and fetch only that spot,
+  //    instead of queuing a download for every position the finger crossed;
+  //  - one seek in flight at a time, keeping only the latest target.
+  // Clips up to a minute seek exactly (short clips have sparse keyframes, so
+  // fastSeek barely changed the frame); longer ones use fastSeek.
   const EXACT_SEEK_MAX_S = 60
-  const SETTLE_MS = 150
+  const REST_MS = 180
   const seekState = new WeakMap()
+
+  const isBuffered = (v, t) => {
+    for (let i = 0; i < v.buffered.length; i++) if (t >= v.buffered.start(i) && t <= v.buffered.end(i)) return true
+    return false
+  }
 
   function seekFraction(v, f) {
     let st = seekState.get(v)
     if (!st) {
-      st = { wanted: null, pending: null, settle: 0 }
+      st = { wanted: null, pending: null, rest: 0 }
       seekState.set(v, st)
       v.addEventListener('seeked', () => {
         if (st.wanted === null) return
@@ -1397,16 +1406,10 @@
     const d = v.duration
     if (!Number.isFinite(d) || d <= 0) { st.pending = f; return null }
     const t = f * d
+    clearTimeout(st.rest)
     if (v.seeking) st.wanted = t
-    else seekTo(v, t)
-    // Long clip: once the finger rests, land on the exact frame.
-    clearTimeout(st.settle)
-    if (d > EXACT_SEEK_MAX_S) {
-      st.settle = setTimeout(() => {
-        if (v.seeking) st.wanted = null
-        v.currentTime = t
-      }, SETTLE_MS)
-    }
+    else if (isBuffered(v, t)) seekTo(v, t)
+    else st.rest = setTimeout(() => { if (v.seeking) st.wanted = t; else seekTo(v, t) }, REST_MS)
     return { t, d }
   }
 
@@ -1494,6 +1497,9 @@
     const cover = card.querySelector('video[data-ibh]')
     if (cover && cover.readyState >= 1) {
       scrub.video = cover   // already loaded: instant, and no extra decoder
+      // Download the whole file from now on: these are a few MB, and every
+      // part already downloaded answers a seek at once.
+      cover.preload = 'auto'
     } else {
       const hash = (thumbParts(pic.src) || {}).hash
       const urls = cachedFirst(fileCandidates(pic.src, ['mp4', 'webm']), cacheGet('video', hash))

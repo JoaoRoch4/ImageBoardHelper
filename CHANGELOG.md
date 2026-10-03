@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.30.4
+
+- Faster scrub frames: a seek into a part of the file not downloaded yet took
+  4-5 s on the phone (about 500 KB/s, a large chunk fetched per seek), so the
+  frame lagged far behind the bar. A buffered target is now seeked at once;
+  otherwise the seek waits until the finger rests (180 ms) and fetches only
+  that spot instead of every position crossed. Scrubbing a cover switches it to
+  download the whole file, so it answers instantly as it fills in
+
 ## 0.30.3
 
 - Scrub bar and time show on site pages: they were inserted right after the
