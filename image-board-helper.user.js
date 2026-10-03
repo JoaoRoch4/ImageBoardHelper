@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.28.1
+// @version      0.28.2
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.28.1'
+  const VERSION = '0.28.2'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -471,12 +471,18 @@
     return urlCache
   }
 
-  /** A URL string, null for a known miss, or undefined when nothing is cached. */
+  // A miss counts only when it repeats at least a minute later: a Wi-Fi
+  // handoff fails every ladder in flight at once, and a single run of misses
+  // must not hide a real file for a day.
+  const MISS_CONFIRM_MS = 60 * 1000
+
+  /** A URL string, null for a confirmed miss, or undefined when nothing usable is cached. */
   function cacheGet(kind, hash) {
     if (!CFG.urlCache || !hash) return undefined
     const key = `${kind}:${hash}`
     const entry = loadUrlCache()[key]
     if (entry && !expired(entry)) {
+      if (entry.u === null && (entry.n || 1) < 2) { urlStats.misses++; return undefined }   // unconfirmed miss
       urlStats.hits++
       return entry.u
     }
@@ -488,8 +494,29 @@
   /** Record the outcome of a ladder. Only definitive ones: a winner, or "none loads". */
   function cacheSet(kind, hash, url, previous) {
     if (!CFG.urlCache || !hash) return
-    if (url && previous && url !== previous) urlStats.healed++   // the cached one had stopped working
-    loadUrlCache()[`${kind}:${hash}`] = { u: url, t: Date.now() }
+    const key = `${kind}:${hash}`
+    const old = loadUrlCache()[key]
+    const now = Date.now()
+    if (url === null) {
+      if (navigator.onLine === false) return   // offline: says nothing about the file
+      if (old && old.u === null) {
+        // Second miss: confirmed once it comes a minute or more after the first.
+        if (!old.n || old.n < 2) {
+          if (now - (old.f || old.t) < MISS_CONFIRM_MS) return
+          urlCache[key] = { u: null, t: now, f: old.f || old.t, n: 2 }
+          scheduleUrlFlush()
+        }
+        return
+      }
+      urlCache[key] = { u: null, t: now, f: now, n: 1 }
+      scheduleUrlFlush()
+      return
+    }
+    if (previous && url !== previous) urlStats.healed++   // the cached one had stopped working
+    // Same winner seen again recently: nothing new to save. Covers remount
+    // often, and re-serialising the cache each time would cost while scrolling.
+    if (old && old.u === url && now - old.t < URLCACHE_NEG_TTL) return
+    urlCache[key] = { u: url, t: now }
     scheduleUrlFlush()
   }
 
@@ -663,6 +690,7 @@
     // Walk the candidate hosts until one answers, instead of giving up on the
     // first 404 — that was what made covers vanish without a trace.
     let i = 0
+    let networkError = false
     const tryNext = () => {
       // A decode error means the file was there but no decoder was free; other
       // hosts would fail the same way. The next time the card scrolls in retries.
@@ -671,8 +699,11 @@
         dbg(`cover: no decoder free for ${pic.src}`)
         return
       }
+      if (v.error && v.error.code === 2) networkError = true   // MEDIA_ERR_NETWORK: says nothing about the file
       if (i >= urls.length) {
         giveUp()
+        // A dropped connection fails every host: not proof it is a GIF.
+        if (networkError || navigator.onLine === false) { dbg(`cover: network error for ${pic.src}, will retry`); return }
         card.dataset.ibhKind = 'gif'
         if (parts) { knownGifs.add(parts.hash); cacheSet('video', parts.hash, null) }
         // A video mark we added ourselves does not belong on a GIF.
@@ -1867,8 +1898,8 @@
     v.onerror = () => {
       if (i < urls.length) { v.src = urls[i++]; return }   // walk the hosts, like covers
       modal.status.textContent = t('mFail')
-      // No decoder free is not "missing": only a real miss is remembered.
-      if (!(v.error && v.error.code === 3)) cacheSet('video', hash, null)
+      // No decoder free (3) or a network drop (2) is not "missing".
+      if (!(v.error && (v.error.code === 3 || v.error.code === 2))) cacheSet('video', hash, null)
     }
     v.oncanplay = () => { modal.status.hidden = true }
     v.onloadedmetadata = () => cacheSet('video', hash, urls[i - 1], vcached)
@@ -1966,9 +1997,10 @@
     let i = 0
     const done = () => { v.onerror = v.onloadedmetadata = null; v.removeAttribute('src'); v.load() }
     v.onerror = () => {
+      const network = v.error && v.error.code === 2
       if (i < urls.length) { v.src = urls[i++]; return }
       done()
-      cacheSet('video', hash, null)
+      if (!network) cacheSet('video', hash, null)
     }
     v.onloadedmetadata = () => {
       cacheSet('video', hash, urls[i - 1])

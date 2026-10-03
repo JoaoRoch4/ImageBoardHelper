@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.28.2
+
+- URL cache no longer trusts a single run of failures: a Wi-Fi handoff fails
+  every ladder in flight, and the misses it wrote hid real files for a day —
+  worst for covers, where it marked the post as a GIF and the modal then opened
+  a video as a still. Now nothing is stored while offline, a video network
+  error (code 2) is never a miss and never makes a cover fall back to GIF, and
+  a miss is honoured only when it repeats at least a minute later
+- A cover remounting with the same winning URL no longer reschedules a write
+  of the whole cache
+
 ## 0.28.1
 
 - Broken GIFs are rebuilt: after the swap the `<img>` is watched, and an error
