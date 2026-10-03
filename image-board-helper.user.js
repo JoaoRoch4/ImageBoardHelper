@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.28.0
+// @version      0.28.1
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.28.0'
+  const VERSION = '0.28.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -772,11 +772,73 @@
       card.dataset.ibhStill = pic.src
       cardPicture(card).set(probe.src)
       card.dataset.ibhGif = 'playing'
+      watchGif(card)
       if (card.dataset.ibhKind === 'gif') { STATE.covers.ok++; touch() }
       dbg(`gif: playing ${probe.src}`)
     }
     probe.onerror = tryNext
     tryNext()
+  }
+
+  // An animated GIF keeps every decoded frame, and under memory pressure
+  // Firefox drops it and shows a broken image. Watch the <img> after the swap;
+  // when it breaks, free more memory and build the GIF again, twice at most.
+  // A CSS background (Masonry's default <v-img> layout) gives no such signal.
+  const GIF_RETRIES = 2
+
+  function watchGif(card) {
+    const img = card.querySelector('img')
+    if (!img || img.dataset.ibhGifWatch) return
+    img.dataset.ibhGifWatch = '1'
+    const check = ev => {
+      if (card.dataset.ibhGif !== 'playing' || !img.srcset) return   // stopped or back to the still
+      // "load" with no width is how a broken decode shows up.
+      if (ev.type === 'error' || img.naturalWidth === 0) gifBroken(card)
+    }
+    img.addEventListener('error', check)
+    img.addEventListener('load', check)
+  }
+
+  function gifBroken(card) {
+    const tries = Number(card.dataset.ibhGifRetries || 0)
+    if (tries >= GIF_RETRIES) {
+      stopGif(card)
+      card.dataset.ibhGif = 'failed'
+      warn('gif: still broken after rebuilding, left as a still')
+      return
+    }
+    card.dataset.ibhGifRetries = String(tries + 1)
+    const freed = freeOffscreen(card)
+    info(`gif: broken, freed ${freed.images} images, ${freed.gifs} GIFs, ${freed.covers} covers; rebuilding (try ${tries + 1})`)
+    stopGif(card)
+    // A beat for the freed memory to be reclaimed before decoding again.
+    setTimeout(() => { if (card.isConnected && card.dataset.ibhSeen) playGif(card) }, 400)
+  }
+
+  // Release what is not on screen: upgraded images back to the thumbnail
+  // (heights held), other GIFs stilled, covers closed. On screen means within
+  // one screen of the viewport.
+  function freeOffscreen(keep) {
+    const n = { images: 0, gifs: 0, covers: 0 }
+    const far = el => {
+      const r = el.getBoundingClientRect()
+      return r.bottom < -window.innerHeight || r.top > window.innerHeight * 2
+    }
+    document.querySelectorAll('[data-ibh-orig="done"]').forEach(el => {
+      if (!far(el)) return
+      pinHeight(el)
+      resetUpgrade(el)
+      if (farViewport) farViewport.unobserve(el)
+      if (originalViewport) originalViewport.observe(el)   // upgraded again when it comes back
+      n.images++
+    })
+    document.querySelectorAll('[data-ibh-gif="playing"]').forEach(card => {
+      if (card !== keep && far(card)) { stopGif(card); n.gifs++ }
+    })
+    document.querySelectorAll('[data-ibh-cover]').forEach(card => {
+      if (far(card)) { unmountCover(card); n.covers++ }
+    })
+    return n
   }
 
   function stopGif(card) {
@@ -1857,9 +1919,30 @@
       cacheSet(kind, hash, probe.src, icached)
       if (modal.seq !== seq) return   // the user moved on
       const decoded = typeof probe.decode === 'function' ? probe.decode().catch(() => {}) : Promise.resolve()
-      decoded.then(() => { if (modal.seq === seq) img.src = probe.src })
+      decoded.then(() => {
+        if (modal.seq !== seq) return
+        img.src = probe.src
+        if (kind === 'gif') watchModalGif(img, probe.src, seq)
+      })
     }
     if (urls.length) probe.src = urls[i++]
+  }
+
+  // The modal's GIF can break the same way; the page is already unloaded, so
+  // just decode it again, twice at most.
+  function watchModalGif(img, url, seq) {
+    let tries = 0
+    const check = ev => {
+      if (modal.seq !== seq) { img.removeEventListener('error', check); img.removeEventListener('load', check); return }
+      if (ev.type !== 'error' && img.naturalWidth > 0) return
+      if (tries >= GIF_RETRIES) { warn('modal: gif still broken after rebuilding'); return }
+      tries++
+      info(`modal: gif broken, rebuilding (try ${tries})`)
+      img.removeAttribute('src')
+      setTimeout(() => { if (modal.seq === seq) img.src = url }, 400)
+    }
+    img.addEventListener('error', check)
+    img.addEventListener('load', check)
   }
 
   // Some videos carry no video tag and no .webm-thumb, so they look like images.

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.28.1
+
+- Broken GIFs are rebuilt: after the swap the `<img>` is watched, and an error
+  or a "load" with zero width (how a dropped decode shows up under memory
+  pressure) frees what is off screen — upgraded images back to the thumbnail,
+  other GIFs stilled, covers closed — then loads the GIF again, twice at most.
+  The modal's GIF is reloaded the same way. CSS backgrounds (Masonry's default
+  `<v-img>` layout) give no signal, so they are not covered
+
 ## 0.28.0
 
 - URL cache (`urlCache`, on): the winning candidate URL is remembered per kind
