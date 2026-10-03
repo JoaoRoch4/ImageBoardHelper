@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.28.5
+
+- The modal's ⛶ fullscreen now works for images and GIFs too: fullscreen goes
+  to the whole modal, so the bar, swipes, zoom and the video's gesture layer
+  all come along. The native video fullscreen button is handed to the modal
+  the same way. Landscape is locked only while a wide video is shown; swiping
+  to an image unlocks it and no longer leaves fullscreen
+
 ## 0.28.4
 
 - Modal: posts whose only clue is the "animated" tag (no gif, no video/mp4/webm,

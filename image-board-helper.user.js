@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.28.4
+// @version      0.28.5
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.28.4'
+  const VERSION = '0.28.5'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -1479,11 +1479,7 @@
     .stage.tall { justify-content: flex-start; }
     video, img { display: block; width: 100%; background: #000; }
     .vwrap { position: relative; }
-    /* Fullscreen goes to the wrapper so the gesture layer comes along. The video
-       fills it, which keeps the native controls along the screen's bottom,
-       right under the strip the layer leaves free. */
-    .vwrap:fullscreen { background: #000; }
-    .vwrap:fullscreen video { width: 100%; height: 100%; max-height: none; object-fit: contain; }
+    .m:fullscreen { background: #000; }
     /* Firefox's native video controls swallow touches on the video, so gestures
        go to this layer on top. The bottom strip stays uncovered: real taps
        there reach the controls (seek bar, sound, fullscreen). */
@@ -1561,7 +1557,7 @@
     installImageZoom(stage, image)
     installVideoGestures(layer, video)
     root.append(style, box)
-    modal = { host, root, stage, vwrap, video, image, post, count, status, fav, up, score, toast, badge, open: false, link: null, seq: 0 }
+    modal = { host, root, box, stage, vwrap, video, image, post, count, status, fav, up, score, toast, badge, open: false, link: null, seq: 0 }
   }
 
   let toastTimer = 0
@@ -1847,10 +1843,27 @@
   // which Firefox allows only in fullscreen (Screen Orientation API). Outside
   // fullscreen nothing is turned.
   // Fullscreen on the wrapper (video + gesture layer), from the ⛶ button.
+  // Fullscreen goes to the whole modal, for any kind of post: the bar, swipes,
+  // zoom and the video's gesture layer all come along.
   function toggleModalFullscreen() {
     if (modal.root.fullscreenElement) { document.exitFullscreen().catch(() => {}); return }
-    if (modal.video.hidden || !modal.vwrap.requestFullscreen) return
-    modal.vwrap.requestFullscreen().catch(e => dbg(`modal: fullscreen refused — ${describeError(e)}`))
+    if (!modal.box.requestFullscreen) return
+    modal.box.requestFullscreen().catch(e => dbg(`modal: fullscreen refused — ${describeError(e)}`))
+  }
+
+  // Landscape only while fullscreen shows a wide video; anything else unlocks.
+  function fitFullscreenOrientation() {
+    const orientation = screen.orientation
+    if (!orientation) return
+    const v = modal.video
+    const full = !!modal.root.fullscreenElement
+    if (full && CFG.rotateLandscape && !v.hidden && v.videoWidth > v.videoHeight && orientation.lock) {
+      orientation.lock('landscape').then(
+        () => dbg('modal: fullscreen locked to landscape'),
+        e => dbg(`modal: orientation lock refused — ${describeError(e)}`))
+    } else {
+      try { if (orientation.unlock) orientation.unlock() } catch (e) { /* not locked */ }
+    }
   }
 
   function onFullscreenChange() {
@@ -1861,25 +1874,16 @@
     // element inside it is fullscreen.
     const inside = modal.root.fullscreenElement
     // The native controls' button makes the bare <video> fullscreen, which
-    // leaves the gesture layer behind. Hand fullscreen to the wrapper instead;
+    // leaves the gesture layer behind. Hand fullscreen to the whole modal;
     // the tap on that button still counts as the user gesture it needs.
-    if (inside === v && modal.vwrap.requestFullscreen) {
-      modal.vwrap.requestFullscreen().then(
-        () => dbg('modal: fullscreen moved to the gesture wrapper'),
+    if (inside === v && modal.box.requestFullscreen) {
+      modal.box.requestFullscreen().then(
+        () => dbg('modal: fullscreen moved to the modal'),
         e => dbg(`modal: could not move fullscreen — ${describeError(e)}`))
       return   // the next fullscreenchange does the orientation
     }
-    const full = !!inside || document.fullscreenElement === modal.host
-    dbg(`modal: fullscreen ${full ? 'on' : 'off'} (${v.videoWidth}x${v.videoHeight})`)
-    if (full) {
-      if (CFG.rotateLandscape && v.videoWidth > v.videoHeight && orientation && orientation.lock) {
-        orientation.lock('landscape').then(
-          () => dbg('modal: fullscreen locked to landscape'),
-          e => dbg(`modal: orientation lock refused — ${describeError(e)}`))
-      }
-    } else {
-      try { if (orientation && orientation.unlock) orientation.unlock() } catch (e) { /* not locked */ }
-    }
+    dbg(`modal: fullscreen ${inside ? 'on' : 'off'}`)
+    fitFullscreenOrientation()
   }
 
   function showVideo(candidates, hash, onMissing, onFound) {
@@ -1909,6 +1913,7 @@
     v.oncanplay = () => { modal.status.hidden = true }
     v.onloadedmetadata = () => {
       cacheSet('video', hash, urls[i - 1], vcached)
+      fitFullscreenOrientation()   // swiped onto a wide video while fullscreen
       if (onFound) onFound()
     }
     v.muted = false   // with sound, even if the previous video was muted from the controls
@@ -1932,10 +1937,9 @@
     const icached = cacheGet(kind, hash)
     const urls = cachedFirst(candidates, icached)
     const seq = modal.seq
-    // Swiped to an image while the video wrapper was fullscreen: leave it.
-    if (modal.root.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {})
     modal.video.hidden = true
     modal.vwrap.hidden = true
+    fitFullscreenOrientation()   // an image in fullscreen: no landscape lock
     modal.image.hidden = false
     const img = modal.image
     const fit = () => {
