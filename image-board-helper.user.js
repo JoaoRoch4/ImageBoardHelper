@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.32.0
+// @version      0.33.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.32.0'
+  const VERSION = '0.33.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -109,6 +109,8 @@
     gifInline:      true,   // animate GIF cards while they are on screen
     videoScrub:     true,   // scene preview on video thumbnails (needs reload)
     scrubMode:      'drag', // 'drag': finger position picks the scene; 'hold': hold for a slideshow
+    slideStep:      10,     // hold slideshow: jump between scenes, in % of the video
+    slideDwell:     0.2,    // hold slideshow: seconds each scene stays once painted
     memorySaver:    true,   // release far off-screen images and removed videos (needs reload)
     urlCache:       true,   // remember which candidate URL worked for each file
     feedNav:        true,   // ⤒ ‹ › buttons: top of page, previous and next post in the feed (needs reload)
@@ -174,6 +176,7 @@
       tSharp: 'Large thumbnails', tCovers: 'Video covers', tGif: 'Animated GIFs in the grid',
       tScrub: 'Scene preview on video thumbnails',
       tScrubMode: 'scene preview gesture', modeDrag: 'Drag sideways', modeHold: 'Hold (slideshow)',
+      tSlideStep: 'slideshow jump', tSlideDwell: 'time per scene', scenes: 'scenes',
       tMemory: 'Release off-screen memory',
       tUrlCache: 'Remember working file URLs',
       tNav: 'Top / previous / next buttons',
@@ -214,6 +217,7 @@
       tSharp: 'Miniatura grande', tCovers: 'Capa de vídeo', tGif: 'GIF animado na grade',
       tScrub: 'Prévia de cenas nas miniaturas de vídeo',
       tScrubMode: 'gesto da prévia de cenas', modeDrag: 'Arrastar de lado', modeHold: 'Segurar (slideshow)',
+      tSlideStep: 'pulo do slideshow', tSlideDwell: 'tempo por cena', scenes: 'cenas',
       tMemory: 'Liberar memória fora da tela',
       tUrlCache: 'Lembrar endereços que funcionaram',
       tNav: 'Botões topo / anterior / próximo',
@@ -1504,17 +1508,25 @@
   // fetches and decodes on the browser's own threads, so the two load in
   // parallel, and a swap only flips the helper's opacity.
   const HOLD_MS = 200
-  const SLIDE_DWELL_MS = 200
   const SLIDE_WAIT_MS = 1000   // a scene still loading after this lets the other video go ahead
   const SLIDE_TICK_MS = 50
-  const SLIDE_STEPS = [0.05, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95]
+
+  // Scene positions for a jump of `slideStep` %: centred in each slice, so 10%
+  // gives 5%, 15% … 95%, and 25% gives 12.5%, 37.5%, 62.5%, 87.5%.
+  function slideSteps() {
+    const n = Math.max(2, Math.round(100 / (Number(CFG.slideStep) || 10)))
+    return Array.from({ length: n }, (_, i) => (i + 0.5) / n)
+  }
 
   function startSlideshow() {
     if (!scrub || scrub.on) return
     if (!startScrub()) { scrub = null; return }
     const s = scrub
     const base = s.video
-    s.step = firstSlide(base)
+    // Read here, so a change in the panel applies to the next hold.
+    s.steps = slideSteps()
+    s.dwell = (Number(CFG.slideDwell) || 0.2) * 1000
+    s.step = firstSlide(s, base)
     s.views = [slideView(s, base, false)]
     s.queue = []        // views seeking a scene, in the order they will show
     s.front = null      // the view on screen
@@ -1531,10 +1543,10 @@
   // A cover already sits at a scene with the file around it downloaded
   // (COVER_POINT): start from the step after it, so the first scenes are
   // instant and the download keeps running forward, ahead of the slideshow.
-  function firstSlide(v) {
+  function firstSlide(s, v) {
     const d = v.duration
     if (!Number.isFinite(d) || d <= 0) return 0
-    const i = SLIDE_STEPS.findIndex(f => f * d > v.currentTime)
+    const i = s.steps.findIndex(f => f * d > v.currentTime)
     return i < 0 ? 0 : i
   }
 
@@ -1554,7 +1566,7 @@
 
   // Hand a view the next scene to fetch.
   function loadSlide(s, view) {
-    view.f = SLIDE_STEPS[s.step++ % SLIDE_STEPS.length]
+    view.f = s.steps[s.step++ % s.steps.length]
     view.ready = false
     view.since = Date.now()
     s.queue.push(view)
@@ -1607,7 +1619,7 @@
   function tickSlide(s) {
     if (scrub !== s) return
     const now = Date.now()
-    if (now - s.shownAt >= SLIDE_DWELL_MS) {
+    if (now - s.shownAt >= s.dwell) {
       // The first view ready shows, even past a slower one still seeking.
       const i = s.queue.findIndex(o => o.ready)
       if (i >= 0) {
@@ -1629,7 +1641,7 @@
       }
     }
     // A single video (no helper yet, or none free) fetches the next scene after the dwell.
-    if (!s.queue.length && s.front && now - s.shownAt >= SLIDE_DWELL_MS) loadSlide(s, s.front)
+    if (!s.queue.length && s.front && now - s.shownAt >= s.dwell) loadSlide(s, s.front)
   }
 
   function endSlideshow(s) {
@@ -3077,15 +3089,33 @@
   }
 
   // Gesture for the scene preview on thumbnails: drag sideways, or hold.
-  function scrubModeSelect() {
+  // A labelled select bound to a config key; `then` runs after the change.
+  function choiceSelect(key, title, choices, then) {
     const sel = el('select')
-    for (const [value, label] of [['drag', t('modeDrag')], ['hold', t('modeHold')]]) {
-      const option = el('option', { value, text: label })
-      if (CFG.scrubMode === value) option.setAttribute('selected', '')
+    for (const [value, label] of choices) {
+      const option = el('option', { value: String(value), text: label })
+      if (String(CFG[key]) === String(value)) option.setAttribute('selected', '')
       sel.appendChild(option)
     }
-    sel.addEventListener('change', () => setCfg('scrubMode', sel.value))
-    return el('div', { class: 'lang' }, [el('div', { class: 'lbl', text: t('tScrubMode') }), sel])
+    sel.addEventListener('change', () => {
+      const picked = choices.find(([value]) => String(value) === sel.value)
+      setCfg(key, picked[0])   // keeps numbers as numbers
+      if (then) then()
+    })
+    return el('div', { class: 'lang' }, [el('div', { class: 'lbl', text: title }), sel])
+  }
+
+  // Gesture for the scene preview on thumbnails; the slideshow's jump and
+  // seconds only show in hold mode, so switching modes redraws the panel.
+  function scrubModeControls(body) {
+    body.appendChild(choiceSelect('scrubMode', t('tScrubMode'),
+      [['drag', t('modeDrag')], ['hold', t('modeHold')]], rebuildPanel))
+    if (CFG.scrubMode !== 'hold') return
+    const num = n => n.toLocaleString(LANG)
+    body.appendChild(choiceSelect('slideStep', t('tSlideStep'),
+      [5, 10, 20, 25].map(p => [p, `${num(p)}% · ${Math.round(100 / p)} ${t('scenes')}`])))
+    body.appendChild(choiceSelect('slideDwell', t('tSlideDwell'),
+      [0.1, 0.2, 0.3, 0.5, 1].map(sec => [sec, `${num(sec)} s`])))
   }
 
   function languageSelect() {
@@ -3136,7 +3166,7 @@
     body.appendChild(toggle('videoCovers', t('tCovers')))
     body.appendChild(toggle('gifInline', t('tGif')))
     body.appendChild(toggle('videoScrub', t('tScrub'), t('noteReload')))
-    body.appendChild(scrubModeSelect())
+    scrubModeControls(body)
     body.appendChild(toggle('memorySaver', t('tMemory'), t('noteReload')))
     body.appendChild(toggle('urlCache', t('tUrlCache')))
     body.appendChild(toggle('fixFancybox', t('tFancybox')))

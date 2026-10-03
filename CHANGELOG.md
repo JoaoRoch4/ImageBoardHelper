@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.33.0
+
+- Hold slideshow jump and seconds are adjustable in the panel (shown in hold
+  mode): `slideStep` jumps 5%, 10%, 20% or 25% of the video between scenes (20,
+  10, 5 or 4 scenes per loop), and `slideDwell` keeps each scene 0.1 to 1 s.
+  Both apply from the next hold, no reload
+
 ## 0.32.0
 
 - Hold slideshow loads scenes in parallel: a second, hidden video seeks and
