@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.32.0
+
+- Hold slideshow loads scenes in parallel: a second, hidden video seeks and
+  downloads the next scene while the current one is on screen, and the two
+  swap by opacity, so a scene shows as soon as the dwell ends instead of after
+  a fresh seek. The helper borrows a decoder like the shared preview does
+  (closing another card's cover if every slot is taken), and the slideshow
+  carries on with one video if no decoder is free
+
 ## 0.31.2
 
 - Faster hold slideshow:

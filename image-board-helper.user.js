@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.31.2
+// @version      0.32.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.31.2'
+  const VERSION = '0.32.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -1453,11 +1453,11 @@
 
   // The preview needs a decoder of its own on the page. With every cover slot
   // taken, close the cover of another card and queue it to come back.
-  let decoderBorrowed = false
+  // A count: the slideshow borrows a second decoder for its helper video.
+  let decodersBorrowed = 0
 
   function borrowDecoder(card) {
-    if (decoderBorrowed) return
-    decoderBorrowed = true
+    decodersBorrowed++
     liveCovers++
     if (liveCovers <= COVER_MAX_LIVE) return
     const victim = [...document.querySelectorAll('[data-ibh-cover]')].find(c => c !== card)
@@ -1467,8 +1467,8 @@
   }
 
   function returnDecoder() {
-    if (!decoderBorrowed) return
-    decoderBorrowed = false
+    if (!decodersBorrowed) return
+    decodersBorrowed--
     releaseCover()   // a queued cover takes the slot back
   }
 
@@ -1499,16 +1499,33 @@
   // ── Hold for a slideshow ──
   // The scenes step through 5%, 15% … 95% and loop, each shown for a moment
   // once painted; lifting the finger stops it.
+  // Two videos take turns, like double buffering: while one shows a scene, the
+  // other, hidden, is already seeking and downloading the next. Each <video>
+  // fetches and decodes on the browser's own threads, so the two load in
+  // parallel, and a swap only flips the helper's opacity.
   const HOLD_MS = 200
   const SLIDE_DWELL_MS = 200
-  const SLIDE_WAIT_MS = 1500   // a scene still loading after this is passed over
+  const SLIDE_WAIT_MS = 1000   // a scene still loading after this lets the other video go ahead
+  const SLIDE_TICK_MS = 50
   const SLIDE_STEPS = [0.05, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95]
 
   function startSlideshow() {
     if (!scrub || scrub.on) return
     if (!startScrub()) { scrub = null; return }
-    scrub.step = firstSlide(scrub.video)
-    nextSlide()
+    const s = scrub
+    const base = s.video
+    s.step = firstSlide(base)
+    s.views = [slideView(s, base, false)]
+    s.queue = []        // views seeking a scene, in the order they will show
+    s.front = null      // the view on screen
+    s.shownAt = 0
+    s.label.textContent = '…'
+    loadSlide(s, s.views[0])
+    // The helper needs the host the first video settled on.
+    const withSrc = () => { if (scrub === s) addSlideHelper(s) }
+    if (base.readyState >= 1) withSrc()
+    else base.addEventListener('loadedmetadata', withSrc, { once: true })
+    s.tick = setInterval(() => tickSlide(s), SLIDE_TICK_MS)
   }
 
   // A cover already sits at a scene with the file around it downloaded
@@ -1521,26 +1538,114 @@
     return i < 0 ? 0 : i
   }
 
-  function nextSlide() {
-    const s = scrub
-    if (!s || !s.on) return
-    const f = SLIDE_STEPS[s.step++ % SLIDE_STEPS.length]
-    s.bar.style.width = `${f * 100}%`
-    const at = seekFraction(s.video, f, true)
-    s.label.textContent = at ? `${mmss(at.t)} / ${mmss(at.d)}` : '…'
-    // Next scene once this one is painted, or after a while if the network is slow.
-    let advanced = false
-    const go = () => {
-      if (advanced) return
-      advanced = true
-      clearTimeout(s.slideTimer)
-      s.video.removeEventListener('seeked', onSeeked)
-      s.slideTimer = setTimeout(nextSlide, SLIDE_DWELL_MS)
+  function slideView(s, v, helper) {
+    const view = { v, helper, f: 0, ready: false, slow: false, since: 0 }
+    // Ready once its own seek landed. A stale seek ending makes seekFraction
+    // start the wanted one right away, so look after the other listeners ran.
+    view.onSeeked = () => setTimeout(() => {
+      if (v.seeking) return
+      view.ready = true
+      view.slow = false
+      tickSlide(s)   // swap now if the dwell is over, not on the next tick
+    }, 0)
+    v.addEventListener('seeked', view.onSeeked)
+    return view
+  }
+
+  // Hand a view the next scene to fetch.
+  function loadSlide(s, view) {
+    view.f = SLIDE_STEPS[s.step++ % SLIDE_STEPS.length]
+    view.ready = false
+    view.since = Date.now()
+    s.queue.push(view)
+    seekFraction(view.v, view.f, true)
+  }
+
+  function addSlideHelper(s) {
+    const src = s.video.currentSrc
+    if (!src) return
+    borrowDecoder(s.card)
+    const h = document.createElement('video')
+    h.muted = true
+    h.playsInline = true
+    h.preload = 'auto'
+    h.style.cssText =
+      'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;' +
+      'border-radius:4px;pointer-events:none;opacity:0'
+    h.onerror = () => { if (scrub === s) dropSlideHelper(s) }   // no decoder free: carry on with one
+    h.src = src
+    s.video.after(h)   // right above the first video, still under Masonry's icons
+    const view = slideView(s, h, true)
+    s.helper = view
+    s.views.push(view)
+    loadSlide(s, view)
+  }
+
+  function dropSlideHelper(s) {
+    const view = s.helper
+    if (!view) return
+    s.helper = null
+    view.v.removeEventListener('seeked', view.onSeeked)
+    view.v.onerror = null
+    view.v.removeAttribute('src')
+    view.v.load()   // hand the decoder back
+    view.v.remove()
+    returnDecoder()
+    s.views = s.views.filter(o => o !== view)
+    s.queue = s.queue.filter(o => o !== view)
+    if (s.front === view) s.front = null
+    if (!s.queue.length) loadSlide(s, s.views[0])
+  }
+
+  function showSlide(s, view) {
+    if (s.helper) s.helper.v.style.opacity = view === s.helper ? '1' : '0'
+    const d = view.v.duration
+    s.bar.style.width = `${view.f * 100}%`
+    s.label.textContent = `${mmss(view.f * d)} / ${mmss(d)}`
+  }
+
+  function tickSlide(s) {
+    if (scrub !== s) return
+    const now = Date.now()
+    if (now - s.shownAt >= SLIDE_DWELL_MS) {
+      // The first view ready shows, even past a slower one still seeking.
+      const i = s.queue.findIndex(o => o.ready)
+      if (i >= 0) {
+        const view = s.queue[i]
+        const overtaken = s.queue.splice(0, i + 1).slice(0, i)
+        const prev = s.front
+        showSlide(s, view)
+        s.front = view
+        s.shownAt = now
+        // Its scene was skipped: aim it further on. It stays busy until the
+        // seek in flight lands, so the next scene does not wait for it.
+        for (const o of overtaken) { loadSlide(s, o); o.slow = true }
+        if (prev && prev !== view && !s.queue.includes(prev)) loadSlide(s, prev)   // just hidden: fetch the scene after next
+      } else if (s.queue.length && (s.queue[0].slow || now - s.queue[0].since > SLIDE_WAIT_MS) &&
+                 s.front && !s.queue.includes(s.front)) {
+        // The scene in line is slow to load (that video stays busy until its
+        // seek lands): the video on screen fetches the next one meanwhile.
+        loadSlide(s, s.front)
+      }
     }
-    const onSeeked = () => go()
-    s.video.addEventListener('seeked', onSeeked)
-    s.slideOff = () => s.video.removeEventListener('seeked', onSeeked)
-    s.slideTimer = setTimeout(go, SLIDE_WAIT_MS)
+    // A single video (no helper yet, or none free) fetches the next scene after the dwell.
+    if (!s.queue.length && s.front && now - s.shownAt >= SLIDE_DWELL_MS) loadSlide(s, s.front)
+  }
+
+  function endSlideshow(s) {
+    clearInterval(s.tick)
+    for (const view of s.views || []) view.v.removeEventListener('seeked', view.onSeeked)
+    const helper = s.helper
+    if (!helper) return
+    // A cover keeps the last scene shown, even one the helper was showing.
+    if (s.front === helper && !s.shared) seekFraction(s.video, helper.f, true)
+    s.queue = []
+    s.helper = null
+    helper.v.onerror = null
+    helper.v.removeAttribute('src')
+    helper.v.load()
+    helper.v.remove()
+    returnDecoder()
   }
 
   function startScrub() {
@@ -1594,9 +1699,8 @@
     scrub = null
     if (!s) return
     clearTimeout(s.holdTimer)
-    clearTimeout(s.slideTimer)
-    if (s.slideOff) s.slideOff()
     if (!s.on) return
+    if (s.tick) endSlideshow(s)
     s.bar.remove()
     s.label.remove()
     if (s.shared) { previewStop(); s.holder.remove(); returnDecoder() }
