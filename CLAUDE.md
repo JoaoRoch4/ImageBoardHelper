@@ -96,6 +96,8 @@ Não sugira estas de novo sem um motivo novo.
 
 **Cachear os arquivos (bytes) em vez dos endereços.** Respostas de outro domínio chegam opacas (não viram blob para `img.src`), o `freeMemory` apaga o Cache Storage do site, userscript não registra Service Worker, e guardar blobs briga com o gerenciamento de memória. O cache HTTP do Firefox já guarda os bytes; o que faltava era lembrar qual candidata venceu — é isso que o cache de endereços faz.
 
+**Baixar vídeo menor ou com `preload='metadata'` para a prévia de cenas.** O rule34 só tem o arquivo original de vídeo (sample é só de imagem), e MP4 não reduz resolução no download. Medido no aparelho: busca num trecho não baixado custa 1,5 a 10 s em vídeos de 2,5 a 9 min (~500 KB/s), e `metadata` não foi mais rápido que `auto`. O que ajudou foi esconder a espera: dois vídeos em revezamento no slideshow (`tickSlide`).
+
 **Consertar o Fancybox em sites de detalhe tardio.** Em sankaku, anime-pictures, allgirl, hentaibooru e kusowanka a URL só existe após o fetch de detalhe e não é derivável. Sem acesso a `store.imageList`, não há solução externa. O patch correto está no README e é no script original.
 
 ---
