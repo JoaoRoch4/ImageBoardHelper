@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.28.5
+// @version      0.29.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.28.5'
+  const VERSION = '0.29.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -180,6 +180,7 @@
       mClose: 'Close', mOpen: 'Open the post', mPrev: 'Previous post', mNext: 'Next post',
       mLoading: 'Loading…', mFail: 'Could not load it',
       mFav: 'Add to favorites', mUp: 'Upvote', mFull: 'Fullscreen',
+      mPlay: 'Play / pause', mMute: 'Sound on / off',
       tRotate: 'Landscape in player fullscreen',
       favAdded: 'Added to favorites', favAlready: 'Already in your favorites',
       favLogin: 'You are not logged in', favFail: 'Could not favorite',
@@ -217,6 +218,7 @@
       mClose: 'Fechar', mOpen: 'Abrir o post', mPrev: 'Post anterior', mNext: 'Próximo post',
       mLoading: 'Carregando…', mFail: 'Não foi possível carregar',
       mFav: 'Favoritar', mUp: 'Votar positivo', mFull: 'Tela cheia',
+      mPlay: 'Tocar / pausar', mMute: 'Som liga / desliga',
       tRotate: 'Paisagem na tela cheia do player',
       favAdded: 'Adicionado aos favoritos', favAlready: 'Já está nos favoritos',
       favLogin: 'Você não está logado', favFail: 'Não foi possível favoritar',
@@ -1463,7 +1465,7 @@
 
   const SITE_LINK = '.image-list span.thumb a'
   const SWIPE_MIN = 60        // px sideways to change post
-  const CONTROLS_BAND = 56    // bottom strip of the video: drags there are seeks
+  const CONTROLS_BAND = 48    // bottom strip of the video: the player's own controls
   let modal = null
 
   const siteLinks = () => [...document.querySelectorAll(SITE_LINK)]
@@ -1480,11 +1482,22 @@
     video, img { display: block; width: 100%; background: #000; }
     .vwrap { position: relative; }
     .m:fullscreen { background: #000; }
-    /* Firefox's native video controls swallow touches on the video, so gestures
-       go to this layer on top. The bottom strip stays uncovered: real taps
-       there reach the controls (seek bar, sound, fullscreen). */
+    /* Gestures go to this layer over the video; the bottom strip holds the
+       player's own controls. Firefox's native controls swallowed touches and
+       hid their bar behind the layer, worst in fullscreen. */
     .vlayer { position: absolute; left: 0; right: 0; top: 0; bottom: ${CONTROLS_BAND}px;
       -webkit-touch-callout: none; user-select: none; }
+    .vctl {
+      position: absolute; left: 0; right: 0; bottom: 0; height: ${CONTROLS_BAND}px;
+      display: flex; align-items: center; gap: 8px; padding: 0 8px;
+      background: linear-gradient(transparent, rgba(0, 0, 0, .75));
+    }
+    .vctl button { width: 36px; height: 36px; border: none; background: transparent; font-size: 17px; }
+    .vtime { color: #d7dee0; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .vseek { flex: 1; min-width: 0; accent-color: #5eead4; }
+    /* Fullscreen shows only the post; a tap on an image brings the bar back. */
+    .bar, .side { transition: opacity .2s; }
+    .m.clean .bar, .m.clean .side { opacity: 0; pointer-events: none; }
     video { max-height: 100vh; }
     video { -webkit-touch-callout: none; user-select: none; }
     img { height: auto; -webkit-user-drag: none; user-select: none; transform-origin: 0 0; }
@@ -1522,13 +1535,19 @@
     const style = document.createElement('style')
     style.textContent = MODAL_CSS
     const video = document.createElement('video')
-    video.controls = true
+    video.controls = false   // the player's own controls, below
     video.loop = true
     video.playsInline = true
     const image = document.createElement('img')
     image.draggable = false
     const layer = el('div', { class: 'vlayer' })
-    const vwrap = el('div', { class: 'vwrap' }, [video, layer])
+    const playBtn = el('button', { text: '❚❚', title: t('mPlay') })
+    const time = el('span', { class: 'vtime', text: '0:00 / 0:00' })
+    const seek = el('input', { class: 'vseek', type: 'range', min: '0', max: '1000', value: '0' })
+    const muteBtn = el('button', { text: '🔊', title: t('mMute') })
+    const ctl = el('div', { class: 'vctl' }, [playBtn, time, seek, muteBtn])
+    const vwrap = el('div', { class: 'vwrap' }, [video, layer, ctl])
+    installVideoControls(video, playBtn, time, seek, muteBtn)
     const stage = el('div', { class: 'stage' }, [vwrap, image])
     const close = el('button', { text: '✕', title: t('mClose') })
     const post = el('a', { class: 'btn', text: '↗', title: t('mOpen') })
@@ -1721,6 +1740,12 @@
             lastTap.t = 0
           } else {
             lastTap = { t: now, x: ev.clientX, y: ev.clientY }
+            // A single tap in fullscreen shows or hides the bar, once it is
+            // clear no second tap (zoom) follows.
+            const tapAt = now
+            setTimeout(() => {
+              if (lastTap.t === tapAt && modal.root.fullscreenElement) setCleanUi(!modal.box.classList.contains('clean'))
+            }, 320)
           }
         }
         // Cleared after the swipe handler (registered first) has seen it.
@@ -1823,6 +1848,35 @@
     })
   }
 
+  const mmss = sec => Number.isFinite(sec) ? `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}` : '0:00'
+
+  function installVideoControls(video, playBtn, time, seek, muteBtn) {
+    let dragging = false
+    const sync = () => {
+      playBtn.textContent = video.paused ? '▶' : '❚❚'
+      muteBtn.textContent = video.muted ? '🔇' : '🔊'
+      time.textContent = `${mmss(video.currentTime)} / ${mmss(video.duration)}`
+      if (!dragging && video.duration) seek.value = String(Math.round((video.currentTime / video.duration) * 1000))
+    }
+    for (const type of ['timeupdate', 'play', 'pause', 'volumechange', 'loadedmetadata', 'durationchange', 'emptied']) {
+      video.addEventListener(type, sync)
+    }
+    playBtn.addEventListener('click', () => { if (video.paused) video.play().catch(() => {}); else video.pause() })
+    muteBtn.addEventListener('click', () => { video.muted = !video.muted })
+    seek.addEventListener('input', () => {
+      dragging = true
+      if (video.duration) video.currentTime = (Number(seek.value) / 1000) * video.duration
+      sync()
+    })
+    seek.addEventListener('change', () => { dragging = false })
+  }
+
+  // In fullscreen the bar and side buttons hide; a single tap on an image
+  // toggles them. Video keeps its own controls visible either way.
+  function setCleanUi(clean) {
+    modal.box.classList.toggle('clean', clean)
+  }
+
   // Stop whatever is showing and invalidate loads still in flight (seq).
   function resetMedia() {
     modal.seq++
@@ -1831,6 +1885,7 @@
     v.onerror = v.oncanplay = v.onloadedmetadata = null
     v.playbackRate = 1
     modal.badge.hidden = true
+    if (!modal.root.fullscreenElement) setCleanUi(false)
     v.removeAttribute('src')
     v.load()   // hand the decoder back
     modal.image.onerror = null
@@ -1883,7 +1938,21 @@
       return   // the next fullscreenchange does the orientation
     }
     dbg(`modal: fullscreen ${inside ? 'on' : 'off'}`)
+    setCleanUi(!!inside)
     fitFullscreenOrientation()
+  }
+
+  // Firefox for Android keeps its own orientation rules for video fullscreen,
+  // and with the modal (not a <video>) fullscreen it sometimes drops the lock
+  // and goes back to portrait. Put landscape back whenever that happens.
+  function onOrientationChange() {
+    if (!modal || !modal.open || !modal.root.fullscreenElement) return
+    const v = modal.video
+    if (CFG.rotateLandscape && !v.hidden && v.videoWidth > v.videoHeight &&
+        String(screen.orientation.type).startsWith('portrait')) {
+      dbg('modal: fullscreen video went back to portrait, locking landscape again')
+      fitFullscreenOrientation()
+    }
   }
 
   function showVideo(candidates, hash, onMissing, onFound) {
@@ -2185,6 +2254,7 @@
     window.addEventListener('click', onSiteLinkClick, true)
     window.addEventListener('popstate', () => { if (modal && modal.open) closeModal(true) })
     document.addEventListener('fullscreenchange', onFullscreenChange)
+    if (screen.orientation) screen.orientation.addEventListener('change', onOrientationChange)
     info('post modal active: thumbnails on site pages open in place')
   }
 

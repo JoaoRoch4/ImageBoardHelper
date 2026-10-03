@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.29.0
+
+- Modal video has its own controls — play/pause, time, a draggable seek bar
+  and sound — always visible on the bottom strip, fullscreen included. The
+  native controls are gone: they swallowed touches and their bar stayed hidden
+  behind the gesture layer, worst in fullscreen
+- Fullscreen shows only the post: the bar and the ‹ › buttons hide; a single
+  tap on an image toggles them (double tap is still zoom). Video keeps its
+  controls visible
+- Fullscreen video that Firefox turns back to portrait is locked to landscape
+  again
+
 ## 0.28.5
 
 - The modal's ⛶ fullscreen now works for images and GIFs too: fullscreen goes
