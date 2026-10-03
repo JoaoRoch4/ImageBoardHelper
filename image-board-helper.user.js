@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.31.1
+// @version      0.31.2
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.31.1'
+  const VERSION = '0.31.2'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -1387,7 +1387,8 @@
     return false
   }
 
-  function seekFraction(v, f) {
+  // `now`: no finger moving (the slideshow), so the rest wait is only a delay.
+  function seekFraction(v, f, now = false) {
     let st = seekState.get(v)
     if (!st) {
       st = { wanted: null, pending: null, rest: 0 }
@@ -1403,7 +1404,7 @@
         if (st.pending === null) return
         const p = st.pending
         st.pending = null
-        seekFraction(v, p)
+        seekFraction(v, p, true)
       })
     }
     const d = v.duration
@@ -1411,7 +1412,7 @@
     const t = f * d
     clearTimeout(st.rest)
     if (v.seeking) st.wanted = t
-    else if (isBuffered(v, t)) seekTo(v, t)
+    else if (now || isBuffered(v, t)) seekTo(v, t)
     else st.rest = setTimeout(() => { if (v.seeking) st.wanted = t; else seekTo(v, t) }, REST_MS)
     return { t, d }
   }
@@ -1498,15 +1499,26 @@
   // ── Hold for a slideshow ──
   // The scenes step through 5%, 15% … 95% and loop, each shown for a moment
   // once painted; lifting the finger stops it.
-  const HOLD_MS = 250
-  const SLIDE_DWELL_MS = 300
+  const HOLD_MS = 200
+  const SLIDE_DWELL_MS = 200
+  const SLIDE_WAIT_MS = 1500   // a scene still loading after this is passed over
   const SLIDE_STEPS = [0.05, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95]
 
   function startSlideshow() {
     if (!scrub || scrub.on) return
     if (!startScrub()) { scrub = null; return }
-    scrub.step = 0
+    scrub.step = firstSlide(scrub.video)
     nextSlide()
+  }
+
+  // A cover already sits at a scene with the file around it downloaded
+  // (COVER_POINT): start from the step after it, so the first scenes are
+  // instant and the download keeps running forward, ahead of the slideshow.
+  function firstSlide(v) {
+    const d = v.duration
+    if (!Number.isFinite(d) || d <= 0) return 0
+    const i = SLIDE_STEPS.findIndex(f => f * d > v.currentTime)
+    return i < 0 ? 0 : i
   }
 
   function nextSlide() {
@@ -1514,7 +1526,7 @@
     if (!s || !s.on) return
     const f = SLIDE_STEPS[s.step++ % SLIDE_STEPS.length]
     s.bar.style.width = `${f * 100}%`
-    const at = seekFraction(s.video, f)
+    const at = seekFraction(s.video, f, true)
     s.label.textContent = at ? `${mmss(at.t)} / ${mmss(at.d)}` : '…'
     // Next scene once this one is painted, or after a while if the network is slow.
     let advanced = false
@@ -1528,7 +1540,7 @@
     const onSeeked = () => go()
     s.video.addEventListener('seeked', onSeeked)
     s.slideOff = () => s.video.removeEventListener('seeked', onSeeked)
-    s.slideTimer = setTimeout(go, 2500)
+    s.slideTimer = setTimeout(go, SLIDE_WAIT_MS)
   }
 
   function startScrub() {

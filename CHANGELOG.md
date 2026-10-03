@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.31.2
+
+- Faster hold slideshow:
+  - 0.2 s per scene (was 0.3 s), and the hold starts after 0.2 s (was 0.25 s)
+  - scenes not downloaded yet are fetched at once; the 180 ms wait that keeps a
+    moving finger from queuing seeks does not apply when no finger is moving
+  - on a card with a cover, the slideshow starts from the scene after the
+    cover's frame, where the file is already downloaded, instead of from 5%
+  - a scene still loading after 1.5 s is passed over (was 2.5 s)
+
 ## 0.31.1
 
 - Faster hold slideshow: each scene now stays 0.3 s once painted (was 0.6 s)
