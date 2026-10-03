@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.31.0
+// @version      0.31.1
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.31.0'
+  const VERSION = '0.31.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -1499,7 +1499,7 @@
   // The scenes step through 5%, 15% … 95% and loop, each shown for a moment
   // once painted; lifting the finger stops it.
   const HOLD_MS = 250
-  const SLIDE_DWELL_MS = 600
+  const SLIDE_DWELL_MS = 300
   const SLIDE_STEPS = [0.05, 0.15, 0.25, 0.35, 0.45, 0.55, 0.65, 0.75, 0.85, 0.95]
 
   function startSlideshow() {

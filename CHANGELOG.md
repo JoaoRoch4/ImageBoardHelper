@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.31.1
+
+- Faster hold slideshow: each scene now stays 0.3 s once painted (was 0.6 s)
+
 ## 0.31.0
 
 - Scene preview gesture is now an option (`scrubMode`, panel select): drag
