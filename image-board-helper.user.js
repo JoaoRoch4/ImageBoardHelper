@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.27.1
+// @version      0.28.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.27.1'
+  const VERSION = '0.28.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -108,6 +108,7 @@
     videoCovers:    true,   // overlay the real video frame on the card
     gifInline:      true,   // animate GIF cards while they are on screen
     memorySaver:    true,   // release far off-screen images and removed videos (needs reload)
+    urlCache:       true,   // remember which candidate URL worked for each file
     feedNav:        true,   // ⤒ ‹ › buttons: top of page, previous and next post in the feed (needs reload)
     sortButton:     true,   // ★ button on search listings: add or remove sort:score (needs reload)
     videoModal:     true,   // open posts from site pages in an overlay: video, GIF, image (needs reload)
@@ -170,6 +171,7 @@
       coversFmt: (ok, bad, all) => `${ok} ok · ${bad} failed · ${all} videos`,
       tSharp: 'Large thumbnails', tCovers: 'Video covers', tGif: 'Animated GIFs in the grid',
       tMemory: 'Release off-screen memory',
+      tUrlCache: 'Remember working file URLs',
       tNav: 'Top / previous / next buttons',
       navPrev: 'Previous post', navNext: 'Next post', navTop: 'Top of the page', navBottom: 'Bottom of the page',
       navPrevPage: 'Previous page', navNextPage: 'Next page',
@@ -206,6 +208,7 @@
       coversFmt: (ok, bad, all) => `${ok} ok · ${bad} falha · ${all} vídeos`,
       tSharp: 'Miniatura grande', tCovers: 'Capa de vídeo', tGif: 'GIF animado na grade',
       tMemory: 'Liberar memória fora da tela',
+      tUrlCache: 'Lembrar endereços que funcionaram',
       tNav: 'Botões topo / anterior / próximo',
       navPrev: 'Post anterior', navNext: 'Próximo post', navTop: 'Topo da página', navBottom: 'Fim da página',
       navPrevPage: 'Página anterior', navNextPage: 'Próxima página',
@@ -398,6 +401,7 @@
 
   function clearHostCache() {
     try { localStorage.removeItem(HOST_KEY) } catch (e) { /* ignore */ }
+    clearUrlCache(false)   // the host is part of every cached URL
     STATE.imageBase = null
     info('host cache cleared')
     imageBase()
@@ -430,6 +434,104 @@
     }
     return out
   }
+
+  // ═══════════════════════════════════════════════════════════
+  // URL cache
+  //
+  // Firefox's HTTP cache already keeps the bytes. What the script kept losing
+  // was which candidate URL won: every re-upgrade (memory saver, modal unload)
+  // walked the whole ladder again — jpg/png/jpeg, a dozen video hosts for a GIF
+  // labelled as video, an .mp4 sniff on every modal open. This remembers the
+  // winning URL per kind and file hash, and "nothing loads" for a day.
+  // ═══════════════════════════════════════════════════════════
+
+  const URLCACHE_KEY = `IBH_URLCACHE_${SITE}`
+  const URLCACHE_MAX = 1500
+  const URLCACHE_TTL = 30 * 24 * 60 * 60 * 1000   // a winning URL
+  const URLCACHE_NEG_TTL = 24 * 60 * 60 * 1000    // "nothing loads": short, a CDN hiccup must not stick
+  const urlStats = { hits: 0, misses: 0, healed: 0 }
+  let urlCache = null
+  let urlCacheTimer = 0
+
+  const expired = entry => Date.now() - entry.t >= (entry.u === null ? URLCACHE_NEG_TTL : URLCACHE_TTL)
+
+  // Auto-delete: expired entries go on load and on every write, not only when
+  // read again, so files never seen again do not linger.
+  function dropExpired() {
+    let n = 0
+    for (const k of Object.keys(urlCache)) if (expired(urlCache[k])) { delete urlCache[k]; n++ }
+    return n
+  }
+
+  function loadUrlCache() {
+    if (!urlCache) {
+      urlCache = readJSON(URLCACHE_KEY, {}) || {}
+      if (dropExpired()) scheduleUrlFlush()
+    }
+    return urlCache
+  }
+
+  /** A URL string, null for a known miss, or undefined when nothing is cached. */
+  function cacheGet(kind, hash) {
+    if (!CFG.urlCache || !hash) return undefined
+    const key = `${kind}:${hash}`
+    const entry = loadUrlCache()[key]
+    if (entry && !expired(entry)) {
+      urlStats.hits++
+      return entry.u
+    }
+    if (entry) { delete urlCache[key]; scheduleUrlFlush() }
+    urlStats.misses++
+    return undefined
+  }
+
+  /** Record the outcome of a ladder. Only definitive ones: a winner, or "none loads". */
+  function cacheSet(kind, hash, url, previous) {
+    if (!CFG.urlCache || !hash) return
+    if (url && previous && url !== previous) urlStats.healed++   // the cached one had stopped working
+    loadUrlCache()[`${kind}:${hash}`] = { u: url, t: Date.now() }
+    scheduleUrlFlush()
+  }
+
+  // The cached winner goes first; if it fails, the full ladder runs behind it.
+  const cachedFirst = (urls, cached) => typeof cached === 'string' ? [cached, ...urls.filter(u => u !== cached)] : urls
+
+  // Writes are batched: serialising the cache on every swap would stutter the scroll.
+  function scheduleUrlFlush() {
+    if (!urlCacheTimer) urlCacheTimer = setTimeout(flushUrlCache, 3000)
+  }
+
+  const newestFirst = keys => keys.sort((a, b) => urlCache[b].t - urlCache[a].t)
+
+  let lastLoggedHits = -1
+  function flushUrlCache() {
+    clearTimeout(urlCacheTimer)
+    urlCacheTimer = 0
+    if (!urlCache) return
+    dropExpired()
+    const keys = Object.keys(urlCache)
+    if (keys.length > URLCACHE_MAX) for (const k of newestFirst(keys).slice(URLCACHE_MAX)) delete urlCache[k]
+    if (!writeJSON(URLCACHE_KEY, urlCache)) {
+      // Storage full: keep the newer half and try once more.
+      const all = newestFirst(Object.keys(urlCache))
+      for (const k of all.slice(Math.floor(all.length / 2))) delete urlCache[k]
+      if (!writeJSON(URLCACHE_KEY, urlCache)) warn('url cache: could not save it')
+    }
+    if (urlStats.hits !== lastLoggedHits) {
+      lastLoggedHits = urlStats.hits
+      dbg(`url cache: ${urlStats.hits} hits, ${urlStats.misses} misses, ${urlStats.healed} healed, ${Object.keys(urlCache).length} entries`)
+    }
+  }
+
+  function clearUrlCache(missesOnly) {
+    const c = loadUrlCache()
+    let n = 0
+    for (const k of Object.keys(c)) if (!missesOnly || c[k].u === null) { delete c[k]; n++ }
+    flushUrlCache()
+    return n
+  }
+
+  window.addEventListener('pagehide', flushUrlCache)
 
   // ═══════════════════════════════════════════════════════════
   // B. Real video covers
@@ -532,11 +634,13 @@
     // Masonry's rule34 scraper labels posts as video by tag, so some GIFs carry
     // the video icon. Once a file proved to be one, go straight to the GIF path.
     const parts = thumbParts(pic.src)
-    if (parts && knownGifs.has(parts.hash)) card.dataset.ibhKind = 'gif'
+    const vcached = parts ? cacheGet('video', parts.hash) : undefined
+    // Known not to be a video (no host has it): straight to the GIF path.
+    if (parts && (knownGifs.has(parts.hash) || vcached === null)) card.dataset.ibhKind = 'gif'
     if (card.dataset.ibhKind === 'gif') { if (CFG.gifInline) playGif(card); return }
     if (liveCovers >= COVER_MAX_LIVE) { coverQueue.add(card); return }
 
-    const urls = fileCandidates(pic.src, ['mp4', 'webm'])
+    const urls = cachedFirst(fileCandidates(pic.src, ['mp4', 'webm']), vcached)
     if (!urls.length) { dbg('video card outside the derivable pattern'); return }
 
     card.dataset.ibhCover = '1'
@@ -570,7 +674,7 @@
       if (i >= urls.length) {
         giveUp()
         card.dataset.ibhKind = 'gif'
-        if (parts) knownGifs.add(parts.hash)
+        if (parts) { knownGifs.add(parts.hash); cacheSet('video', parts.hash, null) }
         // A video mark we added ourselves does not belong on a GIF.
         const marked = card.querySelector('img[data-ibh-mark]')
         if (marked) { marked.classList.remove('webm-thumb'); delete marked.dataset.ibhMark }
@@ -593,6 +697,7 @@
       touch()
     }
     v.addEventListener('loadedmetadata', () => {
+      if (parts) cacheSet('video', parts.hash, urls[i - 1], vcached)
       if (Number.isFinite(v.duration) && v.duration > 0) {
         seekingCover = true
         v.currentTime = v.duration * COVER_POINT
@@ -641,8 +746,11 @@
     if (card.dataset.ibhGif) return   // loading, playing or failed
     const pic = cardPicture(card)
     if (!pic) { whenPictured(card, playGif); return }
-    const urls = fileCandidates(pic.src, ['gif'])
+    const hash = (thumbParts(pic.src) || {}).hash
+    const gcached = cacheGet('gif', hash)
+    const urls = cachedFirst(fileCandidates(pic.src, ['gif']), gcached)
     if (!urls.length) { dbg('gif card outside the derivable pattern'); return }
+    if (gcached === null) { card.dataset.ibhGif = 'failed'; return }   // known: no .gif for it
 
     card.dataset.ibhGif = 'loading'
     const probe = new Image()
@@ -651,6 +759,7 @@
       if (card.dataset.ibhGif !== 'loading') return   // scrolled away meanwhile
       if (i >= urls.length) {
         card.dataset.ibhGif = 'failed'
+        cacheSet('gif', hash, null)
         if (card.dataset.ibhKind === 'gif') { STATE.covers.failed++; touch() }
         dbg(`gif: no host answered for ${pic.src}`)
         return
@@ -658,6 +767,7 @@
       probe.src = urls[i++]
     }
     probe.onload = () => {
+      cacheSet('gif', hash, probe.src, gcached)
       if (card.dataset.ibhGif !== 'loading') return
       card.dataset.ibhStill = pic.src
       cardPicture(card).set(probe.src)
@@ -1046,26 +1156,34 @@
     return true
   }
 
+  // Cache kind for an upgrade: the candidate lists differ, so do the winners.
+  const upgradeKind = el => thumbKind(el) === 'video' ? 'poster'
+    : !CFG.originalThumbs && inFeed(el) ? 'sample' : 'orig'
+
   function pumpOriginals() {
     while (originalInflight < ORIGINAL_MAX_INFLIGHT && originalQueue.length) {
       const el = originalQueue.shift()
       const pic = el.isConnected && pictureOf(el)
       if (!pic) continue
+      const ck = { kind: upgradeKind(el), hash: (thumbParts(pic.src) || {}).hash }
+      ck.cached = cacheGet(ck.kind, ck.hash)
+      if (ck.cached === null) { el.dataset.ibhOrig = 'failed'; continue }   // known: nothing loads
       originalInflight++
-      probeOriginal(el, pic.src, upgradeCandidates(el, pic.src), () => {
+      probeOriginal(el, pic.src, cachedFirst(upgradeCandidates(el, pic.src), ck.cached), () => {
         originalInflight--
         pumpOriginals()
-      })
+      }, ck)
     }
   }
 
-  function probeOriginal(el, from, urls, done) {
+  function probeOriginal(el, from, urls, done, ck) {
     const probe = new Image()
     probe.decoding = 'async'
     let i = 0
     const tryNext = () => {
       if (i >= urls.length) {
         el.dataset.ibhOrig = 'failed'
+        if (ck) cacheSet(ck.kind, ck.hash, null)
         dbg(`original: nothing loaded for ${from}`)
         done()
         return
@@ -1075,6 +1193,7 @@
     // Decode off the main thread before swapping, so the new image appears in
     // one go instead of stalling the scroll while a large file is decoded.
     probe.onload = () => {
+      if (ck) cacheSet(ck.kind, ck.hash, probe.src, ck.cached)   // the URL works, whatever happens to the swap
       const decoded = typeof probe.decode === 'function' ? probe.decode().catch(() => {}) : Promise.resolve()
       decoded.then(swap)
     }
@@ -1670,7 +1789,9 @@
     }
   }
 
-  function showVideo(urls) {
+  function showVideo(candidates, hash) {
+    const vcached = cacheGet('video', hash)
+    const urls = cachedFirst(candidates, vcached)
     // The phone decodes about four videos at once; the modal gets one of them.
     document.querySelectorAll('[data-ibh-cover]').forEach(card => unmountCover(card))
     coverQueue.clear()
@@ -1682,10 +1803,13 @@
     const v = modal.video
     let i = 0
     v.onerror = () => {
-      if (i < urls.length) v.src = urls[i++]   // walk the hosts, like covers
-      else modal.status.textContent = t('mFail')
+      if (i < urls.length) { v.src = urls[i++]; return }   // walk the hosts, like covers
+      modal.status.textContent = t('mFail')
+      // No decoder free is not "missing": only a real miss is remembered.
+      if (!(v.error && v.error.code === 3)) cacheSet('video', hash, null)
     }
     v.oncanplay = () => { modal.status.hidden = true }
+    v.onloadedmetadata = () => cacheSet('video', hash, urls[i - 1], vcached)
     v.muted = false   // with sound, even if the previous video was muted from the controls
     v.src = urls[i++]
     // The tap that opened the modal is a user gesture, which is what lets the
@@ -1703,7 +1827,9 @@
   }
 
   // Show what the page already has at once, then the better file when it loads.
-  function showImage(placeholder, urls) {
+  function showImage(placeholder, candidates, kind, hash) {
+    const icached = cacheGet(kind, hash)
+    const urls = cachedFirst(candidates, icached)
     const seq = modal.seq
     // Swiped to an image while the video wrapper was fullscreen: leave it.
     if (modal.root.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {})
@@ -1723,8 +1849,12 @@
     const probe = new Image()
     probe.decoding = 'async'
     let i = 0
-    probe.onerror = () => { if (i < urls.length) probe.src = urls[i++] }
+    probe.onerror = () => {
+      if (i < urls.length) probe.src = urls[i++]
+      else cacheSet(kind, hash, null)
+    }
     probe.onload = () => {
+      cacheSet(kind, hash, probe.src, icached)
       if (modal.seq !== seq) return   // the user moved on
       const decoded = typeof probe.decode === 'function' ? probe.decode().catch(() => {}) : Promise.resolve()
       decoded.then(() => { if (modal.seq === seq) img.src = probe.src })
@@ -1737,6 +1867,14 @@
   // does, turn the modal into the video. No delay on the tap itself.
   function sniffVideo(src, link) {
     const seq = modal.seq
+    const hash = (thumbParts(src) || {}).hash
+    const known = cacheGet('video', hash)
+    if (known === null) return   // checked before: not a video
+    if (typeof known === 'string') {
+      info(`modal: post ${postId(link)} is an untagged video (cached)`)
+      showVideo(fileCandidates(src, ['mp4', 'webm']), hash)
+      return
+    }
     const urls = fileCandidates(src, ['mp4']).slice(0, 2)
     if (!urls.length) return
     const v = document.createElement('video')
@@ -1744,12 +1882,17 @@
     v.preload = 'metadata'
     let i = 0
     const done = () => { v.onerror = v.onloadedmetadata = null; v.removeAttribute('src'); v.load() }
-    v.onerror = () => { if (i < urls.length) v.src = urls[i++]; else done() }
+    v.onerror = () => {
+      if (i < urls.length) { v.src = urls[i++]; return }
+      done()
+      cacheSet('video', hash, null)
+    }
     v.onloadedmetadata = () => {
+      cacheSet('video', hash, urls[i - 1])
       done()
       if (modal.seq !== seq || !modal.open) return
       info(`modal: post ${postId(link)} is an untagged video`)
-      showVideo(fileCandidates(src, ['mp4', 'webm']))
+      showVideo(fileCandidates(src, ['mp4', 'webm']), hash)
     }
     v.src = urls[i++]
   }
@@ -1775,12 +1918,13 @@
     modal.status.hidden = false
 
     const kind = thumbKind(thumb)
+    const hash = thumbParts(pic.src).hash
     if (kind === 'video') {
-      showVideo(fileCandidates(pic.src, ['mp4', 'webm']))
+      showVideo(fileCandidates(pic.src, ['mp4', 'webm']), hash)
     } else if (kind === 'gif') {
-      showImage(thumb.currentSrc || pic.src, fileCandidates(pic.src, ['gif']))
+      showImage(thumb.currentSrc || pic.src, fileCandidates(pic.src, ['gif']), 'gif', hash)
     } else {
-      showImage(thumb.currentSrc || pic.src, fileCandidates(pic.src, ORIGINAL_EXTS))
+      showImage(thumb.currentSrc || pic.src, fileCandidates(pic.src, ORIGINAL_EXTS), 'orig', hash)
       sniffVideo(pic.src, link)
     }
 
@@ -1964,6 +2108,7 @@
       n.images++
     })
     try { localStorage.removeItem(HOST_KEY) } catch (e) { /* ignore */ }
+    const urls = clearUrlCache(false)
     STATE.imageBase = null
     try {
       if (window.caches) {
@@ -1975,8 +2120,8 @@
       warn(`could not clear Cache Storage — ${describeError(e)}`)
     }
     imageBase()
-    info(`freed ${n.covers} covers, ${n.gifs} GIFs, ${n.images} upgraded images; ` +
-      `host cache and ${n.caches} Cache Storage entries cleared (browser HTTP cache untouched)`)
+    info(`freed ${n.covers} covers, ${n.gifs} GIFs, ${n.images} upgraded images; host cache, ` +
+      `${urls} cached URLs and ${n.caches} Cache Storage entries cleared (browser HTTP cache untouched)`)
     touch()
   }
 
@@ -1987,6 +2132,7 @@
    */
   function redoThumbs() {
     const n = { images: 0, covers: 0, gifs: 0 }
+    const misses = clearUrlCache(true)   // the point is retrying what failed
     document.querySelectorAll('[data-ibh-orig]').forEach(el => {
       resetUpgrade(el)
       // observe() reports elements already on screen at once, so they upgrade now.
@@ -2007,7 +2153,7 @@
     // Pick up elements Masonry rebuilt since the last scan.
     scanCards(document)
     scanThumbs(document)
-    info(`redo thumbnails: ${n.images} images re-queued, ${n.covers} covers and ${n.gifs} GIFs restarted`)
+    info(`redo thumbnails: ${n.images} images re-queued, ${n.covers} covers and ${n.gifs} GIFs restarted, ${misses} cached misses dropped`)
     touch()
   }
 
@@ -2260,6 +2406,7 @@
     body.appendChild(toggle('videoCovers', t('tCovers')))
     body.appendChild(toggle('gifInline', t('tGif')))
     body.appendChild(toggle('memorySaver', t('tMemory'), t('noteReload')))
+    body.appendChild(toggle('urlCache', t('tUrlCache')))
     body.appendChild(toggle('fixFancybox', t('tFancybox')))
     body.appendChild(toggle('gestures', t('tGestures')))
     body.appendChild(toggle('forceRule34Api', t('tApi'), t('noteReload')))
@@ -2579,6 +2726,8 @@
     probe: probeVideoUrls,
     clearHostCache,
     free: freeMemory,
+    urlCache: () => ({ ...urlStats, entries: Object.keys(loadUrlCache()).length }),
+    clearUrlCache,
     redo: redoThumbs,
     set: setCfg,
   }

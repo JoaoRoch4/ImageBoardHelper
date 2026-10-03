@@ -61,16 +61,17 @@ Bugs do Masonry que este script contorna:
 3. `STATE` observável pelo painel
 4. **A.** Miniatura nítida — `applySharpThumbs`
 5. Resolução de servidor de imagens — `imageBase`, `thumbParts`, `fileCandidates`
-6. **B.** Capa de vídeo e GIF inline — `mountCover`, `unmountCover`, `playGif`, `stopGif`, `IntersectionObserver`
-7. **C.** Fancybox — `repairItems`, `wrapFancybox`, `installExtensionFallback`
-8. **D.** Gestos — ponteiros, swipe, toque duplo, pinça
-9. **E.** Miniatura original e feed nativo — `upgradeToOriginal`, `upgradeCandidates`, `sampleCandidates`, `probeOriginal`, `scanThumbs`
-10. **G.** Gerenciamento de memória — `farViewport`, `releaseFar`, `pinHeight`, `onNodesRemoved`, `onLocationChange`, `releaseAll`
-11. **H.** Modal de post nas páginas do site (vídeo, GIF, imagem, swipe) — `openModal`, `closeModal`, `stepModal`, `showVideo`, `showImage`, `sniffVideo`, `installModalSwipe`, `installImageZoom`, `suspendPage`, `resumePage`
-12. Opcional: `applyRule34ApiUnlock`
-13. Diagnóstico — `probeVideoUrls`, `logSnapshot`, `freeMemory`, `redoThumbs`
-14. Painel — Shadow DOM, `renderStatus`, `copyLog`; botões ★ ⤒ ‹ › (`buildFeedNav`, `jumpPost`, `toggleSortScore`)
-15. Arranque e `window.__ibh`
+6. Cache de endereços — `cacheGet`, `cacheSet`, `cachedFirst`, `flushUrlCache`, `clearUrlCache`
+7. **B.** Capa de vídeo e GIF inline — `mountCover`, `unmountCover`, `playGif`, `stopGif`, `IntersectionObserver`
+8. **C.** Fancybox — `repairItems`, `wrapFancybox`, `installExtensionFallback`
+9. **D.** Gestos — ponteiros, swipe, toque duplo, pinça
+10. **E.** Miniatura original e feed nativo — `upgradeToOriginal`, `upgradeCandidates`, `sampleCandidates`, `probeOriginal`, `scanThumbs`
+11. **G.** Gerenciamento de memória — `farViewport`, `releaseFar`, `pinHeight`, `onNodesRemoved`, `onLocationChange`, `releaseAll`
+12. **H.** Modal de post nas páginas do site (vídeo, GIF, imagem, swipe) — `openModal`, `closeModal`, `stepModal`, `showVideo`, `showImage`, `sniffVideo`, `installModalSwipe`, `installImageZoom`, `suspendPage`, `resumePage`
+13. Opcional: `applyRule34ApiUnlock`
+14. Diagnóstico — `probeVideoUrls`, `logSnapshot`, `freeMemory`, `redoThumbs`
+15. Painel — Shadow DOM, `renderStatus`, `copyLog`; botões ★ ⤒ ‹ › (`buildFeedNav`, `jumpPost`, `toggleSortScore`)
+16. Arranque e `window.__ibh`
 
 ---
 
@@ -91,6 +92,8 @@ Não sugira estas de novo sem um motivo novo.
 **`touch()` dentro do que o painel chama ao se desenhar.** `renderStatus` → `readMasonryState` → `touch()` → `renderStatus` entrava em laço até estourar a pilha com o painel aberto, e a lista de status sumia sem aviso. O painel lê com `readMasonryState(false)` e `renderStatus` tem trava de reentrada.
 
 **Ouvir toques direto no `<video controls>`.** Os controles nativos do Firefox engolem o toque real (só mostram/escondem a barra) e o evento não sobe para a página. Evento sintético despachado no elemento passa, então teste sintético não prova nada aqui. Os gestos ficam numa camada própria por cima do vídeo, com a faixa de baixo livre para os controles.
+
+**Cachear os arquivos (bytes) em vez dos endereços.** Respostas de outro domínio chegam opacas (não viram blob para `img.src`), o `freeMemory` apaga o Cache Storage do site, userscript não registra Service Worker, e guardar blobs briga com o gerenciamento de memória. O cache HTTP do Firefox já guarda os bytes; o que faltava era lembrar qual candidata venceu — é isso que o cache de endereços faz.
 
 **Consertar o Fancybox em sites de detalhe tardio.** Em sankaku, anime-pictures, allgirl, hentaibooru e kusowanka a URL só existe após o fetch de detalhe e não é derivável. Sem acesso a `store.imageList`, não há solução externa. O patch correto está no README e é no script original.
 

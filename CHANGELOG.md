@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.28.0
+
+- URL cache (`urlCache`, on): the winning candidate URL is remembered per kind
+  (original, sample, poster, GIF, video) and file hash, plus "nothing loads"
+  for a day. Upgrades, covers, inline GIFs and the modal put the remembered URL
+  first; if it fails the full ladder runs behind it and the new winner replaces
+  it. A decode error ("no decoder free") is never stored as a miss. Expired
+  entries delete themselves on load and on every write; at most 1500 are kept,
+  oldest out first, and writes are batched every 3 s and on pagehide.
+  Redo thumbnails drops the stored misses; Clear host and Free memory & cache
+  drop everything. Console: `__ibh.urlCache()`, `__ibh.clearUrlCache()`
+
 ## 0.27.1
 
 - Video gestures in fullscreen: the native controls' fullscreen button puts
