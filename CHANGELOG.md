@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.30.1
+
+- Scene preview follows the finger: fastSeek lands on the nearest keyframe,
+  and short clips often have one every several seconds, so the frame barely
+  changed during a drag. Clips up to a minute now seek exactly; longer ones use
+  fastSeek while the finger moves and an exact seek once it rests (150 ms)
+
 ## 0.30.0
 
 - Scene preview, written from scratch (`videoScrub`, on):

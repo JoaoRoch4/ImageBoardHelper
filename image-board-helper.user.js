@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.30.0
+// @version      0.30.1
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.30.0'
+  const VERSION = '0.30.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -1360,19 +1360,24 @@
   // ═══════════════════════════════════════════════════════════
 
   // One seek at a time per video: while it is busy keep only the latest target.
-  // fastSeek lands on the nearest keyframe, cheap enough to follow a finger.
+  // fastSeek lands on the nearest keyframe, and short clips often have one
+  // every several seconds, so the frame barely changed under the finger.
+  // Clips up to a minute seek exactly; longer ones use fastSeek while the
+  // finger moves and an exact seek once it rests.
+  const EXACT_SEEK_MAX_S = 60
+  const SETTLE_MS = 150
   const seekState = new WeakMap()
 
   function seekFraction(v, f) {
     let st = seekState.get(v)
     if (!st) {
-      st = { wanted: null, pending: null }
+      st = { wanted: null, pending: null, settle: 0 }
       seekState.set(v, st)
       v.addEventListener('seeked', () => {
         if (st.wanted === null) return
         const t = st.wanted
         st.wanted = null
-        fastSeek(v, t)
+        seekTo(v, t)
       })
       // Asked before the duration was known: seek once it is.
       v.addEventListener('loadedmetadata', () => {
@@ -1386,13 +1391,21 @@
     if (!Number.isFinite(d) || d <= 0) { st.pending = f; return null }
     const t = f * d
     if (v.seeking) st.wanted = t
-    else fastSeek(v, t)
+    else seekTo(v, t)
+    // Long clip: once the finger rests, land on the exact frame.
+    clearTimeout(st.settle)
+    if (d > EXACT_SEEK_MAX_S) {
+      st.settle = setTimeout(() => {
+        if (v.seeking) st.wanted = null
+        v.currentTime = t
+      }, SETTLE_MS)
+    }
     return { t, d }
   }
 
-  function fastSeek(v, t) {
-    if (typeof v.fastSeek === 'function') v.fastSeek(t)
-    else v.currentTime = t
+  function seekTo(v, t) {
+    if (v.duration > EXACT_SEEK_MAX_S && typeof v.fastSeek === 'function') v.fastSeek(t)
+    else v.currentTime = t   // exact: decodes from the keyframe up to this frame
   }
 
   // The shared preview video.
