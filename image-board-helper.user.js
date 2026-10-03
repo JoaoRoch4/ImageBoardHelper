@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.28.3
+// @version      0.28.4
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.28.3'
+  const VERSION = '0.28.4'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -1882,7 +1882,7 @@
     }
   }
 
-  function showVideo(candidates, hash, onMissing) {
+  function showVideo(candidates, hash, onMissing, onFound) {
     const vcached = cacheGet('video', hash)
     const urls = cachedFirst(candidates, vcached)
     const seq = modal.seq
@@ -1907,7 +1907,10 @@
       modal.status.textContent = t('mFail')
     }
     v.oncanplay = () => { modal.status.hidden = true }
-    v.onloadedmetadata = () => cacheSet('video', hash, urls[i - 1], vcached)
+    v.onloadedmetadata = () => {
+      cacheSet('video', hash, urls[i - 1], vcached)
+      if (onFound) onFound()
+    }
     v.muted = false   // with sound, even if the previous video was muted from the controls
     v.src = urls[i++]
     // The tap that opened the modal is a user gesture, which is what lets the
@@ -2019,6 +2022,47 @@
 
   const postId = link => (link.href.match(/id=(\d+)/) || [])[1] || '?'
 
+  // Only the "animated" tag, nothing else to go by: no gif, no video/mp4/webm,
+  // no .webm-thumb mark from the site. Those may be either kind.
+  function ambiguousAnimated(link) {
+    if (link.querySelector('img.webm-thumb')) return false
+    const tags = nativeTags(link)
+    return /\sanimated\s/i.test(tags) && !NATIVE_REAL_VIDEO.test(tags) && !NATIVE_GIF.test(tags)
+  }
+
+  // Load the video and probe the .gif at the same time; whichever answers
+  // first wins and the other is cancelled. A post has a single file, so a
+  // .gif that loads means it is a GIF. Waiting for every video host to say
+  // "missing" first cost about 3 s per GIF.
+  function raceVideoAndGif(link, thumb, pic, hash, asGif) {
+    const seq = modal.seq
+    let settled = false
+    const probe = new Image()
+    const gifs = cachedFirst(fileCandidates(pic.src, ['gif']), cacheGet('gif', hash))
+    let i = 0
+    const stopProbe = () => { probe.onload = probe.onerror = null; probe.removeAttribute('src') }
+    probe.onerror = () => { if (!settled && i < gifs.length) probe.src = gifs[i++] }
+    probe.onload = () => {
+      if (settled || modal.seq !== seq) return
+      settled = true
+      cacheSet('gif', hash, probe.src)
+      cacheSet('video', hash, null)
+      const v = modal.video
+      v.onerror = v.oncanplay = v.onloadedmetadata = null
+      v.pause()
+      v.removeAttribute('src')
+      v.load()   // cancel the video download and free the decoder
+      link.dataset.ibhKind = 'gif'
+      info(`modal: post ${postId(link)} is a GIF (answered before the video)`)
+      showImage(thumb.currentSrc || pic.src, [probe.src], 'gif', hash)
+      stopProbe()
+    }
+    showVideo(fileCandidates(pic.src, ['mp4', 'webm']), hash,
+      () => { if (!settled) { settled = true; stopProbe(); asGif() } },
+      () => { if (!settled) { settled = true; stopProbe() } })
+    if (gifs.length) probe.src = gifs[i++]
+  }
+
   function openModal(link) {
     const thumb = link.querySelector('img')
     const pic = thumb && cardPicture(link)
@@ -2046,7 +2090,9 @@
     }
     // Known from an earlier try: no video file for it.
     if (kind === 'video' && cacheGet('video', hash) === null) kind = 'gif'
-    if (kind === 'video') {
+    if (kind === 'video' && ambiguousAnimated(link)) {
+      raceVideoAndGif(link, thumb, pic, hash, asGif)
+    } else if (kind === 'video') {
       showVideo(fileCandidates(pic.src, ['mp4', 'webm']), hash, asGif)
     } else if (kind === 'gif') {
       showImage(thumb.currentSrc || pic.src, fileCandidates(pic.src, ['gif']), 'gif', hash)

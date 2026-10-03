@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.28.4
+
+- Modal: posts whose only clue is the "animated" tag (no gif, no video/mp4/webm,
+  no `.webm-thumb`) load the video and probe the `.gif` at the same time;
+  whichever answers first wins and the other is cancelled. GIFs that took about
+  3 s (every video host answering "missing" first) now show in about the time
+  of one request
+
 ## 0.28.3
 
 - Modal: a post treated as video (tag "animated" without "gif") whose video
