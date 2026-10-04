@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.38.2
+
+- A tap on the empty area around a modal image closes the modal again: since
+  images fit by `object-fit`, the black bars around them were part of the
+  image and swallowed the tap
+
 ## 0.38.1
 
 - Double-tap in the centre of the modal player toggles fullscreen, like

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.38.1
+// @version      0.38.2
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.38.1'
+  const VERSION = '0.38.2'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -2120,8 +2120,11 @@
     up.addEventListener('click', modalUpvote)
     prev.addEventListener('click', () => stepModal(-1))
     next.addEventListener('click', () => stepModal(1))
-    // Tap on the empty area around the media closes.
-    stage.addEventListener('click', ev => { if (ev.target === stage) closeModal(false) })
+    // Tap on the empty area around the media closes. The image fills the
+    // stage since it fits by object-fit, so its black bars count as empty too.
+    stage.addEventListener('click', ev => {
+      if (ev.target === stage || (ev.target === image && zoom.scale === 1 && !onImageContent(ev))) closeModal(false)
+    })
     installModalSwipe(stage, video)
     installImageZoom(stage, image)
     installVideoGestures(layer, video)
@@ -2768,6 +2771,20 @@
       })
     }
     if (urls.length) probe.src = urls[i++]
+  }
+
+  // Whether a tap falls on the picture itself, not on the bars object-fit
+  // leaves around it inside the <img> box.
+  function onImageContent(ev) {
+    const img = modal.image
+    if (!img.naturalWidth) return true
+    const r = img.getBoundingClientRect()
+    const scale = Math.min(r.width / img.naturalWidth, r.height / img.naturalHeight)
+    const w = img.naturalWidth * scale
+    const h = img.naturalHeight * scale
+    const left = r.left + (r.width - w) / 2
+    const top = r.top + (r.height - h) / 2
+    return ev.clientX >= left && ev.clientX <= left + w && ev.clientY >= top && ev.clientY <= top + h
   }
 
   // A comic (much taller than wide) goes full width and scrolls, vertical drags
