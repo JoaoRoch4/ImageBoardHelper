@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.34.1
+// @version      0.34.2
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.34.1'
+  const VERSION = '0.34.2'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -1848,6 +1848,10 @@
     if (releasedCount % 10 === 1) dbg(`memory: released ${releasedCount} off-screen images so far`)
   }
 
+  // Recount from the document. The decoders lent to a scene preview count too:
+  // leaving them out let covers open past the phone's limit mid-preview.
+  const liveDecoders = () => document.querySelectorAll('video[data-ibh]').length + decodersBorrowed
+
   // Masonry rebuilds the grid without reloading the page. A removed <video>
   // keeps its decoder until garbage collection, and the live-cover count never
   // came back down, so covers stopped once it sat at the cap. Unload them and
@@ -1859,10 +1863,15 @@
       const vids = node.matches && node.matches('video[data-ibh]')
         ? [node]
         : (node.querySelectorAll ? [...node.querySelectorAll('video[data-ibh]')] : [])
-      for (const v of vids) { v.removeAttribute('src'); v.load(); unloaded++ }
+      for (const v of vids) {
+        if (!v.currentSrc) continue   // already unloaded: one of our own unmounts
+        v.removeAttribute('src')
+        v.load()
+        unloaded++
+      }
     }
     if (!unloaded) return
-    liveCovers = document.querySelectorAll('video[data-ibh]').length
+    liveCovers = liveDecoders()
     for (const card of coverQueue) if (!card.isConnected) coverQueue.delete(card)
     dbg(`memory: unloaded ${unloaded} videos removed from the page`)
   }
@@ -1872,7 +1881,7 @@
   function onLocationChange() {
     knownGifs.clear()
     for (const card of coverQueue) if (!card.isConnected) coverQueue.delete(card)
-    liveCovers = document.querySelectorAll('video[data-ibh]').length
+    liveCovers = liveDecoders()
     dbg(`memory: page changed to ${location.pathname}${location.search.slice(0, 60)}`)
   }
 

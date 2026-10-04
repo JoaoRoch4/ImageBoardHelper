@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.34.2
+
+- Cover count kept right during a scene preview: every cover the script
+  closed was seen again as "removed from the page" and triggered a recount
+  that left out the decoders lent to the preview, so covers could open past
+  the phone's limit mid-preview. Videos already unloaded are now skipped, and
+  the recount includes the lent decoders. The log no longer repeats
+  "unloaded 1 videos removed from the page" for each closed cover
+
 ## 0.34.1
 
 - At most three image downloads at a time, GIFs and sample/original upgrades
