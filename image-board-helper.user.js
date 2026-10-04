@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.37.0
+// @version      0.37.1
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.37.0'
+  const VERSION = '0.37.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -2036,7 +2036,10 @@
     .m.clean .bar, .m.clean .side { opacity: 0; pointer-events: none; }
     video { max-height: 100vh; }
     video { -webkit-touch-callout: none; user-select: none; }
-    img { height: auto; -webkit-user-drag: none; user-select: none; transform-origin: 0 0; }
+    /* The whole image fits the screen, in either orientation; a comic
+       (.stage.tall) goes full width and scrolls. */
+    img { height: 100%; object-fit: contain; -webkit-user-drag: none; user-select: none; transform-origin: 0 0; }
+    .stage.tall img { height: auto; }
     [hidden] { display: none !important; }
     .bar { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 8px; padding: 10px; pointer-events: none; }
     .bar > * { pointer-events: auto; }
@@ -2713,13 +2716,7 @@
     fitFullscreenOrientation()   // an image in fullscreen: no landscape lock
     modal.image.hidden = false
     const img = modal.image
-    const fit = () => {
-      // A tall image (a comic) scrolls inside the modal; vertical drags scroll it.
-      const tall = img.offsetHeight > modal.stage.clientHeight
-      modal.stage.classList.toggle('tall', tall)
-      applyZoom()   // sets touch-action for the tall/short and zoom state
-    }
-    img.onload = fit
+    img.onload = fitImage
     img.src = placeholder
     modal.status.hidden = true
     const probe = new Image()
@@ -2741,6 +2738,23 @@
       })
     }
     if (urls.length) probe.src = urls[i++]
+  }
+
+  // A comic (much taller than wide) goes full width and scrolls, vertical drags
+  // scrolling it; anything else fits whole in the screen. Measured from the
+  // file's own shape, and again when the screen turns: the old test (taller
+  // than the screen at full width) cut the top and bottom off an ordinary
+  // portrait image once the screen was in landscape.
+  const COMIC_RATIO = 2.2   // height / width
+
+  function fitImage() {
+    const img = modal.image
+    if (img.hidden || !img.naturalWidth) return
+    const ratio = img.naturalHeight / img.naturalWidth
+    const stage = modal.stage
+    const tall = ratio > COMIC_RATIO && stage.clientWidth * ratio > stage.clientHeight
+    stage.classList.toggle('tall', tall)
+    applyZoom()   // sets touch-action for the tall/short and zoom state
   }
 
   // The modal's GIF can break the same way; the page is already unloaded, so
@@ -3080,6 +3094,8 @@
     if (!CFG.videoModal) return
     window.addEventListener('click', onSiteLinkClick, true)
     window.addEventListener('click', onSiteVoteClick, true)
+    // The screen turned (↻, a wide video, the phone itself): fit the image again.
+    window.addEventListener('resize', () => { if (modal && modal.open) { resetZoom(); fitImage() } })
     window.addEventListener('popstate', () => { if (modal && modal.open) closeModal(true) })
     document.addEventListener('fullscreenchange', onFullscreenChange)
     if (screen.orientation) screen.orientation.addEventListener('change', onOrientationChange)

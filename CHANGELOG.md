@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.37.1
+
+- Modal images fit the screen whole in either orientation: an image was drawn
+  at full width, so in landscape a portrait image came out two to three
+  screens tall with its top and bottom cut off. Only comics (more than 2.2
+  times taller than wide) go full width and scroll now, and the fit is redone
+  when the screen turns
+
 ## 0.37.0
 
 - ↻ button in the modal turns the screen to the other orientation, for any
