@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.34.2
+// @version      0.34.3
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.34.2'
+  const VERSION = '0.34.3'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -1522,8 +1522,8 @@
   }
 
   // ── Hold for a slideshow ──
-  // The scenes step through 5%, 15% … 95% and loop, each shown for a moment
-  // once painted; lifting the finger stops it.
+  // The scenes step from 00:00 through the video and loop, each shown for a
+  // moment once painted; lifting the finger stops it.
   // Two videos take turns, like double buffering: while one shows a scene, the
   // other, hidden, is already seeking and downloading the next. Each <video>
   // fetches and decodes on the browser's own threads, so the two load in
@@ -1532,11 +1532,11 @@
   const SLIDE_WAIT_MS = 1000   // a scene still loading after this lets the other video go ahead
   const SLIDE_TICK_MS = 50
 
-  // Scene positions for a jump of `slideStep` %: centred in each slice, so 10%
-  // gives 5%, 15% … 95%, and 25% gives 12.5%, 37.5%, 62.5%, 87.5%.
+  // Scene positions for a jump of `slideStep` %, from the start of the video:
+  // 10% gives 0%, 10% … 90%, and 25% gives 0%, 25%, 50%, 75%.
   function slideSteps() {
     const n = Math.max(2, Math.round(100 / (Number(CFG.slideStep) || 10)))
-    return Array.from({ length: n }, (_, i) => (i + 0.5) / n)
+    return Array.from({ length: n }, (_, i) => i / n)
   }
 
   function startSlideshow() {
@@ -1547,7 +1547,7 @@
     // Read here, so a change in the panel applies to the next hold.
     s.steps = slideSteps()
     s.dwell = (Number(CFG.slideDwell) || 0.2) * 1000
-    s.step = firstSlide(s, base)
+    s.step = 0   // always from 00:00
     s.views = [slideView(s, base, false)]
     s.queue = []        // views seeking a scene, in the order they will show
     s.front = null      // the view on screen
@@ -1559,16 +1559,6 @@
     if (base.readyState >= 1) withSrc()
     else base.addEventListener('loadedmetadata', withSrc, { once: true })
     s.tick = setInterval(() => tickSlide(s), SLIDE_TICK_MS)
-  }
-
-  // A cover already sits at a scene with the file around it downloaded
-  // (COVER_POINT): start from the step after it, so the first scenes are
-  // instant and the download keeps running forward, ahead of the slideshow.
-  function firstSlide(s, v) {
-    const d = v.duration
-    if (!Number.isFinite(d) || d <= 0) return 0
-    const i = s.steps.findIndex(f => f * d > v.currentTime)
-    return i < 0 ? 0 : i
   }
 
   function slideView(s, v, helper) {

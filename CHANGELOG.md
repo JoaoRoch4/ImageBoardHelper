@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.34.3
+
+- Hold slideshow always starts at 00:00 and steps from there (0%, 10% … 90%
+  with the default jump). It used to start past the cover's frame (45%), which
+  looked like a random time
+
 ## 0.34.2
 
 - Cover count kept right during a scene preview: every cover the script
