@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.36.3
+
+- Closing the modal keeps the page on the last post shown: leaving the
+  modal's history entry let Firefox put back the scroll it had saved (often
+  the top), over the scroll that followed the modal. Scroll restoration is now
+  manual while the modal is open, and the page is placed after the back step
 ## 0.36.2
 
 - The page scrolls along under the modal: each step centres the post's

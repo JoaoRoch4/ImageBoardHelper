@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.36.2
+// @version      0.36.3
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.36.2'
+  const VERSION = '0.36.3'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -2865,6 +2865,10 @@
       modal.host.style.display = ''
       document.documentElement.style.setProperty('overflow', 'hidden', 'important')
       // An entry for the back button to close the modal instead of the page.
+      // Leaving it, the browser would put back the scroll it saved for the
+      // page, undoing the scroll that followed the modal: we place it ourselves.
+      modal.scrollMode = history.scrollRestoration
+      history.scrollRestoration = 'manual'
       history.pushState({ ibhModal: true }, '')
     }
     info(`modal: ${kind} post ${postId(link)}`)
@@ -2878,10 +2882,20 @@
     resetMedia()
     modal.host.style.display = 'none'
     document.documentElement.style.removeProperty('overflow')
-    if (!fromBack && history.state && history.state.ibhModal) history.back()
-    // Leave the page on the post last shown, then bring back what is on screen.
-    if (modal.link && modal.link.isConnected) modal.link.scrollIntoView({ block: 'center' })
-    resumePage()
+    // Leave the page on the post last shown, once the history step is over
+    // (the back runs after this function), then bring back what is on screen.
+    const link = modal.link
+    const land = () => {
+      if (link && link.isConnected) link.scrollIntoView({ block: 'center' })
+      history.scrollRestoration = modal.scrollMode || 'auto'
+      resumePage()
+    }
+    if (!fromBack && history.state && history.state.ibhModal) {
+      window.addEventListener('popstate', () => setTimeout(land, 0), { once: true })
+      history.back()
+    } else {
+      setTimeout(land, 0)
+    }
   }
 
   // While the modal is open the page underneath is invisible, so it gives its
