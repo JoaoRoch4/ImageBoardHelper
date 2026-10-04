@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.40.3
+
+- Site theme lines in neon green (`#39ff14`): element borders, fields,
+  buttons, paginator links, separators and the focus ring
+
 ## 0.40.2
 
 - More contrast in the site theme: fields, buttons and paginator links stand
