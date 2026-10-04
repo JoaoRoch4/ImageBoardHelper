@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.34.1
+
+- At most three image downloads at a time, GIFs and sample/original upgrades
+  together (upgrades alone used to run six, GIFs had no limit). A GIF waiting
+  for a slot goes before queued upgrades
+
 ## 0.34.0
 
 - Constant memory cleanup (part of `memorySaver`):

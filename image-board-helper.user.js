@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.34.0
+// @version      0.34.1
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.34.0'
+  const VERSION = '0.34.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -782,6 +782,25 @@
     releaseCover()
   }
 
+  // At most three image downloads at a time, GIFs and upgrades together: fewer
+  // files half-loaded and decoding at once, and each one finishes sooner on a
+  // slow connection. A GIF waiting for a slot goes before queued upgrades.
+  const IMAGE_MAX_INFLIGHT = 3
+  let imagesInflight = 0
+  const imageWaiters = []
+
+  function takeImageSlot(start) {
+    if (imagesInflight < IMAGE_MAX_INFLIGHT) { imagesInflight++; start() }
+    else imageWaiters.push(start)
+  }
+
+  function giveImageSlot() {
+    imagesInflight = Math.max(0, imagesInflight - 1)
+    const next = imageWaiters.shift()
+    if (next) { imagesInflight++; next() }
+    else pumpOriginals()
+  }
+
   // GIF cards show a still (sample or thumbnail .jpg). While on screen, swap in
   // the original .gif, probed off-screen first; put the still back on the way
   // out, because animated GIFs hold every decoded frame in memory.
@@ -798,9 +817,12 @@
     card.dataset.ibhGif = 'loading'
     const probe = new Image()
     let i = 0
+    let held = true
+    const release = () => { if (held) { held = false; giveImageSlot() } }
     const tryNext = () => {
-      if (card.dataset.ibhGif !== 'loading') return   // scrolled away meanwhile
+      if (card.dataset.ibhGif !== 'loading') { release(); return }   // scrolled away meanwhile
       if (i >= urls.length) {
+        release()
         card.dataset.ibhGif = 'failed'
         cacheSet('gif', hash, null)
         if (card.dataset.ibhKind === 'gif') { STATE.covers.failed++; touch() }
@@ -810,6 +832,7 @@
       probe.src = urls[i++]
     }
     probe.onload = () => {
+      release()
       cacheSet('gif', hash, probe.src, gcached)
       if (card.dataset.ibhGif !== 'loading') return
       card.dataset.ibhStill = pic.src
@@ -820,7 +843,7 @@
       dbg(`gif: playing ${probe.src}`)
     }
     probe.onerror = tryNext
-    tryNext()
+    takeImageSlot(tryNext)
   }
 
   // An animated GIF keeps every decoded frame, and under memory pressure
@@ -1226,14 +1249,11 @@
     const originals = fileCandidates(src, ORIGINAL_EXTS)
     return !CFG.originalThumbs && inFeed(el) ? [...sampleCandidates(src), ...originals] : originals
   }
-  // Downloads already run on the browser's network threads; this only caps
-  // how many the script starts at once. Six matches the per-host limit of
-  // HTTP/1.1 and keeps a feed of mostly small posters moving.
-  const ORIGINAL_MAX_INFLIGHT = 6
+  // Downloads already run on the browser's network threads; the slots shared
+  // with GIFs (IMAGE_MAX_INFLIGHT, see B) cap how many the script starts at once.
   // Targets are Masonry cards (either layout) or <img> on the site's own pages.
   const ORIGINAL_SELECTOR = '.posts-image-card, img[src*="/thumbnails/"], img[src*="/samples/"]'
   const originalQueue = []
-  let originalInflight = 0
   let upgradeGen = 0   // bumped by freeMemory(): upgrades already in flight drop their result
 
   const isCard = el => el.classList.contains('posts-image-card')
@@ -1275,18 +1295,15 @@
     : !CFG.originalThumbs && inFeed(el) ? 'sample' : 'orig'
 
   function pumpOriginals() {
-    while (originalInflight < ORIGINAL_MAX_INFLIGHT && originalQueue.length) {
+    while (imagesInflight < IMAGE_MAX_INFLIGHT && originalQueue.length) {
       const el = originalQueue.shift()
       const pic = el.isConnected && pictureOf(el)
       if (!pic) continue
       const ck = { kind: upgradeKind(el), hash: (thumbParts(pic.src) || {}).hash }
       ck.cached = cacheGet(ck.kind, ck.hash)
       if (ck.cached === null) { el.dataset.ibhOrig = 'failed'; continue }   // known: nothing loads
-      originalInflight++
-      probeOriginal(el, pic.src, cachedFirst(upgradeCandidates(el, pic.src), ck.cached), () => {
-        originalInflight--
-        pumpOriginals()
-      }, ck)
+      imagesInflight++
+      probeOriginal(el, pic.src, cachedFirst(upgradeCandidates(el, pic.src), ck.cached), giveImageSlot, ck)
     }
   }
 
