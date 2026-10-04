@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.37.1
+// @version      0.38.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.37.1'
+  const VERSION = '0.38.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -187,7 +187,7 @@
       tModal: 'Open posts in a player over the page',
       mClose: 'Close', mOpen: 'Open the post', mPrev: 'Previous post', mNext: 'Next post',
       mLoading: 'Loading…', mFail: 'Could not load it',
-      mFav: 'Add to favorites', mUp: 'Upvote', mFull: 'Fullscreen', mTurn: 'Rotate the screen',
+      mFav: 'Add to favorites', mUp: 'Upvote', mFull: 'Fullscreen', mFullExit: 'Exit fullscreen', mTurn: 'Rotate the screen',
       mPlay: 'Play / pause', mMute: 'Sound on / off',
       tRotate: 'Landscape in player fullscreen',
       tPreload: 'Next post loaded in the player',
@@ -229,7 +229,7 @@
       tModal: 'Abrir posts num player sobre a página',
       mClose: 'Fechar', mOpen: 'Abrir o post', mPrev: 'Post anterior', mNext: 'Próximo post',
       mLoading: 'Carregando…', mFail: 'Não foi possível carregar',
-      mFav: 'Favoritar', mUp: 'Votar positivo', mFull: 'Tela cheia', mTurn: 'Girar a tela',
+      mFav: 'Favoritar', mUp: 'Votar positivo', mFull: 'Tela cheia', mFullExit: 'Sair da tela cheia', mTurn: 'Girar a tela',
       mPlay: 'Tocar / pausar', mMute: 'Som liga / desliga',
       tRotate: 'Paisagem na tela cheia do player',
       tPreload: 'Próximo post carregado no player',
@@ -2021,6 +2021,8 @@
     }
     .vctl.hide { opacity: 0; pointer-events: none; }
     .vctl button { width: 36px; height: 36px; border: none; background: transparent; font-size: 17px; }
+    .vctl .vfs { display: flex; align-items: center; justify-content: center; color: #fff; padding: 0; }
+    .vctl .vfs svg { width: 26px; height: 26px; fill: currentColor; }
     .vtime { color: #d7dee0; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
     .vseek { flex: 1; min-width: 0; accent-color: #5eead4; }
     .vprev {
@@ -2084,7 +2086,11 @@
     const time = el('span', { class: 'vtime', text: '0:00 / 0:00' })
     const seek = el('input', { class: 'vseek', type: 'range', min: '0', max: '1000', value: '0' })
     const muteBtn = el('button', { text: '🔊', title: t('mMute') })
-    const ctl = el('div', { class: 'vctl' }, [playBtn, time, seek, muteBtn])
+    // Bottom right, like YouTube: the way into fullscreen and back out of it,
+    // where the top bar is hidden.
+    const fsBtn = el('button', { class: 'vfs', title: t('mFull') })
+    setFsIcon(fsBtn, false)
+    const ctl = el('div', { class: 'vctl' }, [playBtn, time, seek, muteBtn, fsBtn])
     const prevBox = el('div', { class: 'vprev' }, [el('span')])
     prevBox.hidden = true
     const vwrap = el('div', { class: 'vwrap' }, [video, layer, prevBox, ctl])
@@ -2108,6 +2114,7 @@
     const box = el('div', { class: 'm' }, [stage, status, el('div', { class: 'bar' }, [close, post, full, turn, fav, up, count]), prev, next, toast, badge])
     close.addEventListener('click', () => closeModal(false))
     full.addEventListener('click', () => toggleModalFullscreen())
+    fsBtn.addEventListener('click', () => toggleModalFullscreen())
     turn.addEventListener('click', () => turnScreen())
     fav.addEventListener('click', modalFavorite)
     up.addEventListener('click', modalUpvote)
@@ -2119,7 +2126,7 @@
     installImageZoom(stage, image)
     installVideoGestures(layer, video)
     root.append(style, box)
-    modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, score, toast, badge, turn, turned: null, open: false, link: null, seq: 0 }
+    modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, score, toast, badge, turn, fsBtn, turned: null, open: false, link: null, seq: 0 }
   }
 
   let toastTimer = 0
@@ -2603,6 +2610,23 @@
     else toggleModalFullscreen()   // its fullscreenchange applies the turn
   }
 
+  // Material Design's fullscreen icons (the ones YouTube uses), as path data.
+  const FS_ICON = {
+    enter: 'M7 14H5v5h5v-2H7v-3zm-2-4h2V7h3V5H5v5zm12 7h-3v2h5v-5h-2v3zM14 5v2h3v3h2V5h-5z',
+    exit: 'M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z',
+  }
+
+  function setFsIcon(btn, full) {
+    const ns = 'http://www.w3.org/2000/svg'
+    const svg = document.createElementNS(ns, 'svg')
+    svg.setAttribute('viewBox', '0 0 24 24')
+    const path = document.createElementNS(ns, 'path')
+    path.setAttribute('d', full ? FS_ICON.exit : FS_ICON.enter)
+    svg.appendChild(path)
+    btn.replaceChildren(svg)
+    btn.title = t(full ? 'mFullExit' : 'mFull')
+  }
+
   // Landscape only while fullscreen shows a wide video, unless ↻ chose an
   // orientation; anything else unlocks.
   function fitFullscreenOrientation() {
@@ -2639,6 +2663,7 @@
     }
     dbg(`modal: fullscreen ${inside ? 'on' : 'off'}`)
     if (!inside) { modal.turned = null; modal.turn.classList.remove('on') }   // the lock went with it
+    setFsIcon(modal.fsBtn, !!inside)
     setCleanUi(!!inside)
     fitFullscreenOrientation()
   }

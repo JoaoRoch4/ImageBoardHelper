@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.38.0
+
+- Fullscreen button at the bottom right of the modal player, like YouTube's:
+  it enters fullscreen (turning the screen for a wide video) and, in
+  fullscreen, where the top bar is hidden, its icon changes and it exits
+
 ## 0.37.1
 
 - Modal images fit the screen whole in either orientation: an image was drawn
