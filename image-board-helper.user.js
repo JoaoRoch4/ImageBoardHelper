@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.35.0
+// @version      0.36.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.35.0'
+  const VERSION = '0.36.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -191,7 +191,7 @@
       mPlay: 'Play / pause', mMute: 'Sound on / off',
       tRotate: 'Landscape in player fullscreen',
       tPreload: 'Next post loaded in the player',
-      favAdded: 'Added to favorites', favAlready: 'Already in your favorites',
+      favAdded: 'Added to favorites', favAlready: 'Already in your favorites', favRemoved: 'Removed from favorites',
       favLogin: 'You are not logged in', favFail: 'Could not favorite',
       voted: 'Upvoted', voteFail: 'Could not vote',
       tFancybox: 'Repair Fancybox', tGestures: 'Touch gestures',
@@ -233,7 +233,7 @@
       mPlay: 'Tocar / pausar', mMute: 'Som liga / desliga',
       tRotate: 'Paisagem na tela cheia do player',
       tPreload: 'Próximo post carregado no player',
-      favAdded: 'Adicionado aos favoritos', favAlready: 'Já está nos favoritos',
+      favAdded: 'Adicionado aos favoritos', favAlready: 'Já está nos favoritos', favRemoved: 'Removido dos favoritos',
       favLogin: 'Você não está logado', favFail: 'Não foi possível favoritar',
       voted: 'Voto registrado', voteFail: 'Não foi possível votar',
       tFancybox: 'Consertar Fancybox', tGestures: 'Gestos de toque',
@@ -2119,22 +2119,107 @@
     toastTimer = setTimeout(() => { modal.toast.style.opacity = '0' }, 1800)
   }
 
+  // ── Favorite and vote state ──
+  // The post page tells whether the post is a favorite: its heart icon is
+  // heart-added.svg then, heart.svg otherwise. Votes leave no trace on the site
+  // (the vote link only updates the score), so the ones made from the modal or
+  // from the site's own vote links are remembered here, per site.
+  const MARKS_KEY = `IBH_MARKS_${SITE}`   // { f: [favorite ids], v: [upvoted ids] }
+  const MARKS_MAX = 5000                   // per kind; the oldest go first
+  let marks = null
+
+  function loadMarks() {
+    if (!marks) {
+      const m = readJSON(MARKS_KEY, {})
+      marks = { f: new Set(m.f || []), v: new Set(m.v || []) }
+    }
+    return marks
+  }
+
+  function setMark(kind, id, on) {
+    const set = loadMarks()[kind]
+    if (on === set.has(id)) return
+    if (on) set.add(id)
+    else set.delete(id)
+    while (set.size > MARKS_MAX) set.delete(set.values().next().value)
+    writeJSON(MARKS_KEY, { f: [...marks.f], v: [...marks.v] })
+  }
+
+  const hasMark = (kind, id) => loadMarks()[kind].has(id)
+  const userId = () => (document.cookie.match(/(?:^|; )user_id=(\d+)/) || [])[1] || null
+
+  // The viewer's own favorites page: every post on it is a favorite.
+  const onOwnFavorites = () => {
+    const q = new URLSearchParams(location.search)
+    return q.get('page') === 'favorites' && !!userId() && q.get('id') === userId()
+  }
+
+  // One look per post while the page lives; the swipe ahead warms it (see openModal).
+  const favLookups = new Map()   // id -> Promise<true | false | null>
+
+  function lookUpFavorite(id) {
+    if (!userId()) return Promise.resolve(null)   // logged out: the page has no state to give
+    let p = favLookups.get(id)
+    if (!p) {
+      p = fetch(`/index.php?page=post&s=view&id=${encodeURIComponent(id)}`, { credentials: 'same-origin' })
+        .then(res => (res.ok ? res.text() : null))
+        .then(html => {
+          const m = html && html.match(/id="heart-img"[^>]*src="[^"]*\/(heart(?:-added)?)\.svg"/)
+          if (!m) return null
+          const fav = m[1] === 'heart-added'
+          setMark('f', id, fav)
+          dbg(`modal: post ${id} ${fav ? 'is' : 'is not'} a favorite (from the post page)`)
+          return fav
+        })
+        .catch(() => null)
+      favLookups.set(id, p)
+    }
+    return p
+  }
+
+  function showFav(on) {
+    modal.fav.textContent = on ? '♥' : '♡'
+    modal.fav.classList.toggle('on', on)
+  }
+
+  // What is known shows at once; the post page corrects it when it answers.
+  function applyMarks(link, seq) {
+    const id = postId(link)
+    const own = onOwnFavorites()
+    if (own) setMark('f', id, true)
+    showFav(own || hasMark('f', id))
+    modal.up.classList.toggle('on', hasMark('v', id))
+    if (own) return
+    lookUpFavorite(id).then(fav => { if (fav !== null && modal.open && modal.seq === seq) showFav(fav) })
+  }
+
+  // The site's own vote links (post pages, comments) count too.
+  function onSiteVoteClick(ev) {
+    const a = ev.target.closest && ev.target.closest('a[onclick*="post_vote("]')
+    const m = a && a.getAttribute('onclick').match(/post_vote\('(\d+)',\s*'up'\)/)
+    if (m) setMark('v', m[1], true)
+  }
+
   // The same endpoints the post page calls, so the site's login cookie goes
-  // along. Answers decoded from the site's own addFav: 3 added, 1 already
-  // there, 2 not logged in (Masonry reads them the same way).
+  // along. Answers decoded from the site's own addFav/toggleFav: 3 added,
+  // 1 already there, 2 not logged in, 4 removed (toggle only). A lit heart
+  // pressed again removes the favorite, like the site's own heart.
   async function modalFavorite() {
     const id = postId(modal.link)
+    const remove = modal.fav.classList.contains('on')
     try {
-      const res = await fetch(`/public/addfav.php?id=${encodeURIComponent(id)}`, { credentials: 'same-origin' })
-      const code = (await res.text()).trim()
-      if (code === '3' || code === '1') {
-        modal.fav.textContent = '♥'
-        modal.fav.classList.add('on')
-        flash(t(code === '3' ? 'favAdded' : 'favAlready'))
+      const res = await fetch(`/public/addfav.php?id=${encodeURIComponent(id)}${remove ? '&toggle=1' : ''}`, { credentials: 'same-origin' })
+      const code = (await res.text()).trim().replace(/"/g, '')   // toggle answers in JSON
+      if (code === '3' || code === '1' || code === '4') {
+        const fav = code !== '4'
+        showFav(fav)
+        setMark('f', id, fav)
+        favLookups.set(id, Promise.resolve(fav))
+        flash(t(code === '3' ? 'favAdded' : code === '1' ? 'favAlready' : 'favRemoved'))
       } else {
         flash(code === '2' ? t('favLogin') : `${t('favFail')} (${res.status} ${code.slice(0, 20)})`)
       }
-      info(`modal: favorite post ${id} -> ${code.slice(0, 20)}`)
+      info(`modal: ${remove ? 'unfavorite' : 'favorite'} post ${id} -> ${code.slice(0, 20)}`)
     } catch (e) {
       flash(t('favFail'))
       warn(`modal: favorite failed — ${describeError(e)}`)
@@ -2150,6 +2235,7 @@
       if (res.ok && Number.isFinite(score)) {
         modal.score.textContent = String(score)
         modal.up.classList.add('on')
+        setMark('v', id, true)
         flash(t('voted'))
       } else {
         flash(`${t('voteFail')} (${res.status})`)
@@ -2722,9 +2808,7 @@
 
     modal.link = link
     modal.post.href = link.href
-    modal.fav.textContent = '♡'   // state is per post; the site gives no cheap way to read it
-    modal.fav.classList.remove('on')
-    modal.up.classList.remove('on')
+    applyMarks(link, seq)
     modal.score.textContent = ''
     const list = siteLinks()
     modal.count.textContent = `${list.indexOf(link) + 1} / ${list.length}`
@@ -2843,6 +2927,7 @@
     const parts = pic && thumbParts(pic.src)
     if (!parts) return
     const a = ahead = { link }
+    if (!onOwnFavorites()) lookUpFavorite(postId(link))   // its heart is right on the swipe
     let kind = thumbKind(thumb)
     if (kind === 'video' && cacheGet('video', parts.hash) === null) kind = 'gif'
     if (kind === 'video') aheadVideo(a, pic.src, parts.hash)
@@ -2926,6 +3011,7 @@
   function installVideoModal() {
     if (!CFG.videoModal) return
     window.addEventListener('click', onSiteLinkClick, true)
+    window.addEventListener('click', onSiteVoteClick, true)
     window.addEventListener('popstate', () => { if (modal && modal.open) closeModal(true) })
     document.addEventListener('fullscreenchange', onFullscreenChange)
     if (screen.orientation) screen.orientation.addEventListener('change', onOrientationChange)
@@ -3041,6 +3127,7 @@
     previewStop()
     previewEl = null
     dropAhead()
+    favLookups.clear()
     coverQueue.clear()   // first, or each unmount hands its slot to a queued card
     document.querySelectorAll('[data-ibh-cover]').forEach(card => { unmountCover(card); n.covers++ })
     // Animated GIFs keep every decoded frame; back to the still. Ones still

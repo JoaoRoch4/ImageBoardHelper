@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.36.0
+
+- Modal ♡ and ▲ show the post's real state:
+  - favorite: read from the post page (its heart icon), in the background, so
+    a post already in your favorites shows ♥; posts on your own favorites page
+    need no lookup, and the next post's state is fetched with the preload
+  - upvote: the site keeps no visible trace of a vote, so votes made from the
+    modal or from the site's own vote links are remembered per site (up to
+    5000)
+  - a lit ♥ pressed again removes the favorite, as the site's own heart does
 ## 0.35.0
 
 - Next post loaded in the modal (`modalPreload`, on): once the post on screen
