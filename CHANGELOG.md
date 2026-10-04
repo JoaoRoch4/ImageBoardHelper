@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.36.2
+
+- The page scrolls along under the modal: each step centres the post's
+  thumbnail, so after going far the page is already there on close. Covers,
+  GIFs and upgrades hold off while the modal is open, so the scroll loads
+  nothing underneath; what is on screen comes back on close
 ## 0.36.1
 
 - Modal ▲ lit for favorites too: the site never shows a past vote, but its

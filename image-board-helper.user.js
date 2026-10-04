@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.36.1
+// @version      0.36.2
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.36.1'
+  const VERSION = '0.36.2'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -926,6 +926,9 @@
           const card = e.target
           if (e.isIntersecting) card.dataset.ibhSeen = '1'
           else delete card.dataset.ibhSeen
+          // The page scrolls under the modal as it steps (H): keep it unloaded;
+          // resumePage() brings back what is seen on close.
+          if (modal && modal.open) continue
           if (isVideoCard(card) && card.dataset.ibhKind !== 'gif') {
             e.isIntersecting ? mountCover(card) : unmountCover(card)
           } else {
@@ -1367,7 +1370,10 @@
   const originalViewport = 'IntersectionObserver' in window
     ? new IntersectionObserver(entries => {
         for (const e of entries) {
-          if (e.isIntersecting && upgradeToOriginal(e.target)) originalViewport.unobserve(e.target)
+          if (!e.isIntersecting) continue
+          // Scrolled in under the modal: wait for it to close (resumePage observes again).
+          if (modal && modal.open) { originalViewport.unobserve(e.target); suspended.push(e.target); continue }
+          if (upgradeToOriginal(e.target)) originalViewport.unobserve(e.target)
         }
       }, { rootMargin: '300px' })
     : null
@@ -2917,6 +2923,10 @@
     if (!target) return
     modal.dir = dir   // the preload follows the direction of travel
     openModal(target)
+    // The page follows underneath, so far down the list it is already there
+    // on close, with the site's paginator in reach. Nothing loads meanwhile:
+    // the observers hold off while the modal is open.
+    target.scrollIntoView({ block: 'center' })
   }
 
   // ── Next post ready ──
