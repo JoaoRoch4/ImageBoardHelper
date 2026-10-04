@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.40.1
+// @version      0.40.2
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.40.1'
+  const VERSION = '0.40.2'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -4010,28 +4010,34 @@
   // Backgrounds go transparent over the dark page (images, videos and icons
   // keep theirs); the thumbnails' blue video frame is left alone.
   const THEME_CSS = `
-    html.ibh-theme, html.ibh-theme body { background: #182125 !important; color: #d7dee0 !important; }
+    html.ibh-theme, html.ibh-theme body { background: #182125 !important; color: #e6eef0 !important; }
     html.ibh-theme body *:not(img):not(video):not(canvas):not(iframe):not(svg):not(path):not([data-ibh-ui]) {
-      background-color: transparent !important; border-color: #2a3a3f !important; }
-    html.ibh-theme body *:not(a):not(img):not(video):not(svg):not(path):not([data-ibh-ui]) { color: #d7dee0 !important; }
-    html.ibh-theme a, html.ibh-theme a:visited { color: #5eead4 !important; }
+      background-color: transparent !important; border-color: #3a5157 !important; }
+    html.ibh-theme body *:not(a):not(img):not(video):not(svg):not(path):not([data-ibh-ui]) { color: #e6eef0 !important; }
+    html.ibh-theme a, html.ibh-theme a:visited, html.ibh-theme summary { color: #5eead4 !important; }
     html.ibh-theme a:hover { color: #99f6e4 !important; }
     html.ibh-theme li[class*="tag-type-artist"] a { color: #f2ac08 !important; }
     html.ibh-theme li[class*="tag-type-character"] a { color: #3fb950 !important; }
     html.ibh-theme li[class*="tag-type-copyright"] a { color: #c678dd !important; }
     html.ibh-theme li[class*="tag-type-metadata"] a { color: #e5534b !important; }
+    /* Controls stand on a lighter surface with a border that reads against
+       the page, teal for the ones that act. */
     html.ibh-theme input, html.ibh-theme select, html.ibh-theme textarea, html.ibh-theme button {
-      background-color: #223035 !important; color: #d7dee0 !important;
-      border: 1px solid #3a5157 !important; border-radius: 8px !important; }
-    html.ibh-theme input[type="submit"], html.ibh-theme input[type="button"], html.ibh-theme button { color: #5eead4 !important; }
-    html.ibh-theme ::placeholder { color: #4e6469 !important; }
+      background-color: #26363c !important; color: #e6eef0 !important;
+      border: 1px solid #55767e !important; border-radius: 8px !important; }
+    html.ibh-theme input:focus, html.ibh-theme select:focus, html.ibh-theme textarea:focus {
+      border-color: #5eead4 !important; outline: none !important; box-shadow: 0 0 0 2px rgba(94, 234, 212, .25) !important; }
+    html.ibh-theme input[type="submit"], html.ibh-theme input[type="button"], html.ibh-theme button {
+      background-color: #1d3b38 !important; color: #5eead4 !important; border-color: #2f7d72 !important; font-weight: 600; }
+    html.ibh-theme ::placeholder { color: #7f9aa0 !important; }
     html.ibh-theme #paginator a, html.ibh-theme #paginator b, html.ibh-theme .pagination a, html.ibh-theme .pagination b {
-      display: inline-block; padding: 3px 9px; margin: 2px; border: 1px solid #3a5157 !important; border-radius: 8px; }
+      display: inline-block; padding: 3px 9px; margin: 2px; border-radius: 8px;
+      background-color: #26363c !important; border: 1px solid #55767e !important; }
     html.ibh-theme #paginator b, html.ibh-theme .pagination b {
       background-color: #5eead4 !important; color: #0f1417 !important; border-color: #5eead4 !important; }
-    html.ibh-theme .awesomplete > ul, html.ibh-theme .awesomplete > ul * { background-color: #223035 !important; }
-    html.ibh-theme .awesomplete > ul [aria-selected="true"] { background-color: #1c3b38 !important; }
-    html.ibh-theme ::selection { background: #1c3b38; }
+    html.ibh-theme .awesomplete > ul, html.ibh-theme .awesomplete > ul * { background-color: #26363c !important; }
+    html.ibh-theme .awesomplete > ul [aria-selected="true"] { background-color: #1d3b38 !important; }
+    html.ibh-theme ::selection { background: #2f7d72; }
   `
 
   let themeOn = null

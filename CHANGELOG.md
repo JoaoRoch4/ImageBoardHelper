@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.40.2
+
+- More contrast in the site theme: fields, buttons and paginator links stand
+  on a lighter surface with a border that reads against the page, buttons in
+  teal, a teal ring on the focused field, brighter text and placeholders
+
 ## 0.40.1
 
 - Site theme a little lighter: dark slate background (`#182125`) instead of
