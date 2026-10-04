@@ -63,7 +63,7 @@ Ações úteis:
 - **Limpar host** — apaga o cache de sete dias e resolve de novo, para quando o CDN mudar.
 - **Copiar log** — monta um relatório com `userAgent`, host, modo de miniatura e o histórico.
 - **Refazer miniaturas** — recomeça todas as miniaturas, inclusive as que falharam: as trocas voltam à miniatura e entram na fila de novo, capas e GIFs reiniciam, e o que está na tela é reprocessado na hora.
-- **Limpar memória e cache** — fecha as capas de vídeo, volta os GIFs animados para a imagem parada, desfaz as trocas por sample/original (o que está na tela recarrega do cache do navegador) e apaga o cache de host e o Cache Storage do site. O cache HTTP do navegador não é alcançável por script de página; configurações e login ficam.
+- **Limpar memória e cache** — para a prévia de cenas em andamento, fecha as capas de vídeo, volta os GIFs animados para a imagem parada (inclusive os que ainda carregam), desfaz as trocas por sample/original, pendentes e em andamento (o que está na tela recarrega do cache do navegador) e apaga o cache de host, o cache de endereços e o Cache Storage do site. As outras abas do mesmo site com o script fazem o mesmo. O cache HTTP do navegador não é alcançável por script de página (fica no disco, não na RAM); configurações e login ficam.
 
 O painel tem um seletor de idioma (automático, português, inglês). As linhas de log continuam em inglês de propósito: elas existem para serem coladas em issues, e relatório bilíngue é pior que relatório só em inglês.
 

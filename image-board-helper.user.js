@@ -2889,12 +2889,31 @@
     delete el.dataset.ibhThumb
   }
 
+  // Other tabs of the same site running the script hear the Free memory
+  // button through this channel. Without any @grant there is no storage shared
+  // between sites, so tabs of another site are out of reach; a hidden tab
+  // parks its covers and GIFs by itself (see G).
+  const tabChannel = 'BroadcastChannel' in window ? new BroadcastChannel('ibh') : null
+  if (tabChannel) {
+    tabChannel.onmessage = ev => {
+      const msg = ev.data || {}
+      if (msg.type === 'free-memory') {
+        freeMemory(true).then(n => tabChannel.postMessage({ type: 'freed', n, page: location.pathname }))
+      } else if (msg.type === 'freed') {
+        const { n } = msg
+        info(`another tab (${msg.page}) freed ${n.covers} covers, ${n.gifs} GIFs, ${n.images} upgraded images`)
+      }
+    }
+  }
+
   /**
    * Give back the memory this script holds on the page and drop its caches.
    * The browser's HTTP cache is out of reach for any page script; settings
    * (IBH_CFG), Masonry's settings and the site login are left alone.
    */
-  async function freeMemory() {
+  async function freeMemory(fromOtherTab = false) {
+    // The button frees every tab of this site running the script, not only this one.
+    if (!fromOtherTab && tabChannel) tabChannel.postMessage({ type: 'free-memory' })
     const n = { covers: 0, gifs: 0, images: 0, caches: 0 }
     // A preview in progress holds one or two videos; the shared one is dropped.
     if (scrub) endScrub()
@@ -2917,9 +2936,10 @@
       if (farViewport) farViewport.unobserve(el)
       if (originalViewport) originalViewport.observe(el)
     })
-    // Lists that would keep removed cards alive.
-    parked.length = 0
-    previewPaused.length = 0
+    // Lists that would keep removed cards alive (parked ones still on the
+    // page stay, so a hidden tab gets its covers back on return).
+    parked.splice(0, parked.length, ...parked.filter(c => c.isConnected))
+    previewPaused.splice(0, previewPaused.length, ...previewPaused.filter(c => c.isConnected))
     knownGifs.clear()
     if (!(modal && modal.open)) suspended.length = 0
     try { localStorage.removeItem(HOST_KEY) } catch (e) { /* ignore */ }
@@ -2935,9 +2955,10 @@
       warn(`could not clear Cache Storage — ${describeError(e)}`)
     }
     imageBase()
-    info(`freed ${n.covers} covers, ${n.gifs} GIFs, ${n.images} upgraded images; host cache, ` +
+    info(`freed ${n.covers} covers, ${n.gifs} GIFs, ${n.images} upgraded images${fromOtherTab ? ' (asked by another tab)' : ''}; host cache, ` +
       `${urls} cached URLs and ${n.caches} Cache Storage entries cleared (browser HTTP cache untouched)`)
     touch()
+    return n
   }
 
   /**

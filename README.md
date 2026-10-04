@@ -65,7 +65,7 @@ Useful actions:
 - **Clear host** — drops the seven-day cache and resolves again, for when the CDN moves.
 - **Copy log** — builds a report with `userAgent`, host, thumbnail mode and the history.
 - **Redo thumbnails** — starts every thumbnail over, failures included: upgrades go back to the thumbnail and are queued again, covers and GIFs restart, and what is on screen is processed again right away.
-- **Free memory & cache** — closes video covers, puts animated GIFs back to their still, undoes sample/original upgrades (what is on screen reloads from the browser cache), and clears the host cache and the site's Cache Storage. The browser's HTTP cache is out of reach for a page script; settings and the site login are kept.
+- **Free memory & cache** — stops a scene preview in progress, closes video covers, puts animated GIFs back to their still (loading ones included), undoes sample/original upgrades, queued and in flight (what is on screen reloads from the browser cache), and clears the host cache, the URL cache and the site's Cache Storage. Other tabs of the same site running the script do the same. The browser's HTTP cache is out of reach for a page script (it lives on disk, not in RAM); settings and the site login are kept.
 
 The panel uses Shadow DOM because Masonry's CSS is aggressive with `!important` on `html, body`. Touches inside it are ignored by the gesture layer, via `composedPath`.
 
