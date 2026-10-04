@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.38.0
+// @version      0.38.1
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.38.0'
+  const VERSION = '0.38.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -2472,11 +2472,16 @@
       const side = press.fx > 0.65 ? 1 : press.fx < 0.35 ? -1 : 0
       release()
       if (!quickTap) return
-      // Second tap within 300 ms: a double tap. On a side it seeks; the
-      // pending single-tap action is cancelled either way.
+      // Second tap within 300 ms: a double tap. On a side it seeks, in the
+      // centre it toggles fullscreen (like YouTube); the pending single-tap
+      // action is cancelled either way. The tap is the user gesture
+      // fullscreen needs.
       if (tap && Date.now() - tap.t < 300) {
         clearTimeout(tap.timer)
-        if (side && side === tap.side) {
+        if (!side && !tap.side) {
+          dbg('modal: double tap in the centre, fullscreen')
+          toggleModalFullscreen()
+        } else if (side && side === tap.side) {
           const d = Number.isFinite(video.duration) ? video.duration : Infinity
           video.currentTime = Math.min(d, Math.max(0, video.currentTime + side * SEEK_STEP))
           showBadge(side > 0 ? `+${SEEK_STEP}s` : `−${SEEK_STEP}s`)

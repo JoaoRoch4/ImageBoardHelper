@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.38.1
+
+- Double-tap in the centre of the modal player toggles fullscreen, like
+  YouTube; the sides still seek ±5 s
+
 ## 0.38.0
 
 - Fullscreen button at the bottom right of the modal player, like YouTube's:
