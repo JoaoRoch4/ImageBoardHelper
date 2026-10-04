@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.38.2
+// @version      0.39.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.38.2'
+  const VERSION = '0.39.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -187,7 +187,8 @@
       tModal: 'Open posts in a player over the page',
       mClose: 'Close', mOpen: 'Open the post', mPrev: 'Previous post', mNext: 'Next post',
       mLoading: 'Loading…', mFail: 'Could not load it',
-      mFav: 'Add to favorites', mUp: 'Upvote', mFull: 'Fullscreen', mFullExit: 'Exit fullscreen', mTurn: 'Rotate the screen',
+      mFav: 'Add to favorites', mUp: 'Upvote', mFull: 'Fullscreen', mFullExit: 'Exit fullscreen', mMenu: 'Tags and post page',
+      tagsCopyAll: 'Copy all', tagCopied: 'Copied', tagCopyFail: 'Could not copy', tagsNone: 'No tags', mTurn: 'Rotate the screen',
       mPlay: 'Play / pause', mMute: 'Sound on / off',
       tRotate: 'Landscape in player fullscreen',
       tPreload: 'Next post loaded in the player',
@@ -229,7 +230,8 @@
       tModal: 'Abrir posts num player sobre a página',
       mClose: 'Fechar', mOpen: 'Abrir o post', mPrev: 'Post anterior', mNext: 'Próximo post',
       mLoading: 'Carregando…', mFail: 'Não foi possível carregar',
-      mFav: 'Favoritar', mUp: 'Votar positivo', mFull: 'Tela cheia', mFullExit: 'Sair da tela cheia', mTurn: 'Girar a tela',
+      mFav: 'Favoritar', mUp: 'Votar positivo', mFull: 'Tela cheia', mFullExit: 'Sair da tela cheia', mMenu: 'Tags e página do post',
+      tagsCopyAll: 'Copiar todas', tagCopied: 'Copiado', tagCopyFail: 'Não foi possível copiar', tagsNone: 'Sem tags', mTurn: 'Girar a tela',
       mPlay: 'Tocar / pausar', mMute: 'Som liga / desliga',
       tRotate: 'Paisagem na tela cheia do player',
       tPreload: 'Próximo post carregado no player',
@@ -2062,6 +2064,23 @@
       padding: 6px 14px; border-radius: 16px; background: rgba(15, 20, 23, .9); color: #5eead4;
       font-size: 15px; font-weight: 600; pointer-events: none;
     }
+    .sheet {
+      position: absolute; left: 0; right: 0; bottom: 0; max-height: 55%; overflow-y: auto; overscroll-behavior: contain;
+      background: rgba(10, 14, 16, .97); border-top: 1px solid #2a3a3f; border-radius: 14px 14px 0 0; padding: 10px 10px 18px;
+    }
+    .sheethead { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+    button.pill { width: auto; height: 36px; border-radius: 18px; padding: 0 14px; font-size: 13px; }
+    .taglist { display: flex; flex-wrap: wrap; gap: 6px; }
+    button.tag {
+      width: auto; height: auto; border-radius: 14px; padding: 6px 10px; font-size: 13px; line-height: 1.3;
+      display: inline-block; text-align: left; word-break: break-all; color: #d7dee0;
+    }
+    button.t-artist { color: #f2ac08; border-color: #6b4e0a; }
+    button.t-character { color: #3fb950; border-color: #1f5a2a; }
+    button.t-copyright { color: #c678dd; border-color: #5a3566; }
+    button.t-metadata { color: #e5534b; border-color: #66282a; }
+    button.tag.copied { background: #5eead4; color: #0f1417; border-color: #5eead4; }
+    .sheet .none { color: #4e6469; font-size: 13px; }
     .toast {
       position: absolute; left: 50%; bottom: 84px; transform: translateX(-50%);
       padding: 8px 14px; border-radius: 18px; background: rgba(15, 20, 23, .92); color: #d7dee0;
@@ -2098,6 +2117,11 @@
     const stage = el('div', { class: 'stage' }, [vwrap, image])
     const close = el('button', { text: '✕', title: t('mClose') })
     const post = el('a', { class: 'btn', text: '↗', title: t('mOpen') })
+    const menu = el('button', { text: '☰', title: t('mMenu') })
+    const tagAll = el('button', { class: 'pill', text: t('tagsCopyAll') })
+    const tagList = el('div', { class: 'taglist' })
+    const sheet = el('div', { class: 'sheet' }, [el('div', { class: 'sheethead' }, [post, tagAll]), tagList])
+    sheet.hidden = true
     const full = el('button', { text: '⛶', title: t('mFull') })
     const turn = el('button', { text: '↻', title: t('mTurn') })
     const count = el('span', { class: 'count' })
@@ -2111,9 +2135,10 @@
     badge.hidden = true
     const prev = el('button', { class: 'side prev', text: '‹', title: t('mPrev') })
     const next = el('button', { class: 'side next', text: '›', title: t('mNext') })
-    const box = el('div', { class: 'm' }, [stage, status, el('div', { class: 'bar' }, [close, post, full, turn, fav, up, count]), prev, next, toast, badge])
+    const box = el('div', { class: 'm' }, [stage, status, el('div', { class: 'bar' }, [close, menu, full, turn, fav, up, count]), prev, next, sheet, toast, badge])
     close.addEventListener('click', () => closeModal(false))
     full.addEventListener('click', () => toggleModalFullscreen())
+    menu.addEventListener('click', () => toggleMenu())
     fsBtn.addEventListener('click', () => toggleModalFullscreen())
     turn.addEventListener('click', () => turnScreen())
     fav.addEventListener('click', modalFavorite)
@@ -2129,7 +2154,7 @@
     installImageZoom(stage, image)
     installVideoGestures(layer, video)
     root.append(style, box)
-    modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, score, toast, badge, turn, fsBtn, turned: null, open: false, link: null, seq: 0 }
+    modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, score, toast, badge, turn, fsBtn, menu, sheet, tagList, tagAll, turned: null, open: false, link: null, seq: 0 }
   }
 
   let toastTimer = 0
@@ -2175,27 +2200,121 @@
     return q.get('page') === 'favorites' && !!userId() && q.get('id') === userId()
   }
 
-  // One look per post while the page lives; the swipe ahead warms it (see openModal).
+  // The post page, fetched once per post while the page lives (the swipe
+  // ahead warms it), gives the favorite state (its heart icon) and the tags
+  // with their kind (its sidebar). Only the parsed facts are kept.
+  const postInfos = new Map()   // id -> Promise<{ fav, tags } | null>
+
+  function postInfo(id) {
+    let p = postInfos.get(id)
+    if (!p) {
+      p = fetch(`/index.php?page=post&s=view&id=${encodeURIComponent(id)}`, { credentials: 'same-origin' })
+        .then(res => (res.ok ? res.text() : null))
+        .then(html => (html ? readPostPage(html) : null))
+        .catch(() => null)
+      postInfos.set(id, p)
+    }
+    return p
+  }
+
+  function readPostPage(html) {
+    const heart = html.match(/id="heart-img"[^>]*src="[^"]*\/(heart(?:-added)?)\.svg"/)
+    // An inert document: no scripts run, no images load.
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    const tags = []
+    for (const li of doc.querySelectorAll('li[class*="tag-type-"]')) {
+      const type = (li.className.match(/tag-type-([a-z]+)/) || [])[1] || 'general'
+      // The search link carries the tag as typed in a search (underscores).
+      const a = [...li.querySelectorAll('a[href*="tags="]')].pop()
+      const q = a && a.getAttribute('href').match(/[?&]tags=([^&]+)/)
+      if (q) tags.push({ name: decodeURIComponent(q[1].replace(/\+/g, ' ')), type })
+    }
+    return { fav: heart ? heart[1] === 'heart-added' : null, tags }
+  }
+
   const favLookups = new Map()   // id -> Promise<true | false | null>
 
   function lookUpFavorite(id) {
     if (!userId()) return Promise.resolve(null)   // logged out: the page has no state to give
     let p = favLookups.get(id)
     if (!p) {
-      p = fetch(`/index.php?page=post&s=view&id=${encodeURIComponent(id)}`, { credentials: 'same-origin' })
-        .then(res => (res.ok ? res.text() : null))
-        .then(html => {
-          const m = html && html.match(/id="heart-img"[^>]*src="[^"]*\/(heart(?:-added)?)\.svg"/)
-          if (!m) return null
-          const fav = m[1] === 'heart-added'
-          setMark('f', id, fav)
-          dbg(`modal: post ${id} ${fav ? 'is' : 'is not'} a favorite (from the post page)`)
-          return fav
-        })
-        .catch(() => null)
+      p = postInfo(id).then(info => {
+        if (!info || info.fav === null) return null
+        setMark('f', id, info.fav)
+        dbg(`modal: post ${id} ${info.fav ? 'is' : 'is not'} a favorite (from the post page)`)
+        return info.fav
+      })
       favLookups.set(id, p)
     }
     return p
+  }
+
+  // ── Tags menu ──
+  // ☰ opens a sheet with the post's tags as a grid; a tap copies one, "Copy
+  // all" the whole list, ready to paste in a search. The thumbnail's own tags
+  // show at once; the post page replaces them with the full list by kind.
+  const TAG_ORDER = ['artist', 'character', 'copyright', 'general', 'metadata']
+  const tagRank = type => { const i = TAG_ORDER.indexOf(type); return i < 0 ? TAG_ORDER.length : i }
+
+  function thumbTags(link) {
+    return nativeTags(link).trim().split(/\s+/)
+      .filter(name => name && !/^(score|rating):/i.test(name))
+      .map(name => ({ name, type: 'general' }))
+  }
+
+  function toggleMenu() {
+    const open = modal.sheet.hidden
+    modal.sheet.hidden = !open
+    modal.menu.classList.toggle('on', open)
+    if (open) renderTags(modal.link, modal.seq)
+  }
+
+  function closeMenu() {
+    modal.sheet.hidden = true
+    modal.menu.classList.remove('on')
+  }
+
+  function renderTags(link, seq) {
+    fillTags(thumbTags(link))
+    postInfo(postId(link)).then(info => {
+      if (!info || !info.tags.length || modal.seq !== seq || modal.sheet.hidden) return
+      fillTags(info.tags)
+      dbg(`modal: tags menu, ${info.tags.length} tags from the post page`)
+    })
+  }
+
+  function fillTags(tags) {
+    const sorted = [...tags].sort((a, b) => tagRank(a.type) - tagRank(b.type))
+    modal.tagList.replaceChildren(...sorted.map(tag => {
+      const chip = el('button', { class: `tag t-${tag.type}`, text: tag.name })
+      chip.addEventListener('click', () => copyText(tag.name, chip))
+      return chip
+    }))
+    if (!sorted.length) modal.tagList.append(el('span', { class: 'none', text: t('tagsNone') }))
+    modal.tagAll.onclick = () => copyText(sorted.map(tag => tag.name).join(' '), modal.tagAll)
+  }
+
+  async function copyText(text, chip) {
+    let ok = false
+    try {
+      await navigator.clipboard.writeText(text)   // the tap is the user gesture it needs
+      ok = true
+    } catch (e) {
+      // Older path: a selected text field and the copy command.
+      const field = document.createElement('textarea')
+      field.value = text
+      field.style.cssText = 'position:fixed;opacity:0'
+      document.documentElement.appendChild(field)
+      field.select()
+      try { ok = document.execCommand('copy') } catch (e2) { /* not allowed */ }
+      field.remove()
+    }
+    flash(ok ? `${t('tagCopied')}: ${text.length > 40 ? `${text.slice(0, 40)}…` : text}` : t('tagCopyFail'))
+    if (ok) {
+      chip.classList.add('copied')
+      setTimeout(() => chip.classList.remove('copied'), 600)
+    }
+    dbg(`modal: copy ${ok ? 'done' : 'failed'} (${text.length} chars)`)
   }
 
   function showFav(on) {
@@ -2914,6 +3033,7 @@
     modal.link = link
     modal.post.href = link.href
     applyMarks(link, seq)
+    if (!modal.sheet.hidden) renderTags(link, seq)   // the menu follows the post
     modal.score.textContent = ''
     const list = siteLinks()
     modal.count.textContent = `${list.indexOf(link) + 1} / ${list.length}`
@@ -2967,6 +3087,7 @@
     modal.open = false
     modal.turned = null   // its fullscreenchange comes after open is false
     modal.turn.classList.remove('on')
+    closeMenu()
     dropAhead()
     resetMedia()
     modal.host.style.display = 'none'
@@ -3259,6 +3380,7 @@
     previewEl = null
     dropAhead()
     favLookups.clear()
+    postInfos.clear()
     coverQueue.clear()   // first, or each unmount hands its slot to a queued card
     document.querySelectorAll('[data-ibh-cover]').forEach(card => { unmountCover(card); n.covers++ })
     // Animated GIFs keep every decoded frame; back to the still. Ones still

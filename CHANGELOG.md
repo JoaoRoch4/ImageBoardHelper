@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.39.0
+
+- ☰ menu in the modal (in the place of ↗, which moved into it): a sheet with
+  the post's tags as a grid, artist, character and copyright first, each kind
+  in its colour. A tap copies a tag, "Copy all" the whole list, ready to paste
+  in a search. The thumbnail's tags show at once; the post page (already
+  fetched for the favorite state) replaces them with the full list by kind.
+  The menu follows the post while you swipe
+
 ## 0.38.2
 
 - A tap on the empty area around a modal image closes the modal again: since
