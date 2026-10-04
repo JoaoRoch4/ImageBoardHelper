@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.36.1
+
+- Modal ▲ lit for favorites too: the site never shows a past vote, but its
+  own heart votes up as it favorites, so a favorite counts as upvoted. The
+  modal's ♡ now votes up as it adds a favorite, the same way
 ## 0.36.0
 
 - Modal ♡ and ▲ show the post's real state:

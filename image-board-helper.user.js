@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.36.0
+// @version      0.36.1
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.36.0'
+  const VERSION = '0.36.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -2183,14 +2183,19 @@
   }
 
   // What is known shows at once; the post page corrects it when it answers.
+  // The site never shows a past vote, but its heart votes up as it favorites
+  // (post_vote then toggleFav), so a favorite counts as upvoted.
   function applyMarks(link, seq) {
     const id = postId(link)
     const own = onOwnFavorites()
     if (own) setMark('f', id, true)
-    showFav(own || hasMark('f', id))
-    modal.up.classList.toggle('on', hasMark('v', id))
+    const show = fav => {
+      showFav(fav)
+      modal.up.classList.toggle('on', fav || hasMark('v', id))
+    }
+    show(own || hasMark('f', id))
     if (own) return
-    lookUpFavorite(id).then(fav => { if (fav !== null && modal.open && modal.seq === seq) showFav(fav) })
+    lookUpFavorite(id).then(fav => { if (fav !== null && modal.open && modal.seq === seq) show(fav) })
   }
 
   // The site's own vote links (post pages, comments) count too.
@@ -2216,6 +2221,9 @@
         setMark('f', id, fav)
         favLookups.set(id, Promise.resolve(fav))
         flash(t(code === '3' ? 'favAdded' : code === '1' ? 'favAlready' : 'favRemoved'))
+        // The site's own heart votes up as it favorites; do the same, so a
+        // favorite always counts as upvoted (see applyMarks).
+        if (code === '3') modalUpvote(true)
       } else {
         flash(code === '2' ? t('favLogin') : `${t('favFail')} (${res.status} ${code.slice(0, 20)})`)
       }
@@ -2227,17 +2235,21 @@
   }
 
   // Answers with the new score as plain text, which the post page shows.
-  async function modalUpvote() {
+  // `quiet` (from the heart): no toast of its own, the heart's one stays.
+  async function modalUpvote(quiet) {
+    quiet = quiet === true   // as a click handler it gets the event
     const id = postId(modal.link)
     try {
       const res = await fetch(`/index.php?page=post&s=vote&id=${encodeURIComponent(id)}&type=up`, { credentials: 'same-origin' })
       const score = parseInt(await res.text(), 10)
       if (res.ok && Number.isFinite(score)) {
-        modal.score.textContent = String(score)
-        modal.up.classList.add('on')
+        if (postId(modal.link) === id) {   // still on that post
+          modal.score.textContent = String(score)
+          modal.up.classList.add('on')
+        }
         setMark('v', id, true)
-        flash(t('voted'))
-      } else {
+        if (!quiet) flash(t('voted'))
+      } else if (!quiet) {
         flash(`${t('voteFail')} (${res.status})`)
       }
       info(`modal: upvote post ${id} -> ${Number.isFinite(score) ? score : res.status}`)
