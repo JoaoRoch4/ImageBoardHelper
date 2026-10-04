@@ -2885,13 +2885,17 @@
     // Leave the page on the post last shown, once the history step is over
     // (the back runs after this function), then bring back what is on screen.
     const link = modal.link
+    let landed = false
     const land = () => {
+      if (landed) return
+      landed = true
       if (link && link.isConnected) link.scrollIntoView({ block: 'center' })
       history.scrollRestoration = modal.scrollMode || 'auto'
       resumePage()
     }
     if (!fromBack && history.state && history.state.ibhModal) {
       window.addEventListener('popstate', () => setTimeout(land, 0), { once: true })
+      setTimeout(land, 1000)   // should the popstate never come, the page still comes back
       history.back()
     } else {
       setTimeout(land, 0)
