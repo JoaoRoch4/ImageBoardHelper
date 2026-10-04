@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.34.3
+// @version      0.35.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.34.3'
+  const VERSION = '0.35.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -117,6 +117,7 @@
     sortButton:     true,   // ★ button on search listings: add or remove sort:score (needs reload)
     videoModal:     true,   // open posts from site pages in an overlay: video, GIF, image (needs reload)
     rotateLandscape: true,  // in the modal player's fullscreen, lock wide videos to landscape
+    modalPreload:   true,   // in the modal, have the next post loaded before the swipe
     fixFancybox:    true,   // fill empty src in the alternate viewer
     gestures:       true,   // swipe, double tap and pinch
     originalThumbs: false,  // swap visible thumbnails for the original file (heavy, needs reload)
@@ -189,6 +190,7 @@
       mFav: 'Add to favorites', mUp: 'Upvote', mFull: 'Fullscreen',
       mPlay: 'Play / pause', mMute: 'Sound on / off',
       tRotate: 'Landscape in player fullscreen',
+      tPreload: 'Next post loaded in the player',
       favAdded: 'Added to favorites', favAlready: 'Already in your favorites',
       favLogin: 'You are not logged in', favFail: 'Could not favorite',
       voted: 'Upvoted', voteFail: 'Could not vote',
@@ -230,6 +232,7 @@
       mFav: 'Favoritar', mUp: 'Votar positivo', mFull: 'Tela cheia',
       mPlay: 'Tocar / pausar', mMute: 'Som liga / desliga',
       tRotate: 'Paisagem na tela cheia do player',
+      tPreload: 'Próximo post carregado no player',
       favAdded: 'Adicionado aos favoritos', favAlready: 'Já está nos favoritos',
       favLogin: 'Você não está logado', favFail: 'Não foi possível favoritar',
       voted: 'Voto registrado', voteFail: 'Não foi possível votar',
@@ -2548,7 +2551,7 @@
       if (missing && onMissing && modal.seq === seq) { onMissing(); return }
       modal.status.textContent = t('mFail')
     }
-    v.oncanplay = () => { modal.status.hidden = true }
+    v.oncanplay = () => { modal.status.hidden = true; preloadAhead(seq) }
     v.onloadedmetadata = () => {
       cacheSet('video', hash, urls[i - 1], vcached)
       fitFullscreenOrientation()   // swiped onto a wide video while fullscreen
@@ -2604,6 +2607,7 @@
         if (modal.seq !== seq) return
         img.src = probe.src
         if (kind === 'gif') watchModalGif(img, probe.src, seq)
+        preloadAhead(seq)
       })
     }
     if (urls.length) probe.src = urls[i++]
@@ -2711,6 +2715,10 @@
     if (!pic || !thumbParts(pic.src)) { location.href = link.href; return }   // nothing derivable: go to the post
     if (!modal) buildModal()
     resetMedia()
+    const seq = modal.seq
+    if (!modal.open) modal.dir = 1
+    // The preloaded file, already decoded, shows at once instead of the thumbnail.
+    const ready = aheadReady(link)
 
     modal.link = link
     modal.post.href = link.href
@@ -2725,10 +2733,11 @@
 
     let kind = thumbKind(thumb)
     const hash = thumbParts(pic.src).hash
+    const placeholder = ready || thumb.currentSrc || pic.src
     const asGif = () => {
       link.dataset.ibhKind = 'gif'   // the page's cover/GIF code agrees from now on
       info(`modal: post ${postId(link)} has no video file, showing it as a GIF`)
-      showImage(thumb.currentSrc || pic.src, fileCandidates(pic.src, ['gif']), 'gif', hash)
+      showImage(placeholder, fileCandidates(pic.src, ['gif']), 'gif', hash)
     }
     // Known from an earlier try: no video file for it.
     if (kind === 'video' && cacheGet('video', hash) === null) kind = 'gif'
@@ -2737,11 +2746,15 @@
     } else if (kind === 'video') {
       showVideo(fileCandidates(pic.src, ['mp4', 'webm']), hash, asGif)
     } else if (kind === 'gif') {
-      showImage(thumb.currentSrc || pic.src, fileCandidates(pic.src, ['gif']), 'gif', hash)
+      showImage(placeholder, fileCandidates(pic.src, ['gif']), 'gif', hash)
     } else {
-      showImage(thumb.currentSrc || pic.src, fileCandidates(pic.src, ORIGINAL_EXTS), 'orig', hash)
+      showImage(placeholder, fileCandidates(pic.src, ORIGINAL_EXTS), 'orig', hash)
       sniffVideo(pic.src, link)
     }
+    // Only now: the preloaded image stays referenced until the modal shows it.
+    dropAhead()
+    // A post that never finishes loading must not hold the next one back.
+    setTimeout(() => preloadAhead(seq), AHEAD_FALLBACK_MS)
 
     if (!modal.open) {
       modal.open = true
@@ -2759,6 +2772,7 @@
     if (!modal || !modal.open) return
     if (modal.root.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {})
     modal.open = false
+    dropAhead()
     resetMedia()
     modal.host.style.display = 'none'
     document.documentElement.style.removeProperty('overflow')
@@ -2804,7 +2818,98 @@
   function stepModal(dir) {
     const list = siteLinks()
     const target = list[list.indexOf(modal.link) + dir]
-    if (target) openModal(target)
+    if (!target) return
+    modal.dir = dir   // the preload follows the direction of travel
+    openModal(target)
+  }
+
+  // ── Next post ready ──
+  // Once the post on screen has loaded, fetch the next one in the direction
+  // of travel: an image or GIF downloaded and decoded (held, so the swipe
+  // paints it at once), a video's host found and its header read (the swipe
+  // then skips the host walk; the decoder is handed back right away). One
+  // post ahead only, dropped as soon as the modal moves on or closes.
+  const AHEAD_FALLBACK_MS = 4000
+  let ahead = null
+
+  function preloadAhead(seq) {
+    if (!CFG.modalPreload || !modal.open || modal.seq !== seq) return
+    const list = siteLinks()
+    const link = list[list.indexOf(modal.link) + (modal.dir || 1)]
+    if (!link || (ahead && ahead.link === link)) return
+    dropAhead()
+    const thumb = link.querySelector('img')
+    const pic = thumb && cardPicture(link)
+    const parts = pic && thumbParts(pic.src)
+    if (!parts) return
+    const a = ahead = { link }
+    let kind = thumbKind(thumb)
+    if (kind === 'video' && cacheGet('video', parts.hash) === null) kind = 'gif'
+    if (kind === 'video') aheadVideo(a, pic.src, parts.hash)
+    else aheadImage(a, pic.src, parts.hash, kind === 'gif' ? 'gif' : 'orig')
+    dbg(`modal: preloading ${kind} post ${postId(link)}`)
+  }
+
+  function aheadImage(a, src, hash, kind) {
+    const cached = cacheGet(kind, hash)
+    if (cached === null) return   // known: nothing loads
+    const urls = cachedFirst(fileCandidates(src, kind === 'gif' ? ['gif'] : ORIGINAL_EXTS), cached)
+    if (!urls.length) return
+    // Same three download slots as the page (B).
+    takeImageSlot(() => {
+      if (ahead !== a) { giveImageSlot(); return }   // the modal moved on while it waited
+      let held = true
+      a.release = () => { if (held) { held = false; giveImageSlot() } }
+      const img = a.img = new Image()
+      img.decoding = 'async'
+      let i = 0
+      img.onerror = () => {
+        if (i < urls.length) { img.src = urls[i++]; return }
+        a.release()
+        cacheSet(kind, hash, null)
+      }
+      img.onload = () => {
+        a.release()
+        cacheSet(kind, hash, img.src, cached)
+        const decoded = typeof img.decode === 'function' ? img.decode().catch(() => {}) : Promise.resolve()
+        decoded.then(() => { if (ahead === a) a.decoded = true })
+      }
+      img.src = urls[i++]
+    })
+  }
+
+  function aheadVideo(a, src, hash) {
+    const cached = cacheGet('video', hash)
+    const urls = cachedFirst(fileCandidates(src, ['mp4', 'webm']), cached)
+    if (!urls.length) return
+    const v = a.video = document.createElement('video')
+    v.muted = true
+    v.preload = 'metadata'
+    let i = 0
+    const stop = () => { v.onerror = v.onloadedmetadata = null; v.removeAttribute('src'); v.load() }
+    v.onerror = () => {
+      if (i < urls.length) { v.src = urls[i++]; return }
+      // No host has it: the swipe goes straight to the GIF. A decode error or a
+      // network drop says nothing about the file.
+      if (!(v.error && (v.error.code === 3 || v.error.code === 2))) cacheSet('video', hash, null)
+      stop()
+    }
+    v.onloadedmetadata = () => { cacheSet('video', hash, urls[i - 1], cached); stop() }
+    v.src = urls[i++]
+  }
+
+  // The preloaded image for this post, if it is downloaded and decoded.
+  function aheadReady(link) {
+    return ahead && ahead.link === link && ahead.decoded && ahead.img.naturalWidth ? ahead.img.src : null
+  }
+
+  function dropAhead() {
+    if (!ahead) return
+    const a = ahead
+    ahead = null
+    if (a.img) { a.img.onload = a.img.onerror = null; a.img.removeAttribute('src') }
+    if (a.video) { a.video.onerror = a.video.onloadedmetadata = null; a.video.removeAttribute('src'); a.video.load() }
+    if (a.release) a.release()
   }
 
   // Capture on window: runs before the link's own onclick (favorites navigate
@@ -2935,6 +3040,7 @@
     if (scrub) endScrub()
     previewStop()
     previewEl = null
+    dropAhead()
     coverQueue.clear()   // first, or each unmount hands its slot to a queued card
     document.querySelectorAll('[data-ibh-cover]').forEach(card => { unmountCover(card); n.covers++ })
     // Animated GIFs keep every decoded frame; back to the still. Ones still
@@ -3286,6 +3392,7 @@
     body.appendChild(toggle('sortButton', t('tSortBtn'), t('noteReload')))
     body.appendChild(toggle('videoModal', t('tModal'), t('noteReload')))
     body.appendChild(toggle('rotateLandscape', t('tRotate')))
+    body.appendChild(toggle('modalPreload', t('tPreload')))
     body.appendChild(toggle('videoCovers', t('tCovers')))
     body.appendChild(toggle('gifInline', t('tGif')))
     body.appendChild(toggle('videoScrub', t('tScrub'), t('noteReload')))

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.35.0
+
+- Next post loaded in the modal (`modalPreload`, on): once the post on screen
+  has loaded, the next one in the direction of travel is fetched. An image or
+  GIF is downloaded and decoded, so the swipe shows it at once instead of the
+  thumbnail; a video gets its host found and its header read, so the swipe
+  skips walking the hosts. One post ahead only, it shares the three download
+  slots, and it is dropped when the modal moves on, closes or Free memory runs
+
 ## 0.34.3
 
 - Hold slideshow always starts at 00:00 and steps from there (0%, 10% … 90%
