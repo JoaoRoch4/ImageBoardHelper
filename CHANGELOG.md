@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.40.1
+
+- Site theme a little lighter: dark slate background (`#182125`) instead of
+  near-black, with fields and borders lightened to match
+
 ## 0.40.0
 
 - The modal's dark theme on the site's own pages (`siteTheme`, on; applies at
