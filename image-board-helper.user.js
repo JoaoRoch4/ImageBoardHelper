@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.36.3
+// @version      0.37.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.36.3'
+  const VERSION = '0.37.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -187,12 +187,12 @@
       tModal: 'Open posts in a player over the page',
       mClose: 'Close', mOpen: 'Open the post', mPrev: 'Previous post', mNext: 'Next post',
       mLoading: 'Loading…', mFail: 'Could not load it',
-      mFav: 'Add to favorites', mUp: 'Upvote', mFull: 'Fullscreen',
+      mFav: 'Add to favorites', mUp: 'Upvote', mFull: 'Fullscreen', mTurn: 'Rotate the screen',
       mPlay: 'Play / pause', mMute: 'Sound on / off',
       tRotate: 'Landscape in player fullscreen',
       tPreload: 'Next post loaded in the player',
       favAdded: 'Added to favorites', favAlready: 'Already in your favorites', favRemoved: 'Removed from favorites',
-      favLogin: 'You are not logged in', favFail: 'Could not favorite',
+      favLogin: 'You are not logged in', favFail: 'Could not favorite', mTurnNo: 'This browser cannot turn the screen',
       voted: 'Upvoted', voteFail: 'Could not vote',
       tFancybox: 'Repair Fancybox', tGestures: 'Touch gestures',
       tOriginal: 'Original thumbnails (heavy)',
@@ -229,12 +229,12 @@
       tModal: 'Abrir posts num player sobre a página',
       mClose: 'Fechar', mOpen: 'Abrir o post', mPrev: 'Post anterior', mNext: 'Próximo post',
       mLoading: 'Carregando…', mFail: 'Não foi possível carregar',
-      mFav: 'Favoritar', mUp: 'Votar positivo', mFull: 'Tela cheia',
+      mFav: 'Favoritar', mUp: 'Votar positivo', mFull: 'Tela cheia', mTurn: 'Girar a tela',
       mPlay: 'Tocar / pausar', mMute: 'Som liga / desliga',
       tRotate: 'Paisagem na tela cheia do player',
       tPreload: 'Próximo post carregado no player',
       favAdded: 'Adicionado aos favoritos', favAlready: 'Já está nos favoritos', favRemoved: 'Removido dos favoritos',
-      favLogin: 'Você não está logado', favFail: 'Não foi possível favoritar',
+      favLogin: 'Você não está logado', favFail: 'Não foi possível favoritar', mTurnNo: 'Este navegador não gira a tela',
       voted: 'Voto registrado', voteFail: 'Não foi possível votar',
       tFancybox: 'Consertar Fancybox', tGestures: 'Gestos de toque',
       tOriginal: 'Miniatura original (pesado)',
@@ -2090,6 +2090,7 @@
     const close = el('button', { text: '✕', title: t('mClose') })
     const post = el('a', { class: 'btn', text: '↗', title: t('mOpen') })
     const full = el('button', { text: '⛶', title: t('mFull') })
+    const turn = el('button', { text: '↻', title: t('mTurn') })
     const count = el('span', { class: 'count' })
     const status = el('div', { class: 'status' })
     const fav = el('button', { text: '♡', title: t('mFav') })
@@ -2101,9 +2102,10 @@
     badge.hidden = true
     const prev = el('button', { class: 'side prev', text: '‹', title: t('mPrev') })
     const next = el('button', { class: 'side next', text: '›', title: t('mNext') })
-    const box = el('div', { class: 'm' }, [stage, status, el('div', { class: 'bar' }, [close, post, full, fav, up, count]), prev, next, toast, badge])
+    const box = el('div', { class: 'm' }, [stage, status, el('div', { class: 'bar' }, [close, post, full, turn, fav, up, count]), prev, next, toast, badge])
     close.addEventListener('click', () => closeModal(false))
     full.addEventListener('click', () => toggleModalFullscreen())
+    turn.addEventListener('click', () => turnScreen())
     fav.addEventListener('click', modalFavorite)
     up.addEventListener('click', modalUpvote)
     prev.addEventListener('click', () => stepModal(-1))
@@ -2114,7 +2116,7 @@
     installImageZoom(stage, image)
     installVideoGestures(layer, video)
     root.append(style, box)
-    modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, score, toast, badge, open: false, link: null, seq: 0 }
+    modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, score, toast, badge, turn, turned: null, open: false, link: null, seq: 0 }
   }
 
   let toastTimer = 0
@@ -2582,13 +2584,32 @@
     modal.box.requestFullscreen().catch(e => dbg(`modal: fullscreen refused — ${describeError(e)}`))
   }
 
-  // Landscape only while fullscreen shows a wide video; anything else unlocks.
+  // ↻ turns the screen to the other orientation, for any post, and keeps it
+  // for the next ones; pressed again it turns back, and leaving fullscreen
+  // (or closing) returns to the automatic rule. Firefox locks
+  // the orientation only in fullscreen, so the press enters it first (the tap
+  // is the user gesture fullscreen needs).
+  function turnScreen() {
+    const orientation = screen.orientation
+    if (!orientation || !orientation.lock) { flash(t('mTurnNo')); return }
+    const portrait = String(orientation.type).startsWith('portrait')
+    modal.turned = portrait ? 'landscape' : 'portrait'
+    modal.turn.classList.add('on')
+    info(`modal: screen turned to ${modal.turned}`)
+    if (modal.root.fullscreenElement) fitFullscreenOrientation()
+    else toggleModalFullscreen()   // its fullscreenchange applies the turn
+  }
+
+  // Landscape only while fullscreen shows a wide video, unless ↻ chose an
+  // orientation; anything else unlocks.
   function fitFullscreenOrientation() {
     const orientation = screen.orientation
     if (!orientation) return
     const v = modal.video
     const full = !!modal.root.fullscreenElement
-    if (full && CFG.rotateLandscape && !v.hidden && v.videoWidth > v.videoHeight && orientation.lock) {
+    if (full && modal.turned && orientation.lock) {
+      orientation.lock(modal.turned).catch(e => dbg(`modal: orientation lock refused — ${describeError(e)}`))
+    } else if (full && CFG.rotateLandscape && !v.hidden && v.videoWidth > v.videoHeight && orientation.lock) {
       orientation.lock('landscape').then(
         () => dbg('modal: fullscreen locked to landscape'),
         e => dbg(`modal: orientation lock refused — ${describeError(e)}`))
@@ -2614,6 +2635,7 @@
       return   // the next fullscreenchange does the orientation
     }
     dbg(`modal: fullscreen ${inside ? 'on' : 'off'}`)
+    if (!inside) { modal.turned = null; modal.turn.classList.remove('on') }   // the lock went with it
     setCleanUi(!!inside)
     fitFullscreenOrientation()
   }
@@ -2623,6 +2645,10 @@
   // and goes back to portrait. Put landscape back whenever that happens.
   function onOrientationChange() {
     if (!modal || !modal.open || !modal.root.fullscreenElement) return
+    if (modal.turned) {
+      if (!String(screen.orientation.type).startsWith(modal.turned)) fitFullscreenOrientation()
+      return
+    }
     const v = modal.video
     if (CFG.rotateLandscape && !v.hidden && v.videoWidth > v.videoHeight &&
         String(screen.orientation.type).startsWith('portrait')) {
@@ -2878,6 +2904,8 @@
     if (!modal || !modal.open) return
     if (modal.root.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {})
     modal.open = false
+    modal.turned = null   // its fullscreenchange comes after open is false
+    modal.turn.classList.remove('on')
     dropAhead()
     resetMedia()
     modal.host.style.display = 'none'

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.37.0
+
+- ↻ button in the modal turns the screen to the other orientation, for any
+  post (image, GIF or video), and keeps it while you swipe through posts;
+  pressed again it turns back. Firefox locks the orientation only in
+  fullscreen, so the press enters fullscreen first; leaving fullscreen or
+  closing returns to the automatic rule (landscape for wide videos)
+
 ## 0.36.3
 
 - Closing the modal keeps the page on the last post shown: leaving the
