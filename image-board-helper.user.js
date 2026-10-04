@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.39.0
+// @version      0.40.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.39.0'
+  const VERSION = '0.40.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -118,6 +118,7 @@
     videoModal:     true,   // open posts from site pages in an overlay: video, GIF, image (needs reload)
     rotateLandscape: true,  // in the modal player's fullscreen, lock wide videos to landscape
     modalPreload:   true,   // in the modal, have the next post loaded before the swipe
+    siteTheme:      true,   // the modal's dark theme on the site's own pages (not Masonry)
     fixFancybox:    true,   // fill empty src in the alternate viewer
     gestures:       true,   // swipe, double tap and pinch
     originalThumbs: false,  // swap visible thumbnails for the original file (heavy, needs reload)
@@ -185,6 +186,7 @@
       navPrevPage: 'Previous page', navNextPage: 'Next page',
       tSortBtn: 'Sort-by-score button', navSort: 'Sort by score (tap again to undo)',
       tModal: 'Open posts in a player over the page',
+      tTheme: 'Dark theme on site pages',
       mClose: 'Close', mOpen: 'Open the post', mPrev: 'Previous post', mNext: 'Next post',
       mLoading: 'Loading…', mFail: 'Could not load it',
       mFav: 'Add to favorites', mUp: 'Upvote', mFull: 'Fullscreen', mFullExit: 'Exit fullscreen', mMenu: 'Tags and post page',
@@ -228,6 +230,7 @@
       navPrevPage: 'Página anterior', navNextPage: 'Próxima página',
       tSortBtn: 'Botão ordenar por score', navSort: 'Ordenar por score (toque de novo para desfazer)',
       tModal: 'Abrir posts num player sobre a página',
+      tTheme: 'Tema escuro nas páginas do site',
       mClose: 'Fechar', mOpen: 'Abrir o post', mPrev: 'Post anterior', mNext: 'Próximo post',
       mLoading: 'Carregando…', mFail: 'Não foi possível carregar',
       mFav: 'Favoritar', mUp: 'Votar positivo', mFull: 'Tela cheia', mFullExit: 'Sair da tela cheia', mMenu: 'Tags e página do post',
@@ -1714,6 +1717,8 @@
     scrub.label.style.cssText =
       'position:absolute;left:4px;bottom:8px;padding:1px 6px;border-radius:3px;font:12px/1.4 ' +
       'ui-monospace,monospace;color:#fff;background:rgba(0,0,0,.6);pointer-events:none;z-index:3'
+    // Painted by us: the site theme leaves them alone.
+    scrub.bar.dataset.ibhUi = scrub.label.dataset.ibhUi = '1'
     if (getComputedStyle(card).position === 'static') card.style.position = 'relative'
     card.appendChild(scrub.bar)
     card.appendChild(scrub.label)
@@ -3645,11 +3650,13 @@
     }
   }
 
-  function toggle(key, label, note) {
+  // `then` runs after the change, for options that apply at once.
+  function toggle(key, label, note, then) {
     const input = el('input', { type: 'checkbox' })
     input.checked = !!CFG[key]
     input.addEventListener('change', () => {
       setCfg(key, input.checked)
+      if (then) then()
       renderStatus()
     })
     const row = el('label', { class: 'tog' }, [input, el('span', { text: label })])
@@ -3731,6 +3738,7 @@
     body.appendChild(toggle('feedNav', t('tNav'), t('noteReload')))
     body.appendChild(toggle('sortButton', t('tSortBtn'), t('noteReload')))
     body.appendChild(toggle('videoModal', t('tModal'), t('noteReload')))
+    body.appendChild(toggle('siteTheme', t('tTheme'), null, applySiteTheme))
     body.appendChild(toggle('rotateLandscape', t('tRotate')))
     body.appendChild(toggle('modalPreload', t('tPreload')))
     body.appendChild(toggle('videoCovers', t('tCovers')))
@@ -3995,6 +4003,48 @@
     #image, #gelcomVideoPlayer { max-width: 100% !important; height: auto !important; }
   `
 
+  // The modal's look on the site's own pages: near-black background, light
+  // text, teal links and controls, tag kinds in the tags menu's colours. All
+  // of it hangs on html.ibh-theme, which applySiteTheme() sets only off
+  // Masonry (it has its own interface) and only with the option on.
+  // Backgrounds go transparent over the dark page (images, videos and icons
+  // keep theirs); the thumbnails' blue video frame is left alone.
+  const THEME_CSS = `
+    html.ibh-theme, html.ibh-theme body { background: #0b0f11 !important; color: #d7dee0 !important; }
+    html.ibh-theme body *:not(img):not(video):not(canvas):not(iframe):not(svg):not(path):not([data-ibh-ui]) {
+      background-color: transparent !important; border-color: #1c272b !important; }
+    html.ibh-theme body *:not(a):not(img):not(video):not(svg):not(path):not([data-ibh-ui]) { color: #d7dee0 !important; }
+    html.ibh-theme a, html.ibh-theme a:visited { color: #5eead4 !important; }
+    html.ibh-theme a:hover { color: #99f6e4 !important; }
+    html.ibh-theme li[class*="tag-type-artist"] a { color: #f2ac08 !important; }
+    html.ibh-theme li[class*="tag-type-character"] a { color: #3fb950 !important; }
+    html.ibh-theme li[class*="tag-type-copyright"] a { color: #c678dd !important; }
+    html.ibh-theme li[class*="tag-type-metadata"] a { color: #e5534b !important; }
+    html.ibh-theme input, html.ibh-theme select, html.ibh-theme textarea, html.ibh-theme button {
+      background-color: #0f1417 !important; color: #d7dee0 !important;
+      border: 1px solid #2a3a3f !important; border-radius: 8px !important; }
+    html.ibh-theme input[type="submit"], html.ibh-theme input[type="button"], html.ibh-theme button { color: #5eead4 !important; }
+    html.ibh-theme ::placeholder { color: #4e6469 !important; }
+    html.ibh-theme #paginator a, html.ibh-theme #paginator b, html.ibh-theme .pagination a, html.ibh-theme .pagination b {
+      display: inline-block; padding: 3px 9px; margin: 2px; border: 1px solid #2a3a3f !important; border-radius: 8px; }
+    html.ibh-theme #paginator b, html.ibh-theme .pagination b {
+      background-color: #5eead4 !important; color: #0f1417 !important; border-color: #5eead4 !important; }
+    html.ibh-theme .awesomplete > ul, html.ibh-theme .awesomplete > ul * { background-color: #0f1417 !important; }
+    html.ibh-theme .awesomplete > ul [aria-selected="true"] { background-color: #1c3b38 !important; }
+    html.ibh-theme ::selection { background: #1c3b38; }
+  `
+
+  let themeOn = null
+
+  function applySiteTheme() {
+    const on = !!CFG.siteTheme && !document.querySelector('.v-application')   // not on Masonry
+    if (on === themeOn && document.documentElement.classList.contains('ibh-theme') === on) return
+    themeOn = on
+    document.documentElement.classList.toggle('ibh-theme', on)
+    // Masonry swaps the whole <html>: the old one may still carry the class.
+    dbg(`site theme ${on ? 'on' : 'off'}`)
+  }
+
   // The site's own video frame, repeated so it also applies on pages whose
   // stylesheet lacks it (favorites), where the mark is added back.
   const NATIVE_MARK_CSS = '.image-list img.webm-thumb { border: 3px solid rgb(0, 0, 255); box-sizing: border-box; }'
@@ -4002,7 +4052,7 @@
   function injectPageCSS() {
     if (document.querySelector('style[data-ibh]')) return
     const style = el('style', { 'data-ibh': '1' })
-    style.textContent = '.img_detail_cont { touch-action: pan-y; }' + NATIVE_MARK_CSS +
+    style.textContent = '.img_detail_cont { touch-action: pan-y; }' + NATIVE_MARK_CSS + THEME_CSS +
       (CFG.videoScrub ? SCRUB_CSS : '') + (CFG.nativeFeed ? FEED_CSS : '')
     ;(document.head || document.documentElement).appendChild(style)
   }
@@ -4023,6 +4073,7 @@
     if (!panelHost) mountPanel()
     ensureFeedNav()
     injectPageCSS()
+    applySiteTheme()
   }).observe(document, { childList: true, subtree: true })
 
   applySharpThumbs()

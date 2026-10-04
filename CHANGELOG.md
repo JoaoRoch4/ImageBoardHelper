@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.40.0
+
+- The modal's dark theme on the site's own pages (`siteTheme`, on; applies at
+  once from the panel): near-black background, light text, teal links,
+  buttons, fields and paginator, and the sidebar's tag kinds in the tags
+  menu's colours. Masonry keeps its own interface; images, videos and the
+  thumbnails' blue video frame are left alone
+
 ## 0.39.0
 
 - ☰ menu in the modal (in the place of ↗, which moved into it): a sheet with
