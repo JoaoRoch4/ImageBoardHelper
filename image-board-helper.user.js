@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.33.0
+// @version      0.34.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.33.0'
+  const VERSION = '0.34.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -1234,6 +1234,7 @@
   const ORIGINAL_SELECTOR = '.posts-image-card, img[src*="/thumbnails/"], img[src*="/samples/"]'
   const originalQueue = []
   let originalInflight = 0
+  let upgradeGen = 0   // bumped by freeMemory(): upgrades already in flight drop their result
 
   const isCard = el => el.classList.contains('posts-image-card')
 
@@ -1292,8 +1293,10 @@
   function probeOriginal(el, from, urls, done, ck) {
     const probe = new Image()
     probe.decoding = 'async'
+    const gen = upgradeGen
     let i = 0
     const tryNext = () => {
+      if (gen !== upgradeGen) { done(); return }   // memory freed meanwhile: start over later
       if (i >= urls.length) {
         el.dataset.ibhOrig = 'failed'
         if (ck) cacheSet(ck.kind, ck.hash, null)
@@ -1311,6 +1314,7 @@
       decoded.then(swap)
     }
     const swap = () => {
+      if (gen !== upgradeGen) { done(); return }   // memory freed meanwhile: the element was reset
       // The modal unloads the page while it is open: drop this upgrade and let
       // it run again when the modal closes.
       if (modal && modal.open) {
@@ -1664,6 +1668,7 @@
     const { card } = scrub
     const pic = cardPicture(card)
     if (!pic) return false
+    freeForPreview(card)
     const cover = card.querySelector('video[data-ibh]')
     if (cover && cover.readyState >= 1) {
       scrub.video = cover   // already loaded: instant, and no extra decoder
@@ -1716,6 +1721,7 @@
     s.bar.remove()
     s.label.remove()
     if (s.shared) { previewStop(); s.holder.remove(); returnDecoder() }
+    afterPreview()
     // A cover keeps the frame where the finger stopped.
     dbg(`scrub: stopped at ${s.label.textContent}`)
   }
@@ -1856,8 +1862,8 @@
   // Leaving the page: release everything so the copy Firefox keeps for the
   // back button is light. Coming back from that copy, start the page over.
   function releaseAll() {
+    coverQueue.clear()   // first, or each unmount hands its slot to a queued card
     document.querySelectorAll('[data-ibh-cover]').forEach(card => unmountCover(card))
-    coverQueue.clear()
     document.querySelectorAll('[data-ibh-gif="playing"]').forEach(card => stopGif(card))
     document.querySelectorAll('[data-ibh-orig="done"]').forEach(el => {
       resetUpgrade(el)
@@ -1866,8 +1872,73 @@
     })
   }
 
+  // ── Constant cleanup ──
+  // The observers release what scrolls away, but cards also move when the
+  // grid reflows, and a GIF or cover can stay alive off screen. Sweep with
+  // freeOffscreen() every 15 s and whenever a scroll ends.
+  const SWEEP_MS = 15000
+  const SWEEP_GAP_MS = 2000   // scroll sweeps no closer than this
+  let sweepAt = 0
+
+  function sweep(why) {
+    // The modal and a preview run their own cleanup; a hidden tab is parked.
+    if (document.hidden || (modal && modal.open) || scrub) return
+    if (why === 'scroll' && Date.now() - sweepAt < SWEEP_GAP_MS) return
+    sweepAt = Date.now()
+    const n = freeOffscreen(null)
+    if (n.images || n.gifs || n.covers) dbg(`memory: ${why} sweep freed ${n.images} images, ${n.gifs} GIFs, ${n.covers} covers`)
+  }
+
+  // A tab in the background decodes nothing, yet its covers and GIFs keep
+  // their memory. Park them while hidden and bring them back on return.
+  const parked = []
+
+  function onVisibilityChange() {
+    if (modal && modal.open) return   // the modal already unloaded the page
+    if (document.hidden) {
+      parked.push(...coverQueue)
+      coverQueue.clear()   // first, or each unmount hands its slot to a queued card
+      document.querySelectorAll('[data-ibh-cover]').forEach(card => { unmountCover(card); parked.push(card) })
+      document.querySelectorAll('[data-ibh-gif="playing"]').forEach(card => { stopGif(card); parked.push(card) })
+      if (parked.length) dbg(`memory: tab hidden, parked ${parked.length} covers and GIFs`)
+      return
+    }
+    for (const card of parked.splice(0)) {
+      if (!card.isConnected || !card.dataset.ibhSeen) continue   // scrolled away: the observer handles it
+      if (CFG.videoCovers && isVideoCard(card)) mountCover(card)
+      else if (CFG.gifInline && isGifCard(card)) playGif(card)
+    }
+    sweep('return')
+  }
+
+  // A scene preview decodes a whole video, the slideshow two: free memory
+  // before it starts. Off-screen work goes, and GIFs on screen stop (an
+  // animated GIF holds every frame decoded) until the preview ends.
+  const previewPaused = []
+
+  function freeForPreview(card) {
+    if (!CFG.memorySaver) return
+    const n = freeOffscreen(card)
+    document.querySelectorAll('[data-ibh-gif="playing"]').forEach(c => {
+      if (c === card) return
+      stopGif(c)
+      previewPaused.push(c)
+      n.gifs++
+    })
+    if (n.images || n.gifs || n.covers) dbg(`memory: preview freed ${n.images} images, ${n.gifs} GIFs, ${n.covers} covers`)
+  }
+
+  function afterPreview() {
+    for (const c of previewPaused.splice(0)) {
+      if (c.isConnected && c.dataset.ibhSeen && CFG.gifInline) playGif(c)
+    }
+  }
+
   function installMemorySaver() {
     if (!CFG.memorySaver) return
+    setInterval(() => sweep('timed'), SWEEP_MS)
+    window.addEventListener('scrollend', () => sweep('scroll'), { passive: true })
+    document.addEventListener('visibilitychange', onVisibilityChange)
     for (const name of ['pushState', 'replaceState']) {
       const orig = history[name]
       history[name] = function (...args) {
@@ -1880,7 +1951,7 @@
     window.addEventListener('popstate', onLocationChange)
     window.addEventListener('pagehide', releaseAll)
     window.addEventListener('pageshow', ev => { if (ev.persisted) redoThumbs() })
-    info('memory saver active: far off-screen images are released')
+    info('memory saver active: off-screen images, GIFs and covers are released (every 15 s, after scrolls, while hidden, before previews)')
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -2689,8 +2760,8 @@
 
   function suspendPage() {
     const n = { covers: 0, gifs: 0, images: 0 }
+    coverQueue.clear()   // first, or each unmount hands its slot to a queued card
     document.querySelectorAll('[data-ibh-cover]').forEach(card => { unmountCover(card); n.covers++ })
-    coverQueue.clear()
     document.querySelectorAll('[data-ibh-gif="playing"]').forEach(card => { stopGif(card); n.gifs++ })
     originalQueue.length = 0
     document.querySelectorAll('[data-ibh-orig]').forEach(el => {
@@ -2825,17 +2896,32 @@
    */
   async function freeMemory() {
     const n = { covers: 0, gifs: 0, images: 0, caches: 0 }
+    // A preview in progress holds one or two videos; the shared one is dropped.
+    if (scrub) endScrub()
+    previewStop()
+    previewEl = null
+    coverQueue.clear()   // first, or each unmount hands its slot to a queued card
     document.querySelectorAll('[data-ibh-cover]').forEach(card => { unmountCover(card); n.covers++ })
-    coverQueue.clear()
-    // Animated GIFs keep every decoded frame; back to the still.
-    document.querySelectorAll('[data-ibh-gif="playing"]').forEach(card => { stopGif(card); n.gifs++ })
-    // Undo sample/original upgrades and watch again: what is on screen comes
-    // back from the HTTP cache, the rest only when it scrolls in.
-    document.querySelectorAll('[data-ibh-orig="done"]').forEach(el => {
+    // Animated GIFs keep every decoded frame; back to the still. Ones still
+    // loading are dropped too.
+    document.querySelectorAll('[data-ibh-gif="playing"], [data-ibh-gif="loading"]').forEach(card => { stopGif(card); n.gifs++ })
+    // Undo sample/original upgrades, queued and in flight included, and watch
+    // again: what is on screen comes back from the HTTP cache, the rest only
+    // when it scrolls in.
+    upgradeGen++
+    originalQueue.length = 0
+    document.querySelectorAll('[data-ibh-orig]').forEach(el => {
+      if (el.dataset.ibhOrig === 'failed') return
+      if (el.dataset.ibhOrig === 'done') n.images++
       resetUpgrade(el)
+      if (farViewport) farViewport.unobserve(el)
       if (originalViewport) originalViewport.observe(el)
-      n.images++
     })
+    // Lists that would keep removed cards alive.
+    parked.length = 0
+    previewPaused.length = 0
+    knownGifs.clear()
+    if (!(modal && modal.open)) suspended.length = 0
     try { localStorage.removeItem(HOST_KEY) } catch (e) { /* ignore */ }
     const urls = clearUrlCache(false)
     STATE.imageBase = null

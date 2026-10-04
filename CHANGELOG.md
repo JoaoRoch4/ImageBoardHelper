@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.34.0
+
+- Constant memory cleanup (part of `memorySaver`):
+  - off-screen images, GIFs and covers are swept every 15 s and whenever a
+    scroll ends, catching what the observers miss when the grid reflows
+  - a hidden tab parks its covers and GIFs (a background tab decodes nothing
+    anyway) and brings back the ones on screen when it is shown again
+  - a scene preview frees memory before it starts: off-screen work is
+    released and GIFs on screen stop until the preview ends
+- Unloading every cover (modal, leaving the page, Free memory) no longer lets
+  a queued cover take each slot as it is freed
+
 ## 0.33.0
 
 - Hold slideshow jump and seconds are adjustable in the panel (shown in hold
