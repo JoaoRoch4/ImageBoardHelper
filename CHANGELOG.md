@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.44.0
+
+- Feed columns and layout on site pages, from the panel while the feed is on,
+  applied at once: `feedColumns` automatic (as many 170px columns as the screen
+  holds) or 1 to 4, and `feedLayout` masonry (whole images in columns) or grid
+  (even square tiles, cropped to fill). One column stays the full-width feed
+- ‹ › in the feed go by position on screen, so they also step right when the
+  posts run down columns
+
 ## 0.43.1
 
 - The one-column feed switch applies at once, no reload: its CSS hangs on a

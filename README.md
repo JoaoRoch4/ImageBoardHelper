@@ -89,7 +89,9 @@ All of them live in the panel and are stored in `localStorage` under `IBH_CFG`.
 | `fixFancybox` | on | fills empty `src` in Fancybox |
 | `gestures` | on | swipe, double tap and pinch |
 | `originalThumbs` | **off** | swaps visible thumbnails, on Masonry and on the site's own pages, for the original file; sharper, but several times the data and memory (needs reload) |
-| `nativeFeed` | **off** | on the site's own pages (rule34, safebooru, xbooru and other Gelbooru 0.2 sites): one image per row at the full screen width, upgraded to the sample (or the original when there is none) (applies at once) |
+| `nativeFeed` | **off** | on the site's own pages (rule34, safebooru, xbooru and other Gelbooru 0.2 sites): a feed with the columns and layout below (one image per row at the full screen width by default), upgraded to the sample (or the original when there is none) (applies at once) |
+| `feedColumns` | `1` | with `nativeFeed`: `auto` (as many 170px columns as the screen holds) or 1 to 4. Applies at once |
+| `feedLayout` | `masonry` | with `nativeFeed` and more than one column: `masonry` keeps each image whole, in columns; `grid` makes even square tiles, cropped to fill. Applies at once |
 | `feedNav` | on | with `nativeFeed`, round buttons in the bottom-right corner, in two rows: ⤒ top, ‹ › previous/next post (e.g. to skip a long comic), ⤓ bottom; « » previous/next page through the site's own pagination (needs reload) |
 | `sortButton` | on | ★ button on search listings (site and Masonry): adds `sort:score` to the current search, or removes it, and reloads on the first page; lit while the search is sorted by score (needs reload) |
 | `freeButton` | on | trash-can shortcut button with the floating buttons: one tap runs **Free memory & cache** (other tabs of the site included) |

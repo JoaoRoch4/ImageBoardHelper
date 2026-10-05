@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.43.1
+// @version      0.44.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.43.1'
+  const VERSION = '0.44.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -123,7 +123,9 @@
     fixFancybox:    true,   // fill empty src in the alternate viewer
     gestures:       true,   // swipe, double tap and pinch
     originalThumbs: false,  // swap visible thumbnails for the original file (heavy, needs reload)
-    nativeFeed:     false,  // one-column feed with sharp images on the site's own pages (applies at once)
+    nativeFeed:     false,  // feed with sharp images on the site's own pages (applies at once)
+    feedColumns:    1,      // its columns: 'auto' (by screen width) or 1-4
+    feedLayout:     'masonry', // 'masonry': whole images in columns; 'grid': even square tiles
     forceRule34Api: true,   // rule34 on Masonry: API path, account filters applied here; automatic, no panel entry (needs reload)
   }
 
@@ -201,7 +203,9 @@
       voted: 'Upvoted', voteFail: 'Could not vote',
       tFancybox: 'Repair Fancybox', tGestures: 'Touch gestures',
       tOriginal: 'Original thumbnails (heavy)',
-      tFeed: 'One-column feed on site pages',
+      tFeed: 'Feed on site pages',
+      tFeedCols: 'feed columns', tFeedLayout: 'feed layout', colsAuto: 'Automatic (by screen width)',
+      layoutMasonry: 'Masonry (whole images)', layoutGrid: 'Grid (even tiles)',
       tDebug: 'Log to console',
       noteReload: 'reload',
       bTest: 'Test URLs', bClearHost: 'Clear host',
@@ -246,7 +250,9 @@
       voted: 'Voto registrado', voteFail: 'Não foi possível votar',
       tFancybox: 'Consertar Fancybox', tGestures: 'Gestos de toque',
       tOriginal: 'Miniatura original (pesado)',
-      tFeed: 'Feed de uma coluna no site',
+      tFeed: 'Feed nas páginas do site',
+      tFeedCols: 'colunas do feed', tFeedLayout: 'layout do feed', colsAuto: 'Automático (pela largura da tela)',
+      layoutMasonry: 'Masonry (imagens inteiras)', layoutGrid: 'Grade (quadros iguais)',
       tDebug: 'Log no console',
       noteReload: 'recarregar',
       bTest: 'Testar URLs', bClearHost: 'Limpar host',
@@ -3848,7 +3854,13 @@
     body.appendChild(el('div', { class: 'sec', text: t('fixes') }))
     body.appendChild(toggle('sharpThumbs', t('tSharp'), t('noteReload')))
     body.appendChild(toggle('originalThumbs', t('tOriginal'), t('noteReload')))
-    body.appendChild(toggle('nativeFeed', t('tFeed'), null, switchFeed))
+    body.appendChild(toggle('nativeFeed', t('tFeed'), null, () => { switchFeed(); rebuildPanel() }))
+    if (CFG.nativeFeed) {
+      body.appendChild(choiceSelect('feedColumns', t('tFeedCols'),
+        [['auto', t('colsAuto')], [1, '1'], [2, '2'], [3, '3'], [4, '4']], switchFeed))
+      body.appendChild(choiceSelect('feedLayout', t('tFeedLayout'),
+        [['masonry', t('layoutMasonry')], ['grid', t('layoutGrid')]], switchFeed))
+    }
     body.appendChild(toggle('feedNav', t('tNav'), t('noteReload')))
     body.appendChild(toggle('sortButton', t('tSortBtn'), t('noteReload')))
     body.appendChild(toggle('freeButton', t('tFreeBtn'), null, ensureFeedNav))
@@ -4002,15 +4014,16 @@
   function jumpPost(dir) {
     const posts = [...document.querySelectorAll(FEED_POST)]
     if (!posts.length) return
+    // By position on screen, not page order: in columns the order runs down
+    // each column. Next: the nearest post starting below the top edge.
+    // Previous: the nearest starting above it (inside a long post that is its
+    // own start, at a post's start it is the one before).
     const tops = posts.map(p => p.getBoundingClientRect().top)
     let target = null
-    if (dir > 0) {
-      target = posts[tops.findIndex(t => t > 8)]   // first post starting below the top edge
-    } else {
-      // Last post starting above the top edge: inside a long post that is its
-      // own start, at a post's start it is the one before.
-      for (let i = tops.length - 1; i >= 0; i--) if (tops[i] < -8) { target = posts[i]; break }
-    }
+    let best = dir > 0 ? Infinity : -Infinity
+    tops.forEach((top, i) => {
+      if (dir > 0 ? top > 8 && top < best : top < -8 && top > best) { best = top; target = posts[i] }
+    })
     if (!target) return
     // Instant, not smooth: smooth-scrolling past a 7000px comic takes ages.
     window.scrollTo({ top: target.getBoundingClientRect().top + window.scrollY, behavior: 'auto' })
@@ -4128,26 +4141,67 @@
   // screen width. Favorites wrap each thumb in an extra span with the Remove
   // link. calc(50% - 50vw) is the negative margin that cancels whatever side
   // padding the site puts around the centred column (5px on rule34).
-  // Hangs on html.ibh-feed, set by applyFeed(), so the panel switch applies
-  // at once instead of on the next load.
-  const FEED_CSS = `
-    html.ibh-feed .image-list { display: flex !important; flex-direction: column !important;
-      flex-wrap: nowrap !important; align-items: stretch !important; gap: 14px !important; }
-    html.ibh-feed .image-list > span { display: block !important; width: 100% !important; max-width: none !important;
-      height: auto !important; max-height: none !important; }
-    html.ibh-feed .image-list span.thumb { display: block !important; width: 100vw !important; height: auto !important;
-      max-width: none !important; max-height: none !important; min-height: 0 !important;
-      margin: 0 calc(50% - 50vw) !important; }
-    html.ibh-feed .image-list span.thumb a { display: block !important; position: relative; }
-    html.ibh-feed .image-list span.thumb img { display: block; width: 100% !important; height: auto !important;
-      max-width: none !important; max-height: none !important; }
-    /* Post page: the image carries width="850" and the video a fixed box. */
-    html.ibh-feed #image, html.ibh-feed #gelcomVideoPlayer { max-width: 100% !important; height: auto !important; }
-  `
+  // Built from the options and kept in a <style> of its own, so the panel
+  // switches apply at once instead of on the next load. One column takes the
+  // full screen width; more columns are either masonry (CSS columns, each
+  // image whole, order running down each column) or a grid of even square
+  // tiles (cropped to fill). Automatic fits as many 170px columns as the
+  // screen holds.
+  const FEED_COL_MIN = 170
 
-  // Keeps the class in step with the option (Masonry swaps <html> wholesale).
+  function feedCss() {
+    const cols = CFG.feedColumns
+    const auto = cols === 'auto'
+    const common = `
+      .image-list span.thumb a { display: block !important; position: relative; }
+      .image-list > br { display: none !important; }
+      /* Post page: the image carries width="850" and the video a fixed box. */
+      #image, #gelcomVideoPlayer { max-width: 100% !important; height: auto !important; }`
+    if (!auto && Number(cols) <= 1) return `
+      .image-list { display: flex !important; flex-direction: column !important;
+        flex-wrap: nowrap !important; align-items: stretch !important; gap: 14px !important; }
+      .image-list > span { display: block !important; width: 100% !important; max-width: none !important;
+        height: auto !important; max-height: none !important; }
+      .image-list span.thumb { display: block !important; width: 100vw !important; height: auto !important;
+        max-width: none !important; max-height: none !important; min-height: 0 !important;
+        margin: 0 calc(50% - 50vw) !important; }
+      .image-list span.thumb img { display: block; width: 100% !important; height: auto !important;
+        max-width: none !important; max-height: none !important; }` + common
+    const item = `
+      .image-list > span { display: block !important; width: 100% !important; max-width: none !important;
+        height: auto !important; max-height: none !important; margin: 0 !important; }
+      .image-list span.thumb { display: block !important; width: 100% !important; height: auto !important;
+        max-width: none !important; max-height: none !important; min-height: 0 !important; margin: 0 !important; }`
+    if (CFG.feedLayout === 'grid') return `
+      .image-list { display: grid !important; gap: 6px !important; grid-template-columns: ${auto
+        ? `repeat(auto-fill, minmax(${FEED_COL_MIN}px, 1fr))` : `repeat(${Number(cols)}, minmax(0, 1fr))`} !important; }
+      ${item}
+      .image-list span.thumb img { display: block; width: 100% !important; height: auto !important;
+        aspect-ratio: 1 / 1; object-fit: cover; max-width: none !important; max-height: none !important; }` + common
+    return `
+      .image-list { display: block !important; column-gap: 6px !important;
+        ${auto ? `column-width: ${FEED_COL_MIN}px` : `column-count: ${Number(cols)}`} !important; }
+      ${item}
+      .image-list > span { break-inside: avoid !important; margin-bottom: 6px !important; }
+      .image-list span.thumb img { display: block; width: 100% !important; height: auto !important;
+        max-width: none !important; max-height: none !important; }` + common
+  }
+
+  let feedCssShown = null
+
+  // Keeps the feed's <style> in step with the options; Masonry rewrites
+  // <head>, so it is put back when it goes missing. Unchanged CSS is not
+  // rewritten (this runs on every DOM change).
   function applyFeed() {
-    document.documentElement.classList.toggle('ibh-feed', !!CFG.nativeFeed)
+    const css = CFG.nativeFeed ? feedCss() : ''
+    let style = document.querySelector('style[data-ibh-feed]')
+    if (style && css === feedCssShown) return
+    if (!style) {
+      style = el('style', { 'data-ibh-feed': '1' })
+      ;(document.head || document.documentElement).appendChild(style)
+    }
+    style.textContent = css
+    feedCssShown = css
   }
 
   // The panel switch: the layout changes under the reader, so keep the post
@@ -4160,7 +4214,7 @@
     if (anchor) anchor.scrollIntoView({ block: 'start' })
     if (CFG.nativeFeed) scanThumbs(document)
     ensureFeedNav()
-    info(`one-column feed ${CFG.nativeFeed ? 'on' : 'off'} (switched from the panel)`)
+    info(`feed ${CFG.nativeFeed ? `on: ${CFG.feedColumns} columns, ${CFG.feedLayout}` : 'off'} (switched from the panel)`)
   }
 
   // The modal's look on the site's own pages: dark slate background, light
@@ -4220,7 +4274,7 @@
     if (document.querySelector('style[data-ibh]')) return
     const style = el('style', { 'data-ibh': '1' })
     style.textContent = '.img_detail_cont { touch-action: pan-y; }' + NATIVE_MARK_CSS + THEME_CSS +
-      (CFG.videoScrub ? SCRUB_CSS : '') + FEED_CSS
+      (CFG.videoScrub ? SCRUB_CSS : '')
     ;(document.head || document.documentElement).appendChild(style)
   }
 
@@ -4253,7 +4307,7 @@
   installVideoModal()
   logSnapshot()
   if (CFG.originalThumbs) info('original thumbnails on: visible thumbnails load the full file')
-  if (CFG.nativeFeed) info('one-column feed on: site pages show samples at full width')
+  if (CFG.nativeFeed) info(`feed on: ${CFG.feedColumns} columns, ${CFG.feedLayout}; site pages show samples`)
 
   const boot = () => {
     injectPageCSS()
