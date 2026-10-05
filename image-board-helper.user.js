@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.46.3
+// @version      0.47.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.46.3'
+  const VERSION = '0.47.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -117,6 +117,7 @@
     sortButton:     true,   // ★ button on search listings: add or remove sort:score (needs reload)
     freeButton:     true,   // trash-can button next to them: Free memory & cache in one tap
     laterButton:    true,   // 🕒 button next to them on site pages: the Watch later list
+    favSearch:      true,   // search bar on your own rule34 favorites page, results in the page's own list
     videoModal:     true,   // open posts from site pages in an overlay: video, GIF, image (needs reload)
     rotateLandscape: true,  // in the modal player's fullscreen, lock wide videos to landscape
     modalPreload:   true,   // in the modal, have the next post loaded before the swipe
@@ -190,6 +191,12 @@
       navPrevPage: 'Previous page', navNextPage: 'Next page',
       tSortBtn: 'Sort-by-score button', navSort: 'Sort by score (tap again to undo)',
       tFreeBtn: 'Free-memory shortcut button', navFree: 'Free memory & cache',
+      tFavSearch: 'Search your favorites',
+      favPlaceholder: 'search favorites: tag -tag tag* a ~ b score:>10', favGo: 'Search', favClear: 'Clear',
+      favSortNew: 'Newest', favSortOld: 'Oldest', favSortScore: 'Score', favSortRandom: 'Random',
+      favIndexed: 'favorites indexed', favNever: 'not indexed yet: the first search reads every page',
+      favScanning: 'reading favorites, page', favResults: 'results', favMore: 'Show more',
+      favUpdate: 'Update', favRebuild: 'Rebuild index', favScanFail: 'could not read the favorites page',
       tLaterBtn: 'Watch later button', navLater: 'Watch later', laterTitle: 'Watch later',
       dlBtn: '⬇ Download', dlWait: 'The file is still loading', dlStart: 'Downloading…', dlBusy: 'Already downloading this post', dlDone: 'Downloaded: confirm in Firefox to save',
       dlFail: 'Download failed', dlOpened: 'Opened in a new tab: hold it to save',
@@ -243,6 +250,12 @@
       navPrevPage: 'Página anterior', navNextPage: 'Próxima página',
       tSortBtn: 'Botão ordenar por score', navSort: 'Ordenar por score (toque de novo para desfazer)',
       tFreeBtn: 'Botão de atalho para limpar a memória', navFree: 'Limpar memória e cache',
+      tFavSearch: 'Buscar nos seus favoritos',
+      favPlaceholder: 'buscar nos favoritos: tag -tag tag* a ~ b score:>10', favGo: 'Buscar', favClear: 'Limpar',
+      favSortNew: 'Mais novos', favSortOld: 'Mais antigos', favSortScore: 'Score', favSortRandom: 'Aleatório',
+      favIndexed: 'favoritos no índice', favNever: 'ainda sem índice: a primeira busca lê todas as páginas',
+      favScanning: 'lendo favoritos, página', favResults: 'resultados', favMore: 'Mostrar mais',
+      favUpdate: 'Atualizar', favRebuild: 'Refazer índice', favScanFail: 'não foi possível ler a página de favoritos',
       tLaterBtn: 'Botão Ver depois', navLater: 'Ver depois', laterTitle: 'Ver depois',
       dlBtn: '⬇ Baixar', dlWait: 'O arquivo ainda está carregando', dlStart: 'Baixando…', dlBusy: 'Este post já está baixando', dlDone: 'Baixado: confirme no Firefox para salvar',
       dlFail: 'Falha no download', dlOpened: 'Aberto em outra aba: segure para salvar',
@@ -2566,6 +2579,248 @@
     dbg(`later: list shown, ${list.length} posts`)
   }
 
+  // ── Favorites search ──
+  // A search bar on your own favorites page. An index of every favorite (id,
+  // thumbnail, tags, score) is read once from the favorites pages and kept by
+  // the storage bridge; later visits only read the first pages, until they
+  // reach favorites already known (the site lists the newest first). Results
+  // go into the page's own .image-list as the site's own thumbnails, so the
+  // feed, covers, the modal and its swipe all work on them as on any page.
+  // (Another script with this feature empties the whole page to show its
+  // results and clears localStorage on reset, which broke this one.)
+  const FAV_PAGE = 50          // favorites per page on the site
+  const FAV_SHOW = 60          // results added per step
+  const FAV_GAP_MS = 250       // between page reads, one at a time
+  const FAV_STALE_MS = 10 * 60 * 1000   // the index is refreshed in the background after this
+  let favIndex = null          // { user, updated, items: [[id, thumb, tags, score]] }, newest first
+  let favEntries = null        // the items with their tags split, for searching
+  let favScan = null           // the read in progress
+  let favPage = null           // the page's own list content, put back on Clear
+  let favResults = []
+  let favShown = 0
+
+  async function loadFavIndex() {
+    if (favIndex && favIndex.user === userId()) return favIndex
+    const saved = await storeGet('favs')
+    favIndex = saved && saved.user === userId() ? saved : { user: userId(), updated: 0, items: [] }
+    favEntries = null
+    return favIndex
+  }
+
+  // One page of favorites: ids, thumbnails and tags from the thumbnails, scores
+  // from the page's inline script (posts[ID] = { … score: 'N' }).
+  async function readFavPage(pid) {
+    const res = await fetch(`/index.php?page=favorites&s=view&id=${userId()}&pid=${pid}`, { credentials: 'same-origin' })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const html = await res.text()
+    const scores = new Map()
+    for (const m of html.matchAll(/posts\[(\d+)\]\s*=\s*\{[^}]*?score['"]?\s*:\s*['"]?(-?\d+)/g)) scores.set(m[1], Number(m[2]))
+    const doc = new DOMParser().parseFromString(html, 'text/html')
+    return [...doc.querySelectorAll('.thumb img[src]')].map(img => {
+      const a = img.closest('a')
+      const id = ((a && a.getAttribute('href')) || '').match(/id=(\d+)/)?.[1] || (img.getAttribute('src').split('?')[1] || '')
+      return [id, img.getAttribute('src'), (img.getAttribute('title') || img.getAttribute('alt') || '').trim(), scores.has(id) ? scores.get(id) : null]
+    }).filter(item => /^\d+$/.test(item[0]))
+  }
+
+  // Reads the favorites pages into the index: all of them (full), or only
+  // until a page holds favorites already known.
+  function updateFavIndex(full) {
+    if (favScan) return favScan
+    favScan = (async () => {
+      const idx = await loadFavIndex()
+      const known = new Set(full ? [] : idx.items.map(item => item[0]))
+      const fresh = []
+      try {
+        for (let pid = 0; ; pid += FAV_PAGE) {
+          setFavStatus(`${t('favScanning')} ${pid / FAV_PAGE + 1}…`)
+          let items = null
+          for (let tries = 0; !items; tries++) {
+            try { items = await readFavPage(pid) } catch (e) {
+              if (tries >= 2) throw e
+              await new Promise(r => setTimeout(r, 1000 * (tries + 1)))
+            }
+          }
+          if (!items.length) break
+          const added = items.filter(item => !known.has(item[0]))
+          added.forEach(item => known.add(item[0]))
+          fresh.push(...added)
+          if (!full && added.length < items.length) break   // reached the index
+          await new Promise(r => setTimeout(r, FAV_GAP_MS))
+        }
+      } catch (e) {
+        warn(`favorites: ${t('favScanFail')} — ${describeError(e)}`)
+        setFavStatus(t('favScanFail'))
+        return null
+      } finally {
+        favScan = null
+      }
+      idx.items = full ? fresh : [...fresh, ...idx.items]
+      idx.updated = Date.now()
+      favEntries = null
+      await storeSet('favs', idx)
+      info(`favorites: index ${full ? 'rebuilt' : 'updated'}, ${fresh.length} new, ${idx.items.length} in all`)
+      setFavStatus()
+      return idx
+    })()
+    return favScan
+  }
+
+  // tag, -tag, tag* (wildcard), a ~ b (either), score:>10 (also >=, <, <=, =).
+  function favMatcher(word) {
+    const score = word.match(/^score:(>=|<=|>|<|=)?(-?\d+)$/)
+    if (score) {
+      const n = Number(score[2])
+      const op = score[1] || '>='
+      return e => e.score != null && (op === '>' ? e.score > n : op === '<' ? e.score < n
+        : op === '<=' ? e.score <= n : op === '=' ? e.score === n : e.score >= n)
+    }
+    if (word.includes('*')) {
+      const re = new RegExp(`^${word.split('*').map(part => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*')}$`)
+      return e => e.tags.some(tag => re.test(tag))
+    }
+    return e => e.set.has(word)
+  }
+
+  function favQuery(text) {
+    const words = text.toLowerCase().trim().split(/\s+/).filter(Boolean)
+    const groups = []   // every group must hold: one of `any`, or none of it when negated
+    words.forEach((word, i) => {
+      if (word === '~') return
+      const neg = word.startsWith('-') && word.length > 1
+      const matcher = favMatcher(neg ? word.slice(1) : word)
+      if (!neg && words[i - 1] === '~' && groups.length && !groups[groups.length - 1].neg) groups[groups.length - 1].any.push(matcher)
+      else groups.push({ neg, any: [matcher] })
+    })
+    return e => groups.every(g => g.any.some(m => m(e)) !== g.neg)
+  }
+
+  async function searchFavs() {
+    const bar = document.getElementById('ibh-favsearch')
+    if (!bar) return
+    const text = bar.querySelector('input').value
+    let idx = await loadFavIndex()
+    if (!idx.items.length) idx = (await updateFavIndex(true)) || idx
+    else if (Date.now() - idx.updated > FAV_STALE_MS) idx = (await updateFavIndex(false)) || idx
+    if (!favEntries) {
+      favEntries = idx.items.map(([id, thumb, tags, score]) => {
+        const list = tags.toLowerCase().split(/\s+/)
+        return { item: [id, thumb, tags], tags: list, set: new Set(list), score }
+      })
+    }
+    const match = favQuery(text)
+    let found = favEntries.filter(match)
+    const sort = bar.querySelector('select').value
+    if (sort === 'old') found = found.reverse()
+    else if (sort === 'score') found = [...found].sort((a, b) => (b.score ?? -1e9) - (a.score ?? -1e9))
+    else if (sort === 'random') found = found.map(e => [Math.random(), e]).sort((a, b) => a[0] - b[0]).map(pair => pair[1])
+    showFavResults(found.map(e => e.item))
+    info(`favorites: "${text.trim()}" (${sort}) -> ${found.length} of ${favEntries.length}`)
+  }
+
+  // The site's own thumbnail markup, so every feature treats it like one.
+  function favThumb([id, thumb, tags]) {
+    const span = document.createElement('span')
+    span.className = 'thumb'
+    span.id = `s${id}`
+    const a = document.createElement('a')
+    a.id = `p${id}`
+    a.href = `index.php?page=post&s=view&id=${id}`
+    const img = document.createElement('img')
+    img.src = thumb
+    img.title = img.alt = tags
+    img.className = 'preview'
+    a.appendChild(img)
+    span.appendChild(a)
+    return span
+  }
+
+  function showFavResults(items) {
+    const list = document.querySelector('.image-list')
+    if (!list) return
+    if (!favPage) favPage = [...list.childNodes]   // put back on Clear
+    favResults = items
+    favShown = 0
+    list.replaceChildren()
+    document.querySelectorAll('#paginator, .pagination').forEach(p => { p.style.display = 'none' })
+    showMoreFavs()
+    window.scrollTo({ top: list.getBoundingClientRect().top + window.scrollY - 80 })
+  }
+
+  function showMoreFavs() {
+    const list = document.querySelector('.image-list')
+    if (!list) return
+    const next = favResults.slice(favShown, favShown + FAV_SHOW)
+    list.append(...next.map(favThumb))
+    favShown += next.length
+    const more = document.getElementById('ibh-favmore')
+    more.hidden = favShown >= favResults.length
+    more.textContent = `${t('favMore')} (${favResults.length - favShown})`
+    setFavStatus(`${favResults.length} ${t('favResults')}`)
+  }
+
+  function clearFavSearch() {
+    const list = document.querySelector('.image-list')
+    if (list && favPage) list.replaceChildren(...favPage)
+    favPage = null
+    favResults = []
+    document.querySelectorAll('#paginator, .pagination').forEach(p => { p.style.display = '' })
+    const more = document.getElementById('ibh-favmore')
+    if (more) more.hidden = true
+    const bar = document.getElementById('ibh-favsearch')
+    if (bar) bar.querySelector('input').value = ''
+    setFavStatus()
+  }
+
+  function setFavStatus(text) {
+    const st = document.querySelector('#ibh-favsearch .st')
+    if (!st) return
+    if (text) { st.firstChild.textContent = text; return }
+    const idx = favIndex
+    st.firstChild.textContent = idx && idx.items.length
+      ? `${idx.items.length} ${t('favIndexed')} · ${new Date(idx.updated).toLocaleString(LANG)}`
+      : t('favNever')
+  }
+
+  // Idempotent: the observer calls it on every change of the page.
+  function ensureFavSearch() {
+    const bar = document.getElementById('ibh-favsearch')
+    const want = CFG.favSearch && SITE === 'rule34.xxx' && onOwnFavorites() && !!document.querySelector('.image-list')
+    if (!want) { if (bar) { clearFavSearch(); bar.remove(); document.getElementById('ibh-favmore')?.remove() } return }
+    if (bar) return
+    const list = document.querySelector('.image-list')
+    const input = el('input', { type: 'search', placeholder: t('favPlaceholder'), enterkeyhint: 'search' })
+    input.setAttribute('autocapitalize', 'off')
+    input.setAttribute('autocomplete', 'off')
+    const sort = el('select')
+    for (const [value, label] of [['new', t('favSortNew')], ['old', t('favSortOld')], ['score', t('favSortScore')], ['random', t('favSortRandom')]]) {
+      sort.appendChild(el('option', { value, text: label }))
+    }
+    const go = el('button', { type: 'button', text: t('favGo') })
+    const clear = el('button', { type: 'button', text: t('favClear') })
+    const update = el('a', { href: '#', text: t('favUpdate') })
+    const rebuild = el('a', { href: '#', text: t('favRebuild') })
+    const st = el('div', { class: 'st' }, [document.createTextNode(''), ' · ', update, ' · ', rebuild])
+    const box = el('div', { id: 'ibh-favsearch' }, [input, sort, go, clear, st])
+    list.before(box)
+    const more = el('button', { type: 'button', id: 'ibh-favmore' })
+    more.hidden = true
+    list.after(more)
+    input.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); input.blur(); searchFavs() } })
+    go.addEventListener('click', () => searchFavs())
+    sort.addEventListener('change', () => { if (favPage) searchFavs() })
+    clear.addEventListener('click', () => clearFavSearch())
+    more.addEventListener('click', () => showMoreFavs())
+    update.addEventListener('click', ev => { ev.preventDefault(); updateFavIndex(false) })
+    rebuild.addEventListener('click', ev => { ev.preventDefault(); updateFavIndex(true) })
+    loadFavIndex().then(idx => {
+      setFavStatus()
+      // New favorites since the last visit come in quietly (usually one page).
+      if (idx.items.length && Date.now() - idx.updated > FAV_STALE_MS) updateFavIndex(false)
+    })
+    info('favorites search bar added')
+  }
+
   // The site's thumbnail is small and blurry stretched over a tile. Swap in
   // the sample (images, GIFs: their still) or the full-size poster frame
   // (videos), from the same download slots and URL cache as the page; the
@@ -4228,6 +4483,7 @@
     body.appendChild(toggle('sortButton', t('tSortBtn'), t('noteReload')))
     body.appendChild(toggle('freeButton', t('tFreeBtn'), null, ensureFeedNav))
     body.appendChild(toggle('laterButton', t('tLaterBtn'), null, ensureFeedNav))
+    body.appendChild(toggle('favSearch', t('tFavSearch'), null, ensureFavSearch))
     body.appendChild(toggle('videoModal', t('tModal'), t('noteReload')))
     body.appendChild(toggle('siteTheme', t('tTheme'), null, applySiteTheme))
     body.appendChild(toggle('rotateLandscape', t('tRotate')))
@@ -4660,10 +4916,19 @@
   // stylesheet lacks it (favorites), where the mark is added back.
   const NATIVE_MARK_CSS = '.image-list img.webm-thumb { border: 3px solid rgb(0, 0, 255); box-sizing: border-box; }'
 
+  const FAVSEARCH_CSS = `
+    #ibh-favsearch { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0 12px; }
+    #ibh-favsearch input { flex: 1 1 100%; min-width: 0; padding: 9px 10px; font-size: 15px; box-sizing: border-box; }
+    #ibh-favsearch select, #ibh-favsearch button { padding: 7px 12px; font-size: 14px; }
+    #ibh-favsearch .st { flex: 1 1 100%; font-size: 12px; opacity: .85; }
+    #ibh-favmore { display: block; margin: 14px auto; padding: 9px 18px; font-size: 14px; }
+    #ibh-favmore[hidden] { display: none; }
+  `
+
   function injectPageCSS() {
     if (document.querySelector('style[data-ibh]')) return
     const style = el('style', { 'data-ibh': '1' })
-    style.textContent = '.img_detail_cont { touch-action: pan-y; }' + NATIVE_MARK_CSS + THEME_CSS +
+    style.textContent = '.img_detail_cont { touch-action: pan-y; }' + NATIVE_MARK_CSS + THEME_CSS + FAVSEARCH_CSS +
       (CFG.videoScrub ? SCRUB_CSS : '')
     ;(document.head || document.documentElement).appendChild(style)
   }
@@ -4686,6 +4951,7 @@
     injectPageCSS()
     applySiteTheme()
     applyFeed()
+    ensureFavSearch()
   }).observe(document, { childList: true, subtree: true })
 
   applySharpThumbs()

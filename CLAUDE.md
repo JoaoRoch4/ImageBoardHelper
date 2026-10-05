@@ -24,7 +24,7 @@ Cada uma tem um motivo concreto. Não mude sem entender o custo.
 
 **Painel bilíngue, log em inglês.** A tabela `I18N` traduz só a moldura do painel; as linhas de log ficam em inglês de propósito, porque existem para ser coladas em issues. As duas tabelas de idioma precisam ter exatamente as mesmas chaves — há um teste para isso abaixo. Os rótulos são fixados quando o painel é construído, então trocar de idioma chama `rebuildPanel()`.
 
-**Sem build, sem dependências.** Arquivo único, ES2020, nenhum import. A única exceção é `ibh-storage-bridge.user.js`, uma ponte opcional com `@grant GM_getValue/GM_setValue` que guarda as listas (Ver depois) no Violentmonkey; o principal fala com ela por eventos `ibh-store-request`/`ibh-store-reply` na `window` (JSON em string) e cai para o `localStorage` sem ela. Chave nova de armazenamento entra no `KEYS` da ponte. O Greasy Fork rejeita código ofuscado ou minificado, e o repositório existe para ser auditável.
+**Sem build, sem dependências.** Arquivo único, ES2020, nenhum import. A única exceção é `ibh-storage-bridge.user.js`, uma ponte opcional com `@grant GM_getValue/GM_setValue` que guarda as listas (Ver depois, índice de favoritos) no Violentmonkey; o principal fala com ela por eventos `ibh-store-request`/`ibh-store-reply` na `window` (JSON em string) e cai para o `localStorage` sem ela. Chave nova de armazenamento entra no `KEYS` da ponte. O Greasy Fork rejeita código ofuscado ou minificado, e o repositório existe para ser auditável.
 
 ---
 

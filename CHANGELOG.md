@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.47.0 (bridge 1.4.0)
+
+- Favorites search on your own rule34 favorites page (`favSearch`, on): a
+  search bar with `tag`, `-tag`, `tag*`, `a ~ b` and `score:>10`, sorted by
+  newest, oldest, score or random. An index of every favorite (id,
+  thumbnail, tags, score) is read once from the favorites pages, one page at
+  a time, and kept by the storage bridge; later visits read only the new
+  ones (the site lists the newest first), and Rebuild reads everything
+  again. Results go into the page's own list as the site's thumbnails, so
+  the feed, covers, the modal, its swipe, Watch later and Download work on
+  them; Clear brings the page back. Replaces the "Rule34 Favorites Search"
+  userscript, which empties the page to show its results and clears
+  `localStorage` on reset
+
 ## 0.46.3
 
 - ⬇ Download has a cooldown: while the post downloads the button spins with

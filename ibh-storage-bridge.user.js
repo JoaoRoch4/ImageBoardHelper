@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Image Board Helper — storage bridge
 // @namespace    joao.imageboardhelper
-// @version      1.3.0
-// @description  Keeps Image Board Helper's lists (Watch later) in Violentmonkey's own storage, on the device, and saves files for its Download button
+// @version      1.4.0
+// @description  Keeps Image Board Helper's lists (Watch later, the favorites index) in Violentmonkey's own storage, on the device, and saves files for its Download button
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
 // @downloadURL  https://raw.githubusercontent.com/JoaoRoch4/ImageBoardHelper/main/ibh-storage-bridge.user.js
@@ -28,7 +28,7 @@
 (() => {
   'use strict'
 
-  const KEYS = new Set(['later'])   // what the main script may read and write
+  const KEYS = new Set(['later', 'favs'])   // what the main script may read and write
 
   // Any script on the page can send these events, an ad's included: files
   // come only from the site's own hosts (rule34.xxx, api-cdn.rule34.xxx…).
