@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.45.2
+// @version      0.45.3
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.45.2'
+  const VERSION = '0.45.3'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -2438,9 +2438,23 @@
       return
     }
     const links = list.map(laterLink)
+    if (modal.laterIO) modal.laterIO.disconnect()
+    // Sharp pictures for the tiles that scroll into view (see sharpenTile).
+    modal.laterIO = 'IntersectionObserver' in window
+      ? new IntersectionObserver(entries => {
+          for (const e of entries) {
+            if (!e.isIntersecting) continue
+            modal.laterIO.unobserve(e.target)
+            sharpenTile(e.target)
+          }
+        }, { root: modal.laterView, rootMargin: '300px' })
+      : null
     modal.laterGrid.replaceChildren(...list.map((item, i) => {
       const img = el('img', { src: item.thumb, alt: '' })
       img.loading = 'lazy'
+      img.dataset.tags = item.tags
+      if (item.webm) img.dataset.webm = '1'
+      if (modal.laterIO) modal.laterIO.observe(img)
       const rm = el('button', { class: 'rm', text: '✕', title: t('laterRemoved') })
       const tile = el('div', { class: 'tile' }, [img, rm])
       if (item.webm || /\s(video|mp4|webm|animated|gif)\s/i.test(` ${item.tags} `)) tile.appendChild(el('span', { class: 'play', text: '▶' }))
@@ -2459,6 +2473,41 @@
       return tile
     }))
     dbg(`later: list shown, ${list.length} posts`)
+  }
+
+  // The site's thumbnail is small and blurry stretched over a tile. Swap in
+  // the sample (images, GIFs: their still) or the full-size poster frame
+  // (videos), from the same download slots and URL cache as the page; the
+  // thumbnail stays when there is none.
+  function sharpenTile(img) {
+    const src = img.getAttribute('src')
+    const hash = (thumbParts(src) || {}).hash
+    if (!hash) return
+    const tags = ` ${img.dataset.tags || ''} `
+    const video = !!img.dataset.webm || NATIVE_REAL_VIDEO.test(tags)
+    const kind = video ? 'poster' : 'sample'
+    const cached = cacheGet(kind, hash)
+    if (cached === null) return   // known: nothing better exists
+    const urls = cachedFirst(video ? fileCandidates(src, ['jpg']) : sampleCandidates(src), cached)
+    if (!urls.length) return
+    takeImageSlot(() => {
+      const probe = new Image()
+      probe.decoding = 'async'
+      let i = 0
+      let held = true
+      const release = () => { if (held) { held = false; giveImageSlot() } }
+      probe.onerror = () => {
+        if (i < urls.length) { probe.src = urls[i++]; return }
+        release()
+        cacheSet(kind, hash, null)
+      }
+      probe.onload = () => {
+        release()
+        cacheSet(kind, hash, probe.src, cached)
+        if (img.isConnected) img.src = probe.src   // a tile in our own Shadow DOM: no Imagus to keep happy
+      }
+      probe.src = urls[i++]
+    })
   }
 
   // ── Tags menu ──
@@ -3365,6 +3414,8 @@
     closeMenu()
     modal.listLinks = null
     modal.box.classList.remove('later-mode')
+    if (modal.laterIO) { modal.laterIO.disconnect(); modal.laterIO = null }
+    modal.laterGrid.replaceChildren()   // its decoded pictures go with it
     dropAhead()
     resetMedia()
     modal.host.style.display = 'none'

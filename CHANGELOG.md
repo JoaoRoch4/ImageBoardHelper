@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.45.3
+
+- Sharp pictures in the Watch later grid: tiles scrolling into view swap the
+  small thumbnail for the sample (images, GIFs) or the full-size poster frame
+  (videos), sharing the page's three download slots and URL cache. The grid
+  is emptied when the modal closes, freeing its pictures
+
 ## 0.45.2
 
 - The 🕒 Watch later button moved to the top-right corner, on its own, below
