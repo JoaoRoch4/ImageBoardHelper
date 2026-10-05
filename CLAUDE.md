@@ -68,7 +68,7 @@ Bugs do Masonry que este script contorna:
 10. **E.** Miniatura original e feed nativo — `upgradeToOriginal`, `upgradeCandidates`, `sampleCandidates`, `probeOriginal`, `scanThumbs`
 11. **F.** Prévia de cenas — arraste na miniatura (ou segurar, `scrubMode`: slideshow com dois vídeos em revezamento, `startSlideshow`, `tickSlide`) e prévia na barra do modal: `seekFraction`, `previewLoad`, `previewStop`, `borrowDecoder`, `onScrubDown/Move/Up`
 12. **G.** Gerenciamento de memória — `farViewport`, `releaseFar`, `pinHeight`, `onNodesRemoved`, `onLocationChange`, `releaseAll`
-13. **H.** Modal de post nas páginas do site (vídeo, GIF, imagem, swipe) — `openModal`, `closeModal`, `stepModal`, `showVideo`, `showImage`, `sniffVideo`, `installModalSwipe`, `installImageZoom`, `suspendPage`, `resumePage`
+13. **H.** Modal de post nas páginas do site (vídeo, GIF, imagem, swipe) — `openModal`, `closeModal`, `stepModal`, `showVideo`, `showImage`, `sniffVideo`, `installModalSwipe`, `installImageZoom`, `suspendPage`, `resumePage`; no mesmo bloco: estado de ♥/▲ (`postInfo`, `favoritePost`, `upvotePost`), armazenamento (`bridgeCall`, `storeGet/storeSet`, IndexedDB `idbGet/idbSet`, `restoreCfg`), Baixar (`modalDownload`), Ver depois (`showLater`), favoritar em massa (`onBulkClick`), buscas salvas (`savedControls`), busca nos favoritos (`searchFavs`, `updateFavIndex`), barra de busca do site (`ensureSiteSearch`), autopager dos favoritos (`favPagerNext`) e menu de tags (`renderTags`)
 14. Opcional: `applyRule34ApiUnlock`
 15. Diagnóstico — `probeVideoUrls`, `logSnapshot`, `freeMemory`, `redoThumbs`
 16. Painel — Shadow DOM, `renderStatus`, `copyLog`; botões ★ ⤒ ‹ › (`buildFeedNav`, `jumpPost`, `toggleSortScore`)
