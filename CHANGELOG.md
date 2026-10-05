@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.49.0
+
+- Search bar on the site's listing pages (`siteSearch`, on), with the
+  favorites bar's look: tags, kind (images, videos, GIFs, animated), order
+  (newest or score) and minimum score. It builds the site's own search
+  (`-animated -video -gif`, `video`, `( gif ~ animated_gif )`,
+  `( animated ~ video ~ gif )`, `score:>=N`, `sort:score`) and reads it back
+  from the address, so it always shows the search on screen
+- Favorites search has a minimum score field
+
 ## 0.48.2
 
 - Favorites search filters by kind: all, images, videos, GIFs, or animated

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.48.2
+// @version      0.49.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.48.2'
+  const VERSION = '0.49.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -119,6 +119,7 @@
     laterButton:    true,   // 🕒 button next to them on site pages: the Watch later list
     favSearch:      true,   // search bar on your own rule34 favorites page, results in the page's own list
     favAutopager:   true,   // favorites pages load the next page as you near the bottom
+    siteSearch:     true,   // search bar on the site's listing pages: tags, kind, order, minimum score
     videoModal:     true,   // open posts from site pages in an overlay: video, GIF, image (needs reload)
     rotateLandscape: true,  // in the modal player's fullscreen, lock wide videos to landscape
     modalPreload:   true,   // in the modal, have the next post loaded before the swipe
@@ -198,7 +199,8 @@
       navPrevPage: 'Previous page', navNextPage: 'Next page',
       tSortBtn: 'Sort-by-score button', navSort: 'Sort by score (tap again to undo)',
       tFreeBtn: 'Free-memory shortcut button', navFree: 'Free memory & cache',
-      tFavSearch: 'Search your favorites', tPager: 'Autopager on favorites pages',
+      tFavSearch: 'Search your favorites', tSiteSearch: 'Search bar on site pages',
+      minScore: 'min. score', sitePlaceholder: 'search: tag -tag tag* ( a ~ b )', tPager: 'Autopager on favorites pages',
       pagerLoading: 'Loading the next page…', pagerEnd: 'End of the favorites', pagerFail: 'Could not load the next page — tap to retry',
       favPlaceholder: 'search favorites: tag -tag tag* a ~ b score:>10', favGo: 'Search', favClear: 'Clear',
       favKindAll: 'All types', favKindImage: 'Images', favKindVideo: 'Videos', favKindGif: 'GIFs', favKindAnimated: 'Animated (video or GIF)',
@@ -259,7 +261,8 @@
       navPrevPage: 'Página anterior', navNextPage: 'Próxima página',
       tSortBtn: 'Botão ordenar por score', navSort: 'Ordenar por score (toque de novo para desfazer)',
       tFreeBtn: 'Botão de atalho para limpar a memória', navFree: 'Limpar memória e cache',
-      tFavSearch: 'Buscar nos seus favoritos', tPager: 'Autopager nas páginas de favoritos',
+      tFavSearch: 'Buscar nos seus favoritos', tSiteSearch: 'Barra de busca nas páginas do site',
+      minScore: 'score mín.', sitePlaceholder: 'buscar: tag -tag tag* ( a ~ b )', tPager: 'Autopager nas páginas de favoritos',
       pagerLoading: 'Carregando a próxima página…', pagerEnd: 'Fim dos favoritos', pagerFail: 'Não deu para carregar a próxima página — toque para tentar de novo',
       favPlaceholder: 'buscar nos favoritos: tag -tag tag* a ~ b score:>10', favGo: 'Buscar', favClear: 'Limpar',
       favKindAll: 'Todos os tipos', favKindImage: 'Imagens', favKindVideo: 'Vídeos', favKindGif: 'GIFs', favKindAnimated: 'Animados (vídeo ou GIF)',
@@ -2816,13 +2819,14 @@
     const match = favQuery(text)
     const kind = bar.querySelector('select.kind').value
     const ofKind = e => kind === 'all' || (kind === 'image' ? !e.animated : e[kind])
-    let found = favEntries.filter(e => ofKind(e) && match(e))
+    const min = Number(bar.querySelector('input.min').value) || 0
+    let found = favEntries.filter(e => ofKind(e) && (!min || (e.score != null && e.score >= min)) && match(e))
     const sort = bar.querySelector('select.sort').value
     if (sort === 'old') found = found.reverse()
     else if (sort === 'score') found = [...found].sort((a, b) => (b.score ?? -1e9) - (a.score ?? -1e9))
     else if (sort === 'random') found = found.map(e => [Math.random(), e]).sort((a, b) => a[0] - b[0]).map(pair => pair[1])
     showFavResults(found.map(e => e.item))
-    info(`favorites: "${text.trim()}" (${kind}, ${sort}) -> ${found.length} of ${favEntries.length}`)
+    info(`favorites: "${text.trim()}" (${kind}, ${sort}${min ? `, score >= ${min}` : ''}) -> ${found.length} of ${favEntries.length}`)
   }
 
   // The site's own thumbnail markup, so every feature treats it like one.
@@ -2899,21 +2903,18 @@
     const input = el('input', { type: 'search', placeholder: t('favPlaceholder'), enterkeyhint: 'search' })
     input.setAttribute('autocapitalize', 'off')
     input.setAttribute('autocomplete', 'off')
-    const kind = el('select', { class: 'kind' })
-    for (const [value, label] of [['all', t('favKindAll')], ['image', t('favKindImage')], ['video', t('favKindVideo')],
-      ['gif', t('favKindGif')], ['animated', t('favKindAnimated')]]) {
-      kind.appendChild(el('option', { value, text: label }))
-    }
+    const kind = kindSelect()
     const sort = el('select', { class: 'sort' })
     for (const [value, label] of [['new', t('favSortNew')], ['old', t('favSortOld')], ['score', t('favSortScore')], ['random', t('favSortRandom')]]) {
       sort.appendChild(el('option', { value, text: label }))
     }
+    const min = minScoreInput()
     const go = el('button', { type: 'button', text: t('favGo') })
     const clear = el('button', { type: 'button', text: t('favClear') })
     const update = el('a', { href: '#', text: t('favUpdate') })
     const rebuild = el('a', { href: '#', text: t('favRebuild') })
     const st = el('div', { class: 'st' }, [document.createTextNode(''), ' · ', update, ' · ', rebuild])
-    const box = el('div', { id: 'ibh-favsearch' }, [input, kind, sort, go, clear, st])
+    const box = el('div', { id: 'ibh-favsearch', class: 'ibh-search' }, [input, kind, sort, min, go, clear, st])
     list.before(box)
     const more = el('button', { type: 'button', id: 'ibh-favmore' })
     more.hidden = true
@@ -2922,6 +2923,8 @@
     go.addEventListener('click', () => searchFavs())
     sort.addEventListener('change', () => { if (favPage) searchFavs() })
     kind.addEventListener('change', () => searchFavs())   // a kind alone is a search: every video, every GIF…
+    min.addEventListener('change', () => searchFavs())
+    min.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); min.blur() } })
     clear.addEventListener('click', () => clearFavSearch())
     more.addEventListener('click', () => showMoreFavs())
     update.addEventListener('click', ev => { ev.preventDefault(); updateFavIndex(false) })
@@ -2932,6 +2935,86 @@
       if (idx.items.length && Date.now() - idx.updated > FAV_STALE_MS) updateFavIndex(false)
     })
     info('favorites search bar added')
+  }
+
+  function minScoreInput() {
+    const min = el('input', { class: 'min', type: 'number', min: '0', step: '1', inputmode: 'numeric', placeholder: t('minScore') })
+    min.title = t('minScore')
+    return min
+  }
+
+  function kindSelect() {
+    const kind = el('select', { class: 'kind' })
+    for (const [value, label] of [['all', t('favKindAll')], ['image', t('favKindImage')], ['video', t('favKindVideo')],
+      ['gif', t('favKindGif')], ['animated', t('favKindAnimated')]]) {
+      kind.appendChild(el('option', { value, text: label }))
+    }
+    return kind
+  }
+
+  // ── Search bar on site pages ──
+  // The favorites bar's look on the site's listing pages, built on the site's
+  // own search: the kind becomes tags, the minimum score score:>=N, the order
+  // sort:score, and the bar reads them back from the address, so it always
+  // shows the search on screen.
+  const KIND_QUERY = {
+    image: '-animated -video -gif',
+    video: 'video',
+    gif: '( gif ~ animated_gif )',
+    animated: '( animated ~ video ~ gif )',
+  }
+
+  function readSiteQuery(tags) {
+    let rest = ` ${tags.trim().replace(/\s+/g, ' ')} `
+    let kind = 'all'
+    for (const [k, q] of Object.entries(KIND_QUERY)) {
+      if (rest.includes(` ${q} `)) { kind = k; rest = rest.replace(` ${q} `, ' '); break }
+    }
+    let sort = 'new'
+    rest = rest.replace(/ sort:score(?::desc)? /i, () => { sort = 'score'; return ' ' })
+    let min = ''
+    rest = rest.replace(/ score:>=?(\d+) /i, (m, n) => { min = n; return ' ' })
+    return { rest: rest.trim(), kind, sort, min }
+  }
+
+  function siteQuery({ rest, kind, sort, min }) {
+    return [rest, KIND_QUERY[kind] || '', min ? `score:>=${min}` : '', sort === 'score' ? 'sort:score' : '']
+      .filter(Boolean).join(' ')
+  }
+
+  // Idempotent: the observer calls it on every change of the page.
+  function ensureSiteSearch() {
+    const bar = document.getElementById('ibh-sitesearch')
+    const want = CFG.siteSearch && !onFavoritesPage() && !document.querySelector('.v-application') &&
+      new URLSearchParams(location.search).get('page') === 'post' && !!document.querySelector('.image-list')
+    if (!want) { if (bar) bar.remove(); return }
+    if (bar) return
+    const now = readSiteQuery(new URLSearchParams(location.search).get('tags') || '')
+    const input = el('input', { type: 'search', placeholder: t('sitePlaceholder'), enterkeyhint: 'search' })
+    input.setAttribute('autocapitalize', 'off')
+    input.setAttribute('autocomplete', 'off')
+    input.value = now.rest === 'all' ? '' : now.rest
+    const kind = kindSelect()
+    kind.value = now.kind
+    const sort = el('select', { class: 'sort' })
+    for (const [value, label] of [['new', t('favSortNew')], ['score', t('favSortScore')]]) sort.appendChild(el('option', { value, text: label }))
+    sort.value = now.sort
+    const min = minScoreInput()
+    min.value = now.min
+    const go = el('button', { type: 'button', text: t('favGo') })
+    const box = el('div', { id: 'ibh-sitesearch', class: 'ibh-search' }, [input, kind, sort, min, go])
+    document.querySelector('.image-list').before(box)
+    const submit = () => {
+      const q = siteQuery({ rest: input.value, kind: kind.value, sort: sort.value, min: min.value })
+      info(`site search: ${q || 'all'}`)
+      location.href = `index.php?page=post&s=list&tags=${encodeURIComponent(q || 'all').replace(/%20/g, '+')}`
+    }
+    input.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); submit() } })
+    min.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); submit() } })
+    go.addEventListener('click', submit)
+    kind.addEventListener('change', submit)
+    sort.addEventListener('change', submit)
+    dbg('site search bar added')
   }
 
   // ── Autopager on favorites pages ──
@@ -4667,6 +4750,7 @@
     body.appendChild(toggle('laterButton', t('tLaterBtn'), null, ensureFeedNav))
     body.appendChild(toggle('favSearch', t('tFavSearch'), null, ensureFavSearch))
     body.appendChild(toggle('favAutopager', t('tPager'), null, ensureFavPager))
+    body.appendChild(toggle('siteSearch', t('tSiteSearch'), null, ensureSiteSearch))
     body.appendChild(toggle('videoModal', t('tModal'), t('noteReload')))
     body.appendChild(toggle('siteTheme', t('tTheme'), null, applySiteTheme))
     body.appendChild(toggle('rotateLandscape', t('tRotate')))
@@ -5100,10 +5184,11 @@
   const NATIVE_MARK_CSS = '.image-list img.webm-thumb { border: 3px solid rgb(0, 0, 255); box-sizing: border-box; }'
 
   const FAVSEARCH_CSS = `
-    #ibh-favsearch { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0 12px; }
-    #ibh-favsearch input { flex: 1 1 100%; min-width: 0; padding: 9px 10px; font-size: 15px; box-sizing: border-box; }
-    #ibh-favsearch select, #ibh-favsearch button { padding: 7px 12px; font-size: 14px; }
-    #ibh-favsearch .st { flex: 1 1 100%; font-size: 12px; opacity: .85; }
+    .ibh-search { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0 12px; }
+    .ibh-search input[type="search"] { flex: 1 1 100%; min-width: 0; padding: 9px 10px; font-size: 15px; box-sizing: border-box; }
+    .ibh-search input.min { width: 96px; padding: 7px 8px; font-size: 14px; box-sizing: border-box; }
+    .ibh-search select, .ibh-search button { padding: 7px 12px; font-size: 14px; }
+    .ibh-search .st { flex: 1 1 100%; font-size: 12px; opacity: .85; }
     #ibh-favmore { display: block; margin: 14px auto; padding: 9px 18px; font-size: 14px; }
     #ibh-favmore[hidden] { display: none; }
     #ibh-pager { min-height: 1px; padding: 14px 0; text-align: center; font-size: 13px; opacity: .85; }
@@ -5137,6 +5222,7 @@
     applyFeed()
     ensureFavSearch()
     ensureFavPager()
+    ensureSiteSearch()
   }).observe(document, { childList: true, subtree: true })
 
   applySharpThumbs()
