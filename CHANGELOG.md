@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.48.2
+
+- Favorites search filters by kind: all, images, videos, GIFs, or animated
+  (video or GIF), read from the tags in the index. Picking a kind searches at
+  once, so a kind alone lists every video or every GIF in your favorites
+
 ## 0.48.1
 
 - The favorites search bar and the autopager show up: building the bar's

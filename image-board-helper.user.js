@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.48.1
+// @version      0.48.2
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.48.1'
+  const VERSION = '0.48.2'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -201,6 +201,7 @@
       tFavSearch: 'Search your favorites', tPager: 'Autopager on favorites pages',
       pagerLoading: 'Loading the next page…', pagerEnd: 'End of the favorites', pagerFail: 'Could not load the next page — tap to retry',
       favPlaceholder: 'search favorites: tag -tag tag* a ~ b score:>10', favGo: 'Search', favClear: 'Clear',
+      favKindAll: 'All types', favKindImage: 'Images', favKindVideo: 'Videos', favKindGif: 'GIFs', favKindAnimated: 'Animated (video or GIF)',
       favSortNew: 'Newest', favSortOld: 'Oldest', favSortScore: 'Score', favSortRandom: 'Random',
       favIndexed: 'favorites indexed', favNever: 'not indexed yet: the first search reads every page',
       favScanning: 'reading favorites, page', favResults: 'results', favMore: 'Show more',
@@ -261,6 +262,7 @@
       tFavSearch: 'Buscar nos seus favoritos', tPager: 'Autopager nas páginas de favoritos',
       pagerLoading: 'Carregando a próxima página…', pagerEnd: 'Fim dos favoritos', pagerFail: 'Não deu para carregar a próxima página — toque para tentar de novo',
       favPlaceholder: 'buscar nos favoritos: tag -tag tag* a ~ b score:>10', favGo: 'Buscar', favClear: 'Limpar',
+      favKindAll: 'Todos os tipos', favKindImage: 'Imagens', favKindVideo: 'Vídeos', favKindGif: 'GIFs', favKindAnimated: 'Animados (vídeo ou GIF)',
       favSortNew: 'Mais novos', favSortOld: 'Mais antigos', favSortScore: 'Score', favSortRandom: 'Aleatório',
       favIndexed: 'favoritos no índice', favNever: 'ainda sem índice: a primeira busca lê todas as páginas',
       favScanning: 'lendo favoritos, página', favResults: 'resultados', favMore: 'Mostrar mais',
@@ -2802,17 +2804,25 @@
     if (!favEntries) {
       favEntries = idx.items.map(([id, thumb, tags, score]) => {
         const list = tags.toLowerCase().split(/\s+/)
-        return { item: [id, thumb, tags], tags: list, set: new Set(list), score }
+        // The kind, from the tags as the covers read it (an untagged video
+        // passes for an image here too).
+        const spaced = ` ${tags} `
+        const video = NATIVE_REAL_VIDEO.test(spaced)
+        const gif = NATIVE_GIF.test(spaced)
+        const animated = video || gif || /\sanimated\s/i.test(spaced)
+        return { item: [id, thumb, tags], tags: list, set: new Set(list), score, video, gif, animated }
       })
     }
     const match = favQuery(text)
-    let found = favEntries.filter(match)
-    const sort = bar.querySelector('select').value
+    const kind = bar.querySelector('select.kind').value
+    const ofKind = e => kind === 'all' || (kind === 'image' ? !e.animated : e[kind])
+    let found = favEntries.filter(e => ofKind(e) && match(e))
+    const sort = bar.querySelector('select.sort').value
     if (sort === 'old') found = found.reverse()
     else if (sort === 'score') found = [...found].sort((a, b) => (b.score ?? -1e9) - (a.score ?? -1e9))
     else if (sort === 'random') found = found.map(e => [Math.random(), e]).sort((a, b) => a[0] - b[0]).map(pair => pair[1])
     showFavResults(found.map(e => e.item))
-    info(`favorites: "${text.trim()}" (${sort}) -> ${found.length} of ${favEntries.length}`)
+    info(`favorites: "${text.trim()}" (${kind}, ${sort}) -> ${found.length} of ${favEntries.length}`)
   }
 
   // The site's own thumbnail markup, so every feature treats it like one.
@@ -2889,7 +2899,12 @@
     const input = el('input', { type: 'search', placeholder: t('favPlaceholder'), enterkeyhint: 'search' })
     input.setAttribute('autocapitalize', 'off')
     input.setAttribute('autocomplete', 'off')
-    const sort = el('select')
+    const kind = el('select', { class: 'kind' })
+    for (const [value, label] of [['all', t('favKindAll')], ['image', t('favKindImage')], ['video', t('favKindVideo')],
+      ['gif', t('favKindGif')], ['animated', t('favKindAnimated')]]) {
+      kind.appendChild(el('option', { value, text: label }))
+    }
+    const sort = el('select', { class: 'sort' })
     for (const [value, label] of [['new', t('favSortNew')], ['old', t('favSortOld')], ['score', t('favSortScore')], ['random', t('favSortRandom')]]) {
       sort.appendChild(el('option', { value, text: label }))
     }
@@ -2898,7 +2913,7 @@
     const update = el('a', { href: '#', text: t('favUpdate') })
     const rebuild = el('a', { href: '#', text: t('favRebuild') })
     const st = el('div', { class: 'st' }, [document.createTextNode(''), ' · ', update, ' · ', rebuild])
-    const box = el('div', { id: 'ibh-favsearch' }, [input, sort, go, clear, st])
+    const box = el('div', { id: 'ibh-favsearch' }, [input, kind, sort, go, clear, st])
     list.before(box)
     const more = el('button', { type: 'button', id: 'ibh-favmore' })
     more.hidden = true
@@ -2906,6 +2921,7 @@
     input.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); input.blur(); searchFavs() } })
     go.addEventListener('click', () => searchFavs())
     sort.addEventListener('change', () => { if (favPage) searchFavs() })
+    kind.addEventListener('change', () => searchFavs())   // a kind alone is a search: every video, every GIF…
     clear.addEventListener('click', () => clearFavSearch())
     more.addEventListener('click', () => showMoreFavs())
     update.addEventListener('click', ev => { ev.preventDefault(); updateFavIndex(false) })
