@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.47.2
+// @version      0.48.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.47.2'
+  const VERSION = '0.48.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -118,6 +118,7 @@
     freeButton:     true,   // trash-can button next to them: Free memory & cache in one tap
     laterButton:    true,   // 🕒 button next to them on site pages: the Watch later list
     favSearch:      true,   // search bar on your own rule34 favorites page, results in the page's own list
+    favAutopager:   true,   // favorites pages load the next page as you near the bottom
     videoModal:     true,   // open posts from site pages in an overlay: video, GIF, image (needs reload)
     rotateLandscape: true,  // in the modal player's fullscreen, lock wide videos to landscape
     modalPreload:   true,   // in the modal, have the next post loaded before the swipe
@@ -197,7 +198,8 @@
       navPrevPage: 'Previous page', navNextPage: 'Next page',
       tSortBtn: 'Sort-by-score button', navSort: 'Sort by score (tap again to undo)',
       tFreeBtn: 'Free-memory shortcut button', navFree: 'Free memory & cache',
-      tFavSearch: 'Search your favorites',
+      tFavSearch: 'Search your favorites', tPager: 'Autopager on favorites pages',
+      pagerLoading: 'Loading the next page…', pagerEnd: 'End of the favorites', pagerFail: 'Could not load the next page — tap to retry',
       favPlaceholder: 'search favorites: tag -tag tag* a ~ b score:>10', favGo: 'Search', favClear: 'Clear',
       favSortNew: 'Newest', favSortOld: 'Oldest', favSortScore: 'Score', favSortRandom: 'Random',
       favIndexed: 'favorites indexed', favNever: 'not indexed yet: the first search reads every page',
@@ -256,7 +258,8 @@
       navPrevPage: 'Página anterior', navNextPage: 'Próxima página',
       tSortBtn: 'Botão ordenar por score', navSort: 'Ordenar por score (toque de novo para desfazer)',
       tFreeBtn: 'Botão de atalho para limpar a memória', navFree: 'Limpar memória e cache',
-      tFavSearch: 'Buscar nos seus favoritos',
+      tFavSearch: 'Buscar nos seus favoritos', tPager: 'Autopager nas páginas de favoritos',
+      pagerLoading: 'Carregando a próxima página…', pagerEnd: 'Fim dos favoritos', pagerFail: 'Não deu para carregar a próxima página — toque para tentar de novo',
       favPlaceholder: 'buscar nos favoritos: tag -tag tag* a ~ b score:>10', favGo: 'Buscar', favClear: 'Limpar',
       favSortNew: 'Mais novos', favSortOld: 'Mais antigos', favSortScore: 'Score', favSortRandom: 'Aleatório',
       favIndexed: 'favoritos no índice', favNever: 'ainda sem índice: a primeira busca lê todas as páginas',
@@ -2915,6 +2918,73 @@
     info('favorites search bar added')
   }
 
+  // ── Autopager on favorites pages ──
+  // The favorites paginator navigates from onclick handlers, with no real
+  // href, so autopager extensions find no next page there. The address is
+  // plain, though (pid steps by 50): fetch the next page as the bottom nears
+  // and append its thumbnails, the site's own nodes, to the list. The
+  // observer treats them like any thumbnail (covers, feed, modal and swipe).
+  let pager = null   // { user, next, busy, done, io, sentinel }
+
+  const onFavoritesPage = () => {
+    const q = new URLSearchParams(location.search)
+    return q.get('page') === 'favorites' && q.get('s') === 'view' && !!q.get('id')
+  }
+
+  // Idempotent: the observer calls it on every change of the page.
+  function ensureFavPager() {
+    const want = CFG.favAutopager && onFavoritesPage() && !!document.querySelector('.image-list')
+    if (!want) {
+      if (pager) { pager.io.disconnect(); pager.sentinel.remove(); pager = null }
+      return
+    }
+    if (pager && pager.sentinel.isConnected) return
+    const q = new URLSearchParams(location.search)
+    const sentinel = el('div', { id: 'ibh-pager' })
+    ;(document.getElementById('ibh-favmore') || document.querySelector('.image-list')).after(sentinel)
+    sentinel.addEventListener('click', () => { if (pager && !pager.done) favPagerNext() })   // retry after a failure
+    pager = { user: q.get('id'), next: Number(q.get('pid') || 0) + FAV_PAGE, busy: false, done: false, sentinel }
+    pager.io = new IntersectionObserver(entries => {
+      if (entries.some(e => e.isIntersecting)) favPagerNext()
+    }, { rootMargin: '1500px 0px' })
+    pager.io.observe(sentinel)
+    dbg('autopager: watching the bottom of the favorites page')
+  }
+
+  async function favPagerNext() {
+    const p = pager
+    // favPage: search results are on show, not the favorites pages.
+    if (!p || p.busy || p.done || favPage) return
+    p.busy = true
+    p.sentinel.textContent = t('pagerLoading')
+    try {
+      const res = await fetch(`/index.php?page=favorites&s=view&id=${encodeURIComponent(p.user)}&pid=${p.next}`, { credentials: 'same-origin' })
+      if (!res.ok) throw new Error(`HTTP ${res.status}`)
+      const doc = new DOMParser().parseFromString(await res.text(), 'text/html')
+      const src = doc.querySelector('.image-list')
+      const items = src ? [...src.children].filter(node => node.querySelector && node.querySelector('img')) : []
+      const list = document.querySelector('.image-list')
+      if (!items.length || !list) {
+        p.done = true
+        p.sentinel.textContent = t('pagerEnd')
+        info(`autopager: end of the favorites at pid ${p.next}`)
+        return
+      }
+      list.append(...items.map(node => document.adoptNode(node)))
+      info(`autopager: favorites page ${p.next / FAV_PAGE + 1} added (${items.length} posts)`)
+      p.next += FAV_PAGE
+      p.sentinel.textContent = ''
+    } catch (e) {
+      warn(`autopager: next favorites page failed — ${describeError(e)}`)
+      p.sentinel.textContent = t('pagerFail')
+      return
+    } finally {
+      p.busy = false
+    }
+    // Still near the bottom (a short page): the observer will not fire again.
+    if (p.sentinel.getBoundingClientRect().top < window.innerHeight + 1500) setTimeout(favPagerNext, 300)
+  }
+
   // The site's thumbnail is small and blurry stretched over a tile. Swap in
   // the sample (images, GIFs: their still) or the full-size poster frame
   // (videos), from the same download slots and URL cache as the page; the
@@ -3921,6 +3991,7 @@
     const list = modalLinks()
     const target = list[list.indexOf(modal.link) + dir]
     if (!target) return
+    if (!modal.listLinks && dir > 0 && list.indexOf(target) >= list.length - 3) favPagerNext()   // see the autopager
     modal.dir = dir   // the preload follows the direction of travel
     openModal(target)
     // The page follows underneath, so far down the list it is already there
@@ -4578,6 +4649,7 @@
     body.appendChild(toggle('freeButton', t('tFreeBtn'), null, ensureFeedNav))
     body.appendChild(toggle('laterButton', t('tLaterBtn'), null, ensureFeedNav))
     body.appendChild(toggle('favSearch', t('tFavSearch'), null, ensureFavSearch))
+    body.appendChild(toggle('favAutopager', t('tPager'), null, ensureFavPager))
     body.appendChild(toggle('videoModal', t('tModal'), t('noteReload')))
     body.appendChild(toggle('siteTheme', t('tTheme'), null, applySiteTheme))
     body.appendChild(toggle('rotateLandscape', t('tRotate')))
@@ -5017,6 +5089,7 @@
     #ibh-favsearch .st { flex: 1 1 100%; font-size: 12px; opacity: .85; }
     #ibh-favmore { display: block; margin: 14px auto; padding: 9px 18px; font-size: 14px; }
     #ibh-favmore[hidden] { display: none; }
+    #ibh-pager { min-height: 1px; padding: 14px 0; text-align: center; font-size: 13px; opacity: .85; }
   `
 
   function injectPageCSS() {
@@ -5046,6 +5119,7 @@
     applySiteTheme()
     applyFeed()
     ensureFavSearch()
+    ensureFavPager()
   }).observe(document, { childList: true, subtree: true })
 
   applySharpThumbs()

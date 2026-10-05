@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.48.0
+
+- Autopager on favorites pages (`favAutopager`, on): the next page loads as
+  the bottom nears and its thumbnails join the list, so covers, the feed,
+  the modal and its swipe carry on through them (the swipe pulls the next
+  page in three posts before the end). Autopager extensions fail there
+  because the favorites paginator navigates from `onclick`, with no real
+  link. Any user's favorites; paused while search results are on show
+
 ## 0.47.2
 
 - The settings copy no longer needs the storage bridge: it lives in the
