@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper — storage bridge
 // @namespace    joao.imageboardhelper
-// @version      1.5.0
+// @version      1.6.0
 // @description  Keeps Image Board Helper's lists (Watch later, the favorites index) and a copy of its settings in Violentmonkey's own storage, on the device, and saves files for its Download button
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -28,7 +28,7 @@
 (() => {
   'use strict'
 
-  const KEYS = new Set(['later', 'favs', 'cfg'])   // what the main script may read and write
+  const KEYS = new Set(['later', 'favs', 'cfg', 'searches'])   // what the main script may read and write
 
   // Any script on the page can send these events, an ad's included: files
   // come only from the site's own hosts (rule34.xxx, api-cdn.rule34.xxx…).

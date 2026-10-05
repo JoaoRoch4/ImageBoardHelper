@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.49.0
+// @version      0.50.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.49.0'
+  const VERSION = '0.50.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -200,6 +200,7 @@
       tSortBtn: 'Sort-by-score button', navSort: 'Sort by score (tap again to undo)',
       tFreeBtn: 'Free-memory shortcut button', navFree: 'Free memory & cache',
       tFavSearch: 'Search your favorites', tSiteSearch: 'Search bar on site pages',
+      savedPick: 'Saved searches…', saveSearch: '☆ Save', savedSearch: '★ Saved', savedAll: '(everything)',
       minScore: 'min. score', sitePlaceholder: 'search: tag -tag tag* ( a ~ b )', tPager: 'Autopager on favorites pages',
       pagerLoading: 'Loading the next page…', pagerEnd: 'End of the favorites', pagerFail: 'Could not load the next page — tap to retry',
       favPlaceholder: 'search favorites: tag -tag tag* a ~ b score:>10', favGo: 'Search', favClear: 'Clear',
@@ -262,6 +263,7 @@
       tSortBtn: 'Botão ordenar por score', navSort: 'Ordenar por score (toque de novo para desfazer)',
       tFreeBtn: 'Botão de atalho para limpar a memória', navFree: 'Limpar memória e cache',
       tFavSearch: 'Buscar nos seus favoritos', tSiteSearch: 'Barra de busca nas páginas do site',
+      savedPick: 'Buscas salvas…', saveSearch: '☆ Salvar', savedSearch: '★ Salva', savedAll: '(tudo)',
       minScore: 'score mín.', sitePlaceholder: 'buscar: tag -tag tag* ( a ~ b )', tPager: 'Autopager nas páginas de favoritos',
       pagerLoading: 'Carregando a próxima página…', pagerEnd: 'Fim dos favoritos', pagerFail: 'Não deu para carregar a próxima página — toque para tentar de novo',
       favPlaceholder: 'buscar nos favoritos: tag -tag tag* a ~ b score:>10', favGo: 'Buscar', favClear: 'Limpar',
@@ -2700,6 +2702,17 @@
   let favPage = null           // the page's own list content, put back on Clear
   let favResults = []
   let favShown = 0
+  let favBarSync = null        // refreshes the ☆ button of the favorites bar
+
+  // The favorites bar's search, remembered for the next visit (active: shown).
+  async function rememberFavSearch(active) {
+    const bar = document.getElementById('ibh-favsearch')
+    if (!bar) return
+    const store = await searchStore()
+    store.favLast = { text: bar.querySelector('input[type="search"]').value, kind: bar.querySelector('select.kind').value,
+      sort: bar.querySelector('select.sort').value, min: bar.querySelector('input.min').value, active }
+    await storeSet('searches', store)
+  }
 
   async function loadFavIndex() {
     if (favIndex && favIndex.user === userId()) return favIndex
@@ -2826,6 +2839,8 @@
     else if (sort === 'score') found = [...found].sort((a, b) => (b.score ?? -1e9) - (a.score ?? -1e9))
     else if (sort === 'random') found = found.map(e => [Math.random(), e]).sort((a, b) => a[0] - b[0]).map(pair => pair[1])
     showFavResults(found.map(e => e.item))
+    rememberFavSearch(true)
+    if (favBarSync) favBarSync()
     info(`favorites: "${text.trim()}" (${kind}, ${sort}${min ? `, score >= ${min}` : ''}) -> ${found.length} of ${favEntries.length}`)
   }
 
@@ -2880,6 +2895,8 @@
     if (more) more.hidden = true
     const bar = document.getElementById('ibh-favsearch')
     if (bar) bar.querySelector('input').value = ''
+    rememberFavSearch(false)
+    if (favBarSync) favBarSync()
     setFavStatus()
   }
 
@@ -2914,7 +2931,13 @@
     const update = el('a', { href: '#', text: t('favUpdate') })
     const rebuild = el('a', { href: '#', text: t('favRebuild') })
     const st = el('div', { class: 'st' }, [document.createTextNode(''), ' · ', update, ' · ', rebuild])
-    const box = el('div', { id: 'ibh-favsearch', class: 'ibh-search' }, [input, kind, sort, min, go, clear, st])
+    const read = () => ({ where: 'fav', text: input.value, kind: kind.value, sort: sort.value, min: min.value })
+    const saved = savedControls('fav', read, q => {
+      input.value = q.text; kind.value = q.kind; sort.value = q.sort; min.value = q.min || ''
+      searchFavs()
+    })
+    const box = el('div', { id: 'ibh-favsearch', class: 'ibh-search' }, [input, kind, sort, min, go, clear, saved.star, saved.pick, st])
+    favBarSync = saved.sync
     list.before(box)
     const more = el('button', { type: 'button', id: 'ibh-favmore' })
     more.hidden = true
@@ -2929,6 +2952,16 @@
     more.addEventListener('click', () => showMoreFavs())
     update.addEventListener('click', ev => { ev.preventDefault(); updateFavIndex(false) })
     rebuild.addEventListener('click', ev => { ev.preventDefault(); updateFavIndex(true) })
+    input.addEventListener('input', saved.sync)
+    min.addEventListener('input', saved.sync)
+    // The last search comes back, results included, until Clear.
+    searchStore().then(store => {
+      const last = store.favLast
+      if (!last || !last.active || !document.getElementById('ibh-favsearch')) return
+      input.value = last.text || ''; kind.value = last.kind || 'all'; sort.value = last.sort || 'new'; min.value = last.min || ''
+      saved.sync()
+      searchFavs()
+    })
     loadFavIndex().then(idx => {
       setFavStatus()
       // New favorites since the last visit come in quietly (usually one page).
@@ -2950,6 +2983,61 @@
       kind.appendChild(el('option', { value, text: label }))
     }
     return kind
+  }
+
+  // ── Saved searches ──
+  // Both bars keep their searches (text, kind, order, minimum score) in the
+  // same storage as the lists, and the favorites bar its last search, shown
+  // again on the next visit until Clear. Stored as { saved: [], favLast }.
+  async function searchStore() {
+    const v = await storeGet('searches')
+    return v && typeof v === 'object' && !Array.isArray(v) ? { saved: v.saved || [], favLast: v.favLast || null } : { saved: [], favLast: null }
+  }
+
+  const searchKey = q => [q.where, q.text.trim().replace(/\s+/g, ' '), q.kind, q.sort, String(q.min || '')].join('|')
+
+  function searchLabel(q) {
+    const kinds = { image: t('favKindImage'), video: t('favKindVideo'), gif: t('favKindGif'), animated: t('favKindAnimated') }
+    return [q.text.trim() || t('savedAll'), kinds[q.kind], q.min ? `≥ ${q.min}` : '', q.sort === 'score' ? t('favSortScore') : '']
+      .filter(Boolean).join(' · ')
+  }
+
+  // The pick list and the ☆ button for a bar: read() gives its search,
+  // apply() fills it in and runs it.
+  function savedControls(where, read, apply) {
+    const pick = el('select', { class: 'saved' })
+    const star = el('button', { type: 'button', class: 'star' })
+    let saved = []
+    const sync = () => {
+      const on = saved.some(q => searchKey(q) === searchKey(read()))
+      star.textContent = t(on ? 'savedSearch' : 'saveSearch')
+      star.classList.toggle('on', on)
+    }
+    const fill = () => {
+      const mine = saved.filter(q => q.where === where)
+      pick.replaceChildren(el('option', { value: '', text: t('savedPick') }), ...mine.map((q, i) => el('option', { value: String(i), text: searchLabel(q) })))
+      pick.hidden = !mine.length
+      sync()
+    }
+    const reload = async () => { saved = (await searchStore()).saved; fill() }
+    pick.addEventListener('change', () => {
+      const q = saved.filter(other => other.where === where)[Number(pick.value)]
+      pick.value = ''
+      if (q) apply(q)
+    })
+    star.addEventListener('click', async () => {
+      const store = await searchStore()
+      const q = read()
+      const i = store.saved.findIndex(other => searchKey(other) === searchKey(q))
+      if (i >= 0) store.saved.splice(i, 1)
+      else store.saved.unshift(q)
+      await storeSet('searches', store)
+      info(`search ${i >= 0 ? 'removed from' : 'saved in'} the ${where} list: ${searchLabel(q)}`)
+      saved = store.saved
+      fill()
+    })
+    reload()
+    return { pick, star, sync }
   }
 
   // ── Search bar on site pages ──
@@ -3002,8 +3090,15 @@
     const min = minScoreInput()
     min.value = now.min
     const go = el('button', { type: 'button', text: t('favGo') })
-    const box = el('div', { id: 'ibh-sitesearch', class: 'ibh-search' }, [input, kind, sort, min, go])
+    const read = () => ({ where: 'site', text: input.value, kind: kind.value, sort: sort.value, min: min.value })
+    const saved = savedControls('site', read, q => {
+      input.value = q.text; kind.value = q.kind; sort.value = q.sort; min.value = q.min || ''
+      submit()
+    })
+    const box = el('div', { id: 'ibh-sitesearch', class: 'ibh-search' }, [input, kind, sort, min, go, saved.star, saved.pick])
     document.querySelector('.image-list').before(box)
+    input.addEventListener('input', saved.sync)
+    min.addEventListener('input', saved.sync)
     const submit = () => {
       const q = siteQuery({ rest: input.value, kind: kind.value, sort: sort.value, min: min.value })
       info(`site search: ${q || 'all'}`)
@@ -5189,6 +5284,8 @@
     .ibh-search input.min { width: 96px; padding: 7px 8px; font-size: 14px; box-sizing: border-box; }
     .ibh-search select, .ibh-search button { padding: 7px 12px; font-size: 14px; }
     .ibh-search .st { flex: 1 1 100%; font-size: 12px; opacity: .85; }
+    .ibh-search select.saved { flex: 1 1 100%; }
+    .ibh-search select.saved[hidden] { display: none; }
     #ibh-favmore { display: block; margin: 14px auto; padding: 9px 18px; font-size: 14px; }
     #ibh-favmore[hidden] { display: none; }
     #ibh-pager { min-height: 1px; padding: 14px 0; text-align: center; font-size: 13px; opacity: .85; }

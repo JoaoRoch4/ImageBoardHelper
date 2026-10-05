@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.50.0 (bridge 1.6.0)
+
+- Saved searches in both search bars: ☆ Save keeps the search on screen
+  (text, kind, order, minimum score), ★ Saved when it is already kept (a tap
+  removes it), and the Saved searches list runs one with a tap
+- The favorites bar remembers its last search: the next visit shows it
+  again, results included, until Clear
+- Stored with the lists (the storage bridge, or the site's IndexedDB)
+
 ## 0.49.0
 
 - Search bar on the site's listing pages (`siteSearch`, on), with the
