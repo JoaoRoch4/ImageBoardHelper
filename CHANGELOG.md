@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.42.0
+
+- Trash-can shortcut button with the floating buttons (`freeButton`, on): one
+  tap runs Free memory & cache, the same as the panel's button (other tabs of
+  the site included), and it lights up while it works. Shows on Masonry and
+  site pages alike; turning it on or off in the panel applies at once
+
 ## 0.41.2
 
 - Holding a tag works every time: an event log on the phone showed Firefox

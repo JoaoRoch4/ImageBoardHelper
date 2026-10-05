@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.41.2
+// @version      0.42.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.41.2'
+  const VERSION = '0.42.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -115,6 +115,7 @@
     urlCache:       true,   // remember which candidate URL worked for each file
     feedNav:        true,   // ⤒ ‹ › buttons: top of page, previous and next post in the feed (needs reload)
     sortButton:     true,   // ★ button on search listings: add or remove sort:score (needs reload)
+    freeButton:     true,   // trash-can button next to them: Free memory & cache in one tap
     videoModal:     true,   // open posts from site pages in an overlay: video, GIF, image (needs reload)
     rotateLandscape: true,  // in the modal player's fullscreen, lock wide videos to landscape
     modalPreload:   true,   // in the modal, have the next post loaded before the swipe
@@ -185,6 +186,7 @@
       navPrev: 'Previous post', navNext: 'Next post', navTop: 'Top of the page', navBottom: 'Bottom of the page',
       navPrevPage: 'Previous page', navNextPage: 'Next page',
       tSortBtn: 'Sort-by-score button', navSort: 'Sort by score (tap again to undo)',
+      tFreeBtn: 'Free-memory shortcut button', navFree: 'Free memory & cache',
       tModal: 'Open posts in a player over the page',
       tTheme: 'Dark theme on site pages',
       mClose: 'Close', mOpen: 'Open the post', mPrev: 'Previous post', mNext: 'Next post',
@@ -229,6 +231,7 @@
       navPrev: 'Post anterior', navNext: 'Próximo post', navTop: 'Topo da página', navBottom: 'Fim da página',
       navPrevPage: 'Página anterior', navNextPage: 'Próxima página',
       tSortBtn: 'Botão ordenar por score', navSort: 'Ordenar por score (toque de novo para desfazer)',
+      tFreeBtn: 'Botão de atalho para limpar a memória', navFree: 'Limpar memória e cache',
       tModal: 'Abrir posts num player sobre a página',
       tTheme: 'Tema escuro nas páginas do site',
       mClose: 'Fechar', mOpen: 'Abrir o post', mPrev: 'Post anterior', mNext: 'Próximo post',
@@ -3560,6 +3563,8 @@
     }
     .feednav button:active { background: #16211f; }
     .feednav button.on { background: #5eead4; color: #0f1417; border-color: #5eead4; }
+    .feednav button.trash { display: grid; place-items: center; padding: 0; }
+    .feednav button.trash svg { width: 20px; height: 20px; fill: currentColor; }
     .feednav button:disabled { opacity: .35; }
     .feednav.raised { bottom: 76px; }
 
@@ -3793,6 +3798,7 @@
     body.appendChild(toggle('nativeFeed', t('tFeed'), t('noteReload')))
     body.appendChild(toggle('feedNav', t('tNav'), t('noteReload')))
     body.appendChild(toggle('sortButton', t('tSortBtn'), t('noteReload')))
+    body.appendChild(toggle('freeButton', t('tFreeBtn'), null, ensureFeedNav))
     body.appendChild(toggle('videoModal', t('tModal'), t('noteReload')))
     body.appendChild(toggle('siteTheme', t('tTheme'), null, applySiteTheme))
     body.appendChild(toggle('rotateLandscape', t('tRotate')))
@@ -3894,14 +3900,15 @@
     if (!shadow) return
     const feed = wantsFeedButtons()
     const sort = wantsSortButton()
-    const want = `${feed ? 'f' : ''}${sort ? 's' : ''}`
+    const free = !!CFG.freeButton
+    const want = `${feed ? 'f' : ''}${sort ? 's' : ''}${free ? 'c' : ''}`
     let nav = shadow.querySelector('.feednav')
     if (nav && nav.dataset.set !== want) { nav.remove(); nav = null }
     if (!nav && want) {
-      nav = buildFeedNav(feed, sort)
+      nav = buildFeedNav(feed, sort, free)
       nav.dataset.set = want
       shadow.appendChild(nav)
-      dbg(`buttons added: ${feed ? 'feed ' : ''}${sort ? 'sort' : ''}`.trim())
+      dbg(`buttons added: ${feed ? 'feed ' : ''}${sort ? 'sort ' : ''}${free ? 'free' : ''}`.trim())
     }
     // Masonry's refresh button sits in the same corner; stay above it.
     if (nav) nav.classList.toggle('raised', !!document.querySelector('.v-application'))
@@ -3989,7 +3996,31 @@
     location.href = target
   }
 
-  function buildFeedNav(feed, sort) {
+  // Material Design's "delete" icon (a trash can), as path data.
+  const TRASH_ICON = 'M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z'
+
+  function trashButton() {
+    const btn = el('button', { class: 'trash', title: t('navFree') })
+    const ns = 'http://www.w3.org/2000/svg'
+    const svg = document.createElementNS(ns, 'svg')
+    svg.setAttribute('viewBox', '0 0 24 24')
+    const path = document.createElementNS(ns, 'path')
+    path.setAttribute('d', TRASH_ICON)
+    svg.appendChild(path)
+    btn.appendChild(svg)
+    // Lit while freeing, so the tap shows it was taken.
+    btn.addEventListener('click', () => {
+      btn.classList.add('on')
+      btn.disabled = true
+      freeMemory().finally(() => {
+        setTimeout(() => { btn.classList.remove('on'); btn.disabled = false }, 400)
+        renderStatus()
+      })
+    })
+    return btn
+  }
+
+  function buildFeedNav(feed, sort, free) {
     const rows = []
     if (feed) {
       const top = el('button', { text: '⤒', title: t('navTop') })
@@ -4006,6 +4037,7 @@
       rows.push(el('div', { class: 'row' }, [top, prev, next, bottom]))
     }
     const second = []
+    if (free) second.push(trashButton())
     if (sort) {
       const star = el('button', { text: '★', title: t('navSort') })
       if (sortedByScore()) star.classList.add('on')
