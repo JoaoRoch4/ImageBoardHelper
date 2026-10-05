@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.40.3
+// @version      0.41.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.40.3'
+  const VERSION = '0.41.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -190,7 +190,7 @@
       mClose: 'Close', mOpen: 'Open the post', mPrev: 'Previous post', mNext: 'Next post',
       mLoading: 'Loading…', mFail: 'Could not load it',
       mFav: 'Add to favorites', mUp: 'Upvote', mFull: 'Fullscreen', mFullExit: 'Exit fullscreen', mMenu: 'Tags and post page',
-      tagsCopyAll: 'Copy all', tagCopied: 'Copied', tagCopyFail: 'Could not copy', tagsNone: 'No tags', mTurn: 'Rotate the screen',
+      tagsCopyAll: 'Copy all', tagOpened: 'Opened in a new tab', tagCopied: 'Copied', tagCopyFail: 'Could not copy', tagsNone: 'No tags', mTurn: 'Rotate the screen',
       mPlay: 'Play / pause', mMute: 'Sound on / off',
       tRotate: 'Landscape in player fullscreen',
       tPreload: 'Next post loaded in the player',
@@ -234,7 +234,7 @@
       mClose: 'Fechar', mOpen: 'Abrir o post', mPrev: 'Post anterior', mNext: 'Próximo post',
       mLoading: 'Carregando…', mFail: 'Não foi possível carregar',
       mFav: 'Favoritar', mUp: 'Votar positivo', mFull: 'Tela cheia', mFullExit: 'Sair da tela cheia', mMenu: 'Tags e página do post',
-      tagsCopyAll: 'Copiar todas', tagCopied: 'Copiado', tagCopyFail: 'Não foi possível copiar', tagsNone: 'Sem tags', mTurn: 'Girar a tela',
+      tagsCopyAll: 'Copiar todas', tagOpened: 'Aberto em outra aba', tagCopied: 'Copiado', tagCopyFail: 'Não foi possível copiar', tagsNone: 'Sem tags', mTurn: 'Girar a tela',
       mPlay: 'Tocar / pausar', mMute: 'Som liga / desliga',
       tRotate: 'Paisagem na tela cheia do player',
       tPreload: 'Próximo post carregado no player',
@@ -2085,6 +2085,8 @@
     button.t-copyright { color: #c678dd; border-color: #5a3566; }
     button.t-metadata { color: #e5534b; border-color: #66282a; }
     button.tag.copied { background: #5eead4; color: #0f1417; border-color: #5eead4; }
+    button.tag.held { background: #1d3b38; border-color: #5eead4; }
+    button.tag { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
     .sheet .none { color: #4e6469; font-size: 13px; }
     .toast {
       position: absolute; left: 50%; bottom: 84px; transform: translateX(-50%);
@@ -2121,7 +2123,7 @@
     const controls = installVideoControls(video, ctl, playBtn, time, seek, muteBtn, prevBox, vwrap)
     const stage = el('div', { class: 'stage' }, [vwrap, image])
     const close = el('button', { text: '✕', title: t('mClose') })
-    const post = el('a', { class: 'btn', text: '↗', title: t('mOpen') })
+    const post = el('a', { class: 'btn', text: '↗', title: t('mOpen'), target: '_blank', rel: 'noopener' })   // a new tab
     const menu = el('button', { text: '☰', title: t('mMenu') })
     const tagAll = el('button', { class: 'pill', text: t('tagsCopyAll') })
     const tagList = el('div', { class: 'taglist' })
@@ -2292,11 +2294,50 @@
     const sorted = [...tags].sort((a, b) => tagRank(a.type) - tagRank(b.type))
     modal.tagList.replaceChildren(...sorted.map(tag => {
       const chip = el('button', { class: `tag t-${tag.type}`, text: tag.name })
-      chip.addEventListener('click', () => copyText(tag.name, chip))
+      chipGestures(chip, tagSearchUrl(tag.name), () => copyText(tag.name, chip))
       return chip
     }))
     if (!sorted.length) modal.tagList.append(el('span', { class: 'none', text: t('tagsNone') }))
     modal.tagAll.onclick = () => copyText(sorted.map(tag => tag.name).join(' '), modal.tagAll)
+  }
+
+  // A tap copies the tag; a hold opens its search in a new tab. The tab opens
+  // on release, not when the hold timer fires: a timer is not a user gesture,
+  // and the popup blocker would stop window.open from it.
+  const TAG_HOLD_MS = 450
+  const tagSearchUrl = name => `/index.php?page=post&s=list&tags=${encodeURIComponent(name)}`
+
+  function chipGestures(chip, url, onTap) {
+    let down = null
+    let skipClick = false
+    const cancel = () => {
+      if (down) clearTimeout(down.timer)
+      down = null
+      chip.classList.remove('held')
+    }
+    chip.addEventListener('pointerdown', ev => {
+      // Lit once held long enough, so the finger knows it can let go.
+      down = { x: ev.clientX, y: ev.clientY, t: Date.now(), timer: setTimeout(() => chip.classList.add('held'), TAG_HOLD_MS) }
+    })
+    chip.addEventListener('pointermove', ev => {
+      if (down && Math.hypot(ev.clientX - down.x, ev.clientY - down.y) > 10) cancel()   // scrolling the sheet
+    })
+    chip.addEventListener('pointercancel', cancel)
+    chip.addEventListener('pointerup', () => {
+      if (!down) return
+      const held = Date.now() - down.t >= TAG_HOLD_MS
+      cancel()
+      if (!held) return
+      skipClick = true   // the click that follows is not a copy
+      window.open(url, '_blank', 'noopener')
+      flash(t('tagOpened'))
+      dbg(`modal: tag search opened in a new tab (${url})`)
+    })
+    chip.addEventListener('click', () => {
+      if (skipClick) { skipClick = false; return }
+      onTap()
+    })
+    chip.addEventListener('contextmenu', ev => ev.preventDefault())   // the hold is ours
   }
 
   async function copyText(text, chip) {

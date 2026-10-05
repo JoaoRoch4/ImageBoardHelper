@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.41.0
+
+- Tags menu: holding a tag opens its search in a new tab (a tap still copies
+  it); the chip lights up once held long enough
+- ↗ (open the post page) opens it in a new tab, so the modal and the page
+  stay where they are
+
 ## 0.40.3
 
 - Site theme lines in neon green (`#39ff14`): element borders, fields,
