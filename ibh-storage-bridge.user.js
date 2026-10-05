@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper — storage bridge
 // @namespace    joao.imageboardhelper
-// @version      1.1.0
+// @version      1.2.0
 // @description  Keeps Image Board Helper's lists (Watch later) in Violentmonkey's own storage, on the device, and saves files for its Download button
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -15,7 +15,7 @@
 // @run-at       document-start
 // @grant        GM_getValue
 // @grant        GM_setValue
-// @grant        GM_download
+// @grant        GM_xmlhttpRequest
 // @connect      *
 // @noframes
 // ==/UserScript==
@@ -42,6 +42,36 @@
     }
   }
 
+  // GM_download on Firefox for Android shows the save prompt but revokes its
+  // blob: link right away, so confirming saves nothing. Same path, done here:
+  // fetch the file (the extension is not bound by CORS), hand Firefox a blob:
+  // link to save, and keep that link alive long enough to confirm the prompt.
+  const BLOB_LIFE_MS = 120000
+
+  function saveFile(url, name, done) {
+    GM_xmlhttpRequest({
+      method: 'GET',
+      url,
+      responseType: 'blob',
+      timeout: 180000,
+      onload: res => {
+        if (res.status !== 200 || !res.response) { done(false, `HTTP ${res.status}`); return }
+        const href = URL.createObjectURL(res.response)
+        const a = document.createElement('a')
+        a.href = href
+        a.download = name
+        a.style.display = 'none'
+        ;(document.body || document.documentElement).appendChild(a)
+        a.click()
+        a.remove()
+        setTimeout(() => URL.revokeObjectURL(href), BLOB_LIFE_MS)
+        done(true)
+      },
+      onerror: () => done(false, 'network error'),
+      ontimeout: () => done(false, 'timeout'),
+    })
+  }
+
   const reply = (id, value) =>
     window.dispatchEvent(new CustomEvent('ibh-store-reply', { detail: JSON.stringify({ id, value }) }))
 
@@ -55,13 +85,7 @@
     if (msg.op === 'download' && msg.value && siteFile(msg.value.url)) {
       const done = (ok, error) => window.dispatchEvent(new CustomEvent('ibh-download-done',
         { detail: JSON.stringify({ id: msg.id, ok, error: error || null }) }))
-      GM_download({
-        url: msg.value.url,
-        name: String(msg.value.name || 'download').replace(/[\\/:*?"<>|]/g, '_'),
-        onload: () => done(true),
-        onerror: e => done(false, (e && (e.error || e.details)) || 'error'),
-        ontimeout: () => done(false, 'timeout'),
-      })
+      saveFile(msg.value.url, String(msg.value.name || 'download').replace(/[\\/:*?"<>|]/g, '_'), done)
       reply(msg.id, 'started')
       return
     }

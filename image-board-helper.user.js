@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.46.0
+// @version      0.46.1
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.46.0'
+  const VERSION = '0.46.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -191,7 +191,7 @@
       tSortBtn: 'Sort-by-score button', navSort: 'Sort by score (tap again to undo)',
       tFreeBtn: 'Free-memory shortcut button', navFree: 'Free memory & cache',
       tLaterBtn: 'Watch later button', navLater: 'Watch later', laterTitle: 'Watch later',
-      dlBtn: '⬇ Download', dlWait: 'The file is still loading', dlStart: 'Downloading…', dlDone: 'Saved to Downloads',
+      dlBtn: '⬇ Download', dlWait: 'The file is still loading', dlStart: 'Downloading…', dlDone: 'Downloaded: confirm in Firefox to save',
       dlFail: 'Download failed', dlOpened: 'Opened in a new tab: hold it to save',
       laterAdd: '🕒 Watch later', laterIn: '✓ In Watch later', laterAdded: 'Saved for later', laterRemoved: 'Removed from the list',
       laterEmpty: 'Nothing saved yet. Use 🕒 in a post’s ☰ menu.', laterOnDevice: 'kept by Violentmonkey, on this device',
@@ -244,7 +244,7 @@
       tSortBtn: 'Botão ordenar por score', navSort: 'Ordenar por score (toque de novo para desfazer)',
       tFreeBtn: 'Botão de atalho para limpar a memória', navFree: 'Limpar memória e cache',
       tLaterBtn: 'Botão Ver depois', navLater: 'Ver depois', laterTitle: 'Ver depois',
-      dlBtn: '⬇ Baixar', dlWait: 'O arquivo ainda está carregando', dlStart: 'Baixando…', dlDone: 'Salvo em Downloads',
+      dlBtn: '⬇ Baixar', dlWait: 'O arquivo ainda está carregando', dlStart: 'Baixando…', dlDone: 'Baixado: confirme no Firefox para salvar',
       dlFail: 'Falha no download', dlOpened: 'Aberto em outra aba: segure para salvar',
       laterAdd: '🕒 Ver depois', laterIn: '✓ Na lista', laterAdded: 'Salvo para ver depois', laterRemoved: 'Tirado da lista',
       laterEmpty: 'Nada salvo ainda. Use o 🕒 no menu ☰ de um post.', laterOnDevice: 'guardado pelo Violentmonkey, neste aparelho',
@@ -2357,7 +2357,7 @@
     if (post === undefined) return
     downloads.delete(msg.id)
     if (modal && modal.open) flash(t(msg.ok ? 'dlDone' : 'dlFail'))
-    if (msg.ok) info(`download: post ${post} saved`)
+    if (msg.ok) info(`download: post ${post} fetched, handed to Firefox to save`)
     else warn(`download: post ${post} failed — ${msg.error}`)
   })
 

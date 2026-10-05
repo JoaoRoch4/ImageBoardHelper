@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.46.1
+
+- Download saves on Firefox for Android (bridge 1.2.0): `GM_download` showed
+  the save prompt but revoked its `blob:` link at once, so confirming saved
+  nothing. The bridge now fetches the file with `GM_xmlhttpRequest` and keeps
+  the link alive for two minutes, long enough to confirm the prompt
+
 ## 0.46.0
 
 - ⬇ Download in the modal's ☰ menu: saves the post's own file (original
