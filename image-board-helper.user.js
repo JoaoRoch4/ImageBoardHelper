@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.43.0
+// @version      0.43.1
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.43.0'
+  const VERSION = '0.43.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -123,12 +123,12 @@
     fixFancybox:    true,   // fill empty src in the alternate viewer
     gestures:       true,   // swipe, double tap and pinch
     originalThumbs: false,  // swap visible thumbnails for the original file (heavy, needs reload)
-    nativeFeed:     false,  // one-column feed with sharp images on the site's own pages (needs reload)
+    nativeFeed:     false,  // one-column feed with sharp images on the site's own pages (applies at once)
     forceRule34Api: true,   // rule34 on Masonry: API path, account filters applied here; automatic, no panel entry (needs reload)
   }
 
   // Options that only take effect when the app boots.
-  const NEEDS_RELOAD = new Set(['sharpThumbs', 'forceRule34Api', 'originalThumbs', 'nativeFeed', 'memorySaver', 'feedNav', 'sortButton', 'videoModal', 'videoScrub'])
+  const NEEDS_RELOAD = new Set(['sharpThumbs', 'forceRule34Api', 'originalThumbs', 'memorySaver', 'feedNav', 'sortButton', 'videoModal', 'videoScrub'])
 
   const CFG = Object.assign({}, DEFAULTS, readJSON(CFG_KEY, {}))
 
@@ -3848,7 +3848,7 @@
     body.appendChild(el('div', { class: 'sec', text: t('fixes') }))
     body.appendChild(toggle('sharpThumbs', t('tSharp'), t('noteReload')))
     body.appendChild(toggle('originalThumbs', t('tOriginal'), t('noteReload')))
-    body.appendChild(toggle('nativeFeed', t('tFeed'), t('noteReload')))
+    body.appendChild(toggle('nativeFeed', t('tFeed'), null, switchFeed))
     body.appendChild(toggle('feedNav', t('tNav'), t('noteReload')))
     body.appendChild(toggle('sortButton', t('tSortBtn'), t('noteReload')))
     body.appendChild(toggle('freeButton', t('tFreeBtn'), null, ensureFeedNav))
@@ -4128,20 +4128,40 @@
   // screen width. Favorites wrap each thumb in an extra span with the Remove
   // link. calc(50% - 50vw) is the negative margin that cancels whatever side
   // padding the site puts around the centred column (5px on rule34).
+  // Hangs on html.ibh-feed, set by applyFeed(), so the panel switch applies
+  // at once instead of on the next load.
   const FEED_CSS = `
-    .image-list { display: flex !important; flex-direction: column !important;
+    html.ibh-feed .image-list { display: flex !important; flex-direction: column !important;
       flex-wrap: nowrap !important; align-items: stretch !important; gap: 14px !important; }
-    .image-list > span { display: block !important; width: 100% !important; max-width: none !important;
+    html.ibh-feed .image-list > span { display: block !important; width: 100% !important; max-width: none !important;
       height: auto !important; max-height: none !important; }
-    .image-list span.thumb { display: block !important; width: 100vw !important; height: auto !important;
+    html.ibh-feed .image-list span.thumb { display: block !important; width: 100vw !important; height: auto !important;
       max-width: none !important; max-height: none !important; min-height: 0 !important;
       margin: 0 calc(50% - 50vw) !important; }
-    .image-list span.thumb a { display: block !important; position: relative; }
-    .image-list span.thumb img { display: block; width: 100% !important; height: auto !important;
+    html.ibh-feed .image-list span.thumb a { display: block !important; position: relative; }
+    html.ibh-feed .image-list span.thumb img { display: block; width: 100% !important; height: auto !important;
       max-width: none !important; max-height: none !important; }
     /* Post page: the image carries width="850" and the video a fixed box. */
-    #image, #gelcomVideoPlayer { max-width: 100% !important; height: auto !important; }
+    html.ibh-feed #image, html.ibh-feed #gelcomVideoPlayer { max-width: 100% !important; height: auto !important; }
   `
+
+  // Keeps the class in step with the option (Masonry swaps <html> wholesale).
+  function applyFeed() {
+    document.documentElement.classList.toggle('ibh-feed', !!CFG.nativeFeed)
+  }
+
+  // The panel switch: the layout changes under the reader, so keep the post
+  // at the top of the screen in place, and start the sharp images the feed
+  // shows (scanThumbs skips what it already watches).
+  function switchFeed() {
+    const anchor = [...document.querySelectorAll('.image-list span.thumb')]
+      .find(el => el.getBoundingClientRect().bottom > 0)
+    applyFeed()
+    if (anchor) anchor.scrollIntoView({ block: 'start' })
+    if (CFG.nativeFeed) scanThumbs(document)
+    ensureFeedNav()
+    info(`one-column feed ${CFG.nativeFeed ? 'on' : 'off'} (switched from the panel)`)
+  }
 
   // The modal's look on the site's own pages: dark slate background, light
   // text, teal links and controls, tag kinds in the tags menu's colours. All
@@ -4200,7 +4220,7 @@
     if (document.querySelector('style[data-ibh]')) return
     const style = el('style', { 'data-ibh': '1' })
     style.textContent = '.img_detail_cont { touch-action: pan-y; }' + NATIVE_MARK_CSS + THEME_CSS +
-      (CFG.videoScrub ? SCRUB_CSS : '') + (CFG.nativeFeed ? FEED_CSS : '')
+      (CFG.videoScrub ? SCRUB_CSS : '') + FEED_CSS
     ;(document.head || document.documentElement).appendChild(style)
   }
 
@@ -4221,6 +4241,7 @@
     ensureFeedNav()
     injectPageCSS()
     applySiteTheme()
+    applyFeed()
   }).observe(document, { childList: true, subtree: true })
 
   applySharpThumbs()

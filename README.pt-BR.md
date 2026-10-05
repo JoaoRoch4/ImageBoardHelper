@@ -89,7 +89,7 @@ Todas ficam no painel e são gravadas em `localStorage` sob a chave `IBH_CFG`.
 | `fixFancybox` | ligado | preenche `src` vazio no Fancybox |
 | `gestures` | ligado | swipe, toque duplo e pinça |
 | `originalThumbs` | **desligado** | troca as miniaturas visíveis, no Masonry e nas páginas do próprio site, pelo arquivo original; mais nítido, mas gasta várias vezes mais dados e memória (requer recarregar) |
-| `nativeFeed` | **desligado** | nas páginas do próprio site (rule34, safebooru, xbooru e outros Gelbooru 0.2): uma imagem por linha na largura toda da tela, trocada pelo sample (ou pelo original quando não houver) (requer recarregar) |
+| `nativeFeed` | **desligado** | nas páginas do próprio site (rule34, safebooru, xbooru e outros Gelbooru 0.2): uma imagem por linha na largura toda da tela, trocada pelo sample (ou pelo original quando não houver) (vale na hora) |
 | `feedNav` | ligado | com o `nativeFeed`, botões redondos no canto inferior direito, em duas fileiras: ⤒ topo, ‹ › post anterior/próximo (por exemplo para passar um comic longo), ⤓ fim da página; « » página anterior/próxima pela paginação do próprio site (requer recarregar) |
 | `sortButton` | ligado | botão ★ nas listagens de busca (site e Masonry): acrescenta `sort:score` à busca atual, ou tira, e recarrega na primeira página; fica aceso enquanto a busca está ordenada por score (requer recarregar) |
 | `freeButton` | ligado | botão de atalho com ícone de lixeira junto dos botões flutuantes: um toque roda o **Limpar memória e cache** (inclusive nas outras abas do site) |

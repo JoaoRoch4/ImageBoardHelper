@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.43.1
+
+- The one-column feed switch applies at once, no reload: its CSS hangs on a
+  class on `<html>`, the post at the top of the screen stays in place when the
+  layout changes, and turning it on starts the sharp images right away
+
 ## 0.43.0
 
 - rule34 on Masonry is automatic: with an API credential set in Masonry, the
