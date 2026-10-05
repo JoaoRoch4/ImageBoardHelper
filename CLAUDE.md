@@ -98,6 +98,8 @@ Não sugira estas de novo sem um motivo novo.
 
 **Baixar vídeo menor ou com `preload='metadata'` para a prévia de cenas.** O rule34 só tem o arquivo original de vídeo (sample é só de imagem), e MP4 não reduz resolução no download. Medido no aparelho: busca num trecho não baixado custa 1,5 a 10 s em vídeos de 2,5 a 9 min (~500 KB/s), e `metadata` não foi mais rápido que `auto`. O que ajudou foi esconder a espera: dois vídeos em revezamento no slideshow (`tickSlide`).
 
+**Medir toque longo só com pointer events.** No Firefox para Android o toque longo termina de três jeitos (gravado com um logger de eventos na aba): `contextmenu` → `pointerup`; `contextmenu` → `pointercancel`; ou `pointercancel` ~110 ms depois do toque, sem `contextmenu`, quando o dedo treme dentro de algo rolável. Os eventos de toque (`touchstart`/`touchend`) seguem nos três casos, então o segurar mede neles (tempo, deslocamento ≤ 12 px, sem rolagem) e abre a aba no `touchend`, que conta como gesto do usuário. `window.open` de dentro de timer é barrado pelo bloqueador de pop-ups. Veja `chipGestures`.
+
 **Consertar o Fancybox em sites de detalhe tardio.** Em sankaku, anime-pictures, allgirl, hentaibooru e kusowanka a URL só existe após o fetch de detalhe e não é derivável. Sem acesso a `store.imageList`, não há solução externa. O patch correto está no README e é no script original.
 
 ---
