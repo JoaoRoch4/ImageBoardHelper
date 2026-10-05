@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.52.0
+
+- Mass favorite (`bulkFavButton`, on): a ♥ button next to 🕒 turns on a mode
+  where a tap on a thumbnail favorites and upvotes the post on the spot,
+  like the site's own heart, instead of opening it; the thumbnail gets a ♥
+  mark (✕ when it fails). Tap ♥ again to leave. rule34, logged in
+- The ★ sort-by-score button is retired (`sortButton` removed): the search
+  bar orders by score
+
 ## 0.51.0
 
 - Searches save themselves: every search a bar runs joins its Recent

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.51.0
+// @version      0.52.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.51.0'
+  const VERSION = '0.52.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -114,7 +114,7 @@
     memorySaver:    true,   // release far off-screen images and removed videos (needs reload)
     urlCache:       true,   // remember which candidate URL worked for each file
     feedNav:        true,   // ⤒ ‹ › buttons: top of page, previous and next post in the feed (needs reload)
-    sortButton:     true,   // ★ button on search listings: add or remove sort:score (needs reload)
+    bulkFavButton:  true,   // ♥ button next to 🕒 on site pages: a mode where each tapped post is favorited and upvoted
     freeButton:     true,   // trash-can button next to them: Free memory & cache in one tap
     laterButton:    true,   // 🕒 button next to them on site pages: the Watch later list
     favSearch:      true,   // search bar on your own rule34 favorites page, results in the page's own list
@@ -134,7 +134,7 @@
   }
 
   // Options that only take effect when the app boots.
-  const NEEDS_RELOAD = new Set(['sharpThumbs', 'forceRule34Api', 'originalThumbs', 'memorySaver', 'feedNav', 'sortButton', 'videoModal', 'videoScrub'])
+  const NEEDS_RELOAD = new Set(['sharpThumbs', 'forceRule34Api', 'originalThumbs', 'memorySaver', 'feedNav', 'videoModal', 'videoScrub'])
 
   // Whether this page found the settings at all: a script that clears the
   // site's localStorage (one did, on its reset) takes them along, and the
@@ -197,7 +197,8 @@
       tNav: 'Top / previous / next buttons',
       navPrev: 'Previous post', navNext: 'Next post', navTop: 'Top of the page', navBottom: 'Bottom of the page',
       navPrevPage: 'Previous page', navNextPage: 'Next page',
-      tSortBtn: 'Sort-by-score button', navSort: 'Sort by score (tap again to undo)',
+      tBulkBtn: 'Mass-favorite button', navBulk: 'Mass favorite: each tapped post gets ♥ and ▲',
+      bulkOn: 'Mass favorite on: tap posts to favorite and upvote them', bulkOff: 'Mass favorite off',
       tFreeBtn: 'Free-memory shortcut button', navFree: 'Free memory & cache',
       tFavSearch: 'Search your favorites', tSiteSearch: 'Search bar on site pages',
       savedPick: 'Favorite searches…', recentPick: 'Recent searches…', saveSearch: '☆ Favorite', savedSearch: '★ Favorite', savedAll: '(everything)',
@@ -260,7 +261,8 @@
       tNav: 'Botões topo / anterior / próximo',
       navPrev: 'Post anterior', navNext: 'Próximo post', navTop: 'Topo da página', navBottom: 'Fim da página',
       navPrevPage: 'Página anterior', navNextPage: 'Próxima página',
-      tSortBtn: 'Botão ordenar por score', navSort: 'Ordenar por score (toque de novo para desfazer)',
+      tBulkBtn: 'Botão de favoritar em massa', navBulk: 'Favoritar em massa: cada post tocado ganha ♥ e ▲',
+      bulkOn: 'Favoritar em massa ligado: toque nos posts para favoritar e votar', bulkOff: 'Favoritar em massa desligado',
       tFreeBtn: 'Botão de atalho para limpar a memória', navFree: 'Limpar memória e cache',
       tFavSearch: 'Buscar nos seus favoritos', tSiteSearch: 'Barra de busca nas páginas do site',
       savedPick: 'Buscas favoritas…', recentPick: 'Buscas recentes…', saveSearch: '☆ Favoritar', savedSearch: '★ Favorita', savedAll: '(tudo)',
@@ -2989,6 +2991,77 @@
     return kind
   }
 
+  // ── Mass favorite ──
+  // ♥ next to 🕒 turns a mode on where a tap on a thumbnail favorites and
+  // upvotes the post on the spot (like the site's own heart does) instead of
+  // opening it, and marks the thumbnail. Tap ♥ again to leave.
+  const HEART_ICON = 'M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z'
+  let bulkMode = false
+
+  const wantsBulkButton = () => !!CFG.bulkFavButton && SITE === 'rule34.xxx' && !!userId() && !!document.querySelector(SITE_LINK)
+
+  function setBulkMode(on) {
+    bulkMode = on
+    const heart = shadow && shadow.querySelector('.bulkfab')
+    if (heart) heart.classList.toggle('on', on)
+    pageToast(t(on ? 'bulkOn' : 'bulkOff'))
+    info(`mass favorite ${on ? 'on' : 'off'}`)
+  }
+
+  let pageToastTimer = 0
+  function pageToast(text) {
+    if (!shadow) return
+    let toast = shadow.querySelector('.pagetoast')
+    if (!toast) { toast = el('div', { class: 'pagetoast' }); shadow.appendChild(toast) }
+    toast.textContent = text
+    toast.style.opacity = '1'
+    clearTimeout(pageToastTimer)
+    pageToastTimer = setTimeout(() => { toast.style.opacity = '0' }, 2200)
+  }
+
+  // A mark on the thumbnail: ♥ done, … working, ✕ failed.
+  function bulkBadge(link, text, tone) {
+    let badge = link.querySelector('.ibh-bulkbadge')
+    if (!badge) {
+      badge = document.createElement('span')
+      badge.className = 'ibh-bulkbadge'
+      badge.dataset.ibhUi = '1'   // the site theme leaves it alone
+      if (getComputedStyle(link).position === 'static') link.style.position = 'relative'
+      link.appendChild(badge)
+    }
+    badge.textContent = text
+    badge.style.background = tone
+  }
+
+  async function bulkFavorite(link) {
+    const id = postId(link)
+    if (link.dataset.ibhBulk) return   // done or in progress
+    link.dataset.ibhBulk = '1'
+    bulkBadge(link, '…', 'rgba(15, 20, 23, .85)')
+    try {
+      const { code } = await favoritePost(id, false)
+      if (code === '2') { bulkBadge(link, '✕', '#b42318'); pageToast(t('favLogin')); delete link.dataset.ibhBulk; return }
+      if (code !== '3' && code !== '1') throw new Error(`answer ${code.slice(0, 20)}`)
+      await upvotePost(id)
+      bulkBadge(link, '♥', '#e5534b')
+      info(`mass favorite: post ${id} ${code === '3' ? 'favorited' : 'was a favorite'}, upvoted`)
+    } catch (e) {
+      delete link.dataset.ibhBulk
+      bulkBadge(link, '✕', '#b42318')
+      warn(`mass favorite: post ${id} failed — ${describeError(e)}`)
+    }
+  }
+
+  // Registered before the modal's click handler, so a tap favorites instead.
+  function onBulkClick(ev) {
+    if (!bulkMode || ev.button !== 0) return
+    const link = ev.target.closest && ev.target.closest(SITE_LINK)
+    if (!link) return
+    ev.preventDefault()
+    ev.stopImmediatePropagation()
+    bulkFavorite(link)
+  }
+
   // ── Saved searches ──
   // Every search a bar runs is kept on its own among the recent ones; ☆
   // makes one a favorite. The favorites bar also keeps its last search, shown
@@ -3404,17 +3477,36 @@
   // along. Answers decoded from the site's own addFav/toggleFav: 3 added,
   // 1 already there, 2 not logged in, 4 removed (toggle only). A lit heart
   // pressed again removes the favorite, like the site's own heart.
+  // The site's answer: '3' added, '1' already there, '2' logged out, '4' removed.
+  async function favoritePost(id, remove) {
+    const res = await fetch(`/public/addfav.php?id=${encodeURIComponent(id)}${remove ? '&toggle=1' : ''}`, { credentials: 'same-origin' })
+    const code = (await res.text()).trim().replace(/"/g, '')   // toggle answers in JSON
+    if (code === '3' || code === '1' || code === '4') {
+      const fav = code !== '4'
+      setMark('f', id, fav)
+      favLookups.set(id, Promise.resolve(fav))
+    }
+    return { code, status: res.status }
+  }
+
+  // The new score, or null.
+  async function upvotePost(id) {
+    const res = await fetch(`/index.php?page=post&s=vote&id=${encodeURIComponent(id)}&type=up`, { credentials: 'same-origin' })
+    const score = parseInt(await res.text(), 10)
+    if (!res.ok || !Number.isFinite(score)) return null
+    setMark('v', id, true)
+    return score
+  }
+
   async function modalFavorite() {
     const id = postId(modal.link)
     const remove = modal.fav.classList.contains('on')
     try {
-      const res = await fetch(`/public/addfav.php?id=${encodeURIComponent(id)}${remove ? '&toggle=1' : ''}`, { credentials: 'same-origin' })
-      const code = (await res.text()).trim().replace(/"/g, '')   // toggle answers in JSON
+      const { code, status } = await favoritePost(id, remove)
+      const res = { status }
       if (code === '3' || code === '1' || code === '4') {
         const fav = code !== '4'
         showFav(fav)
-        setMark('f', id, fav)
-        favLookups.set(id, Promise.resolve(fav))
         flash(t(code === '3' ? 'favAdded' : code === '1' ? 'favAlready' : 'favRemoved'))
         // The site's own heart votes up as it favorites; do the same, so a
         // favorite always counts as upvoted (see applyMarks).
@@ -4633,7 +4725,14 @@
     }
     .laterfab:active { background: #16211f; }
     .laterfab svg { width: 22px; height: 22px; fill: currentColor; }
-    .panel:not([hidden]) ~ .laterfab { display: none; }
+    .laterfab.bulkfab { right: 64px; }
+    .laterfab.on { background: #5eead4; color: #0f1417; border-color: #5eead4; }
+    .pagetoast {
+      position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); z-index: 2147483000; max-width: 86vw;
+      padding: 8px 14px; border-radius: 18px; background: rgba(15, 20, 23, .92); color: #d7dee0;
+      font-size: 13px; text-align: center; pointer-events: none; transition: opacity .2s;
+    }
+    .panel:not([hidden]) ~ .laterfab, .panel:not([hidden]) ~ .bulkfab { display: none; }
     .feednav button:disabled { opacity: .35; }
     .feednav.raised { bottom: 76px; }
 
@@ -4876,7 +4975,7 @@
         [['masonry', t('layoutMasonry')], ['grid', t('layoutGrid')]], switchFeed))
     }
     body.appendChild(toggle('feedNav', t('tNav'), t('noteReload')))
-    body.appendChild(toggle('sortButton', t('tSortBtn'), t('noteReload')))
+    body.appendChild(toggle('bulkFavButton', t('tBulkBtn'), null, ensureFeedNav))
     body.appendChild(toggle('freeButton', t('tFreeBtn'), null, ensureFeedNav))
     body.appendChild(toggle('laterButton', t('tLaterBtn'), null, ensureFeedNav))
     body.appendChild(toggle('favSearch', t('tFavSearch'), null, ensureFavSearch))
@@ -4943,7 +5042,7 @@
   }
 
   function mountPanel() {
-    const nav = wantsFeedButtons() || wantsSortButton() || CFG.freeButton
+    const nav = wantsFeedButtons() || CFG.freeButton || CFG.laterButton || CFG.bulkFavButton
     if (!CFG.panel && !nav) return
     if (panelHost && panelHost.isConnected) return
     if (!document.body) return
@@ -4981,22 +5080,30 @@
   function ensureFeedNav() {
     if (!shadow) return
     const feed = wantsFeedButtons()
-    const sort = wantsSortButton()
     const free = !!CFG.freeButton
-    const want = `${feed ? 'f' : ''}${sort ? 's' : ''}${free ? 'c' : ''}`
+    const want = `${feed ? 'f' : ''}${free ? 'c' : ''}`
     let nav = shadow.querySelector('.feednav')
     if (nav && nav.dataset.set !== want) { nav.remove(); nav = null }
     if (!nav && want) {
-      nav = buildFeedNav(feed, sort, free)
+      nav = buildFeedNav(feed, free)
       nav.dataset.set = want
       shadow.appendChild(nav)
-      dbg(`buttons added: ${feed ? 'feed ' : ''}${sort ? 'sort ' : ''}${free ? 'free' : ''}`.trim())
+      dbg(`buttons added: ${feed ? 'feed ' : ''}${free ? 'free' : ''}`.trim())
+    }
+    // Mass favorite: next to Watch later, top right.
+    let heart = shadow.querySelector('.bulkfab')
+    if (heart && !wantsBulkButton()) { heart.remove(); heart = null; if (bulkMode) setBulkMode(false) }
+    if (!heart && wantsBulkButton()) {
+      heart = iconButton('laterfab bulkfab', t('navBulk'), HEART_ICON)
+      heart.classList.toggle('on', bulkMode)
+      heart.addEventListener('click', () => setBulkMode(!bulkMode))
+      shadow.appendChild(heart)
     }
     // Watch later: a button of its own in the top-right corner.
-    let clock = shadow.querySelector('.laterfab')
+    let clock = shadow.querySelector('.clockfab')
     if (clock && !wantsLaterButton()) { clock.remove(); clock = null }
     if (!clock && wantsLaterButton()) {
-      clock = iconButton('laterfab', t('navLater'), CLOCK_ICON)
+      clock = iconButton('laterfab clockfab', t('navLater'), CLOCK_ICON)
       clock.addEventListener('click', () => showLater())
       shadow.appendChild(clock)
     }
@@ -5012,26 +5119,6 @@
   }
 
   const wantsFeedButtons = () => CFG.feedNav && CFG.nativeFeed && !!document.querySelector(FEED_POST)
-  // Search listings only: favorites and post pages have no tag search to sort.
-  const isSearchList = () => /[?&]page=post(&|$)/.test(location.search) && /[?&]s=list(&|$)/.test(location.search)
-  const wantsSortButton = () => CFG.sortButton && isSearchList()
-
-  const searchTags = () => (new URL(location.href).searchParams.get('tags') || '').split(/\s+/).filter(Boolean)
-  const sortedByScore = () => searchTags().some(tag => /^sort:score/i.test(tag))
-
-  // Add sort:score to the search (replacing any other sort:, only one counts)
-  // or take it out, and reload on the first page. Masonry reads the search
-  // from the same tags parameter when it boots, so this works there too.
-  function toggleSortScore() {
-    const had = sortedByScore()
-    const tags = searchTags().filter(tag => !/^sort:/i.test(tag))
-    if (!had) tags.push('sort:score')
-    const url = new URL(location.href)
-    url.searchParams.set('tags', tags.join(' '))
-    url.searchParams.delete('pid')
-    info(`search: sort:score ${had ? 'removed' : 'added'}`)
-    location.href = url.href
-  }
 
   // ‹ › buttons for the one-column feed: jump to the start of the previous or
   // next post, e.g. to skip a long comic without scrolling through it.
@@ -5129,7 +5216,7 @@
   // The list opens in the post modal, which exists on the site's own pages.
   const wantsLaterButton = () => !!CFG.laterButton && !!CFG.videoModal && !!document.querySelector(SITE_LINK)
 
-  function buildFeedNav(feed, sort, free) {
+  function buildFeedNav(feed, free) {
     const rows = []
     if (feed) {
       const top = el('button', { text: '⤒', title: t('navTop') })
@@ -5147,12 +5234,6 @@
     }
     const second = []
     if (free) second.push(trashButton())
-    if (sort) {
-      const star = el('button', { text: '★', title: t('navSort') })
-      if (sortedByScore()) star.classList.add('on')
-      star.addEventListener('click', toggleSortScore)
-      second.push(star)
-    }
     if (feed) {
       const prevPage = el('button', { class: 'pp', text: '«', title: t('navPrevPage') })
       const nextPage = el('button', { class: 'np', text: '»', title: t('navNextPage') })
@@ -5325,6 +5406,9 @@
     #ibh-favmore { display: block; margin: 14px auto; padding: 9px 18px; font-size: 14px; }
     #ibh-favmore[hidden] { display: none; }
     #ibh-pager { min-height: 1px; padding: 14px 0; text-align: center; font-size: 13px; opacity: .85; }
+    .ibh-bulkbadge { position: absolute; top: 6px; right: 6px; z-index: 3; min-width: 26px; height: 26px; padding: 0 6px;
+      border-radius: 13px; color: #fff; font: 600 15px/26px system-ui, sans-serif; text-align: center; pointer-events: none;
+      box-shadow: 0 2px 8px rgba(0,0,0,.5); }
   `
 
   function injectPageCSS() {
@@ -5363,6 +5447,7 @@
   hookFancybox()
   installGestures()
   installMemorySaver()
+  window.addEventListener('click', onBulkClick, true)   // before the modal: in mass favorite a tap favorites
   installVideoScrub()   // before the modal: its click guard must run first
   installVideoModal()
   logSnapshot()
