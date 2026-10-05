@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.45.0
+
+- Watch later list on site pages: ☰ in a post has a 🕒 Watch later button
+  (✓ when the post is in the list; a tap again removes it), and a 🕒 button
+  with the floating ones (`laterButton`, on) opens the list as a grid in the
+  modal. A tap opens a post, the swipe walks the list, ✕ on a tile removes it.
+  Up to 500 posts, newest first
+- New companion script, `ibh-storage-bridge.user.js`: with it installed, the
+  list lives in Violentmonkey's own storage on the device and survives
+  clearing the site's data. The main script keeps `@grant none` and talks to
+  it through events on `window`; without the bridge the list stays in the
+  site's `localStorage`, and moves into Violentmonkey the first time the
+  bridge answers
+
 ## 0.44.0
 
 - Feed columns and layout on site pages, from the panel while the feed is on,

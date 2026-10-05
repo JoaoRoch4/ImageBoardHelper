@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.44.0
+// @version      0.45.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.44.0'
+  const VERSION = '0.45.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -116,6 +116,7 @@
     feedNav:        true,   // ⤒ ‹ › buttons: top of page, previous and next post in the feed (needs reload)
     sortButton:     true,   // ★ button on search listings: add or remove sort:score (needs reload)
     freeButton:     true,   // trash-can button next to them: Free memory & cache in one tap
+    laterButton:    true,   // 🕒 button next to them on site pages: the Watch later list
     videoModal:     true,   // open posts from site pages in an overlay: video, GIF, image (needs reload)
     rotateLandscape: true,  // in the modal player's fullscreen, lock wide videos to landscape
     modalPreload:   true,   // in the modal, have the next post loaded before the swipe
@@ -189,6 +190,10 @@
       navPrevPage: 'Previous page', navNextPage: 'Next page',
       tSortBtn: 'Sort-by-score button', navSort: 'Sort by score (tap again to undo)',
       tFreeBtn: 'Free-memory shortcut button', navFree: 'Free memory & cache',
+      tLaterBtn: 'Watch later button', navLater: 'Watch later', laterTitle: 'Watch later',
+      laterAdd: '🕒 Watch later', laterIn: '✓ In Watch later', laterAdded: 'Saved for later', laterRemoved: 'Removed from the list',
+      laterEmpty: 'Nothing saved yet. Use 🕒 in a post’s ☰ menu.', laterOnDevice: 'kept by Violentmonkey, on this device',
+      laterOnSite: 'kept in this site’s data (install the storage bridge to keep it in Violentmonkey)',
       tModal: 'Open posts in a player over the page',
       tTheme: 'Dark theme on site pages',
       mClose: 'Close', mOpen: 'Open the post', mPrev: 'Previous post', mNext: 'Next post',
@@ -236,6 +241,10 @@
       navPrevPage: 'Página anterior', navNextPage: 'Próxima página',
       tSortBtn: 'Botão ordenar por score', navSort: 'Ordenar por score (toque de novo para desfazer)',
       tFreeBtn: 'Botão de atalho para limpar a memória', navFree: 'Limpar memória e cache',
+      tLaterBtn: 'Botão Ver depois', navLater: 'Ver depois', laterTitle: 'Ver depois',
+      laterAdd: '🕒 Ver depois', laterIn: '✓ Na lista', laterAdded: 'Salvo para ver depois', laterRemoved: 'Tirado da lista',
+      laterEmpty: 'Nada salvo ainda. Use o 🕒 no menu ☰ de um post.', laterOnDevice: 'guardado pelo Violentmonkey, neste aparelho',
+      laterOnSite: 'guardado nos dados deste site (instale a ponte de armazenamento para guardar no Violentmonkey)',
       tModal: 'Abrir posts num player sobre a página',
       tTheme: 'Tema escuro nas páginas do site',
       mClose: 'Fechar', mOpen: 'Abrir o post', mPrev: 'Post anterior', mNext: 'Próximo post',
@@ -2097,6 +2106,21 @@
     button.tag.held { background: #1d3b38; border-color: #5eead4; }
     button.tag { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
     .sheet .none { color: #4e6469; font-size: 13px; }
+    /* Watch later: a grid of the saved posts over the modal. */
+    .laterview { display: none; position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain;
+      background: #0b0f11; padding: 10px; }
+    .m.later-mode .laterview { display: block; }
+    .m.later-mode .stage, .m.later-mode .bar, .m.later-mode .side, .m.later-mode .status, .m.later-mode .sheet { display: none; }
+    .laterhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .laterhead .lt { color: #d7dee0; font-size: 16px; font-weight: 600; }
+    .latergrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 6px; }
+    .tile { position: relative; aspect-ratio: 1 / 1; border-radius: 8px; overflow: hidden; background: #0f1417; border: 1px solid #2a3a3f; }
+    .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .tile .play { position: absolute; left: 6px; bottom: 6px; font-size: 13px; color: #fff; background: rgba(0,0,0,.6);
+      border-radius: 10px; padding: 1px 7px; pointer-events: none; }
+    .tile button.rm { position: absolute; top: 4px; right: 4px; width: 28px; height: 28px; font-size: 14px; }
+    .laternote { color: #4e6469; font-size: 12px; margin-top: 14px; text-align: center; }
+    .latergrid .none { grid-column: 1 / -1; color: #7f9aa0; font-size: 14px; text-align: center; padding: 30px 10px; }
     .toast {
       position: absolute; left: 50%; bottom: 84px; transform: translateX(-50%);
       padding: 8px 14px; border-radius: 18px; background: rgba(15, 20, 23, .92); color: #d7dee0;
@@ -2136,7 +2160,13 @@
     const menu = el('button', { text: '☰', title: t('mMenu') })
     const tagAll = el('button', { class: 'pill', text: t('tagsCopyAll') })
     const tagList = el('div', { class: 'taglist' })
-    const sheet = el('div', { class: 'sheet' }, [el('div', { class: 'sheethead' }, [post, tagAll]), tagList])
+    const laterBtn = el('button', { class: 'pill', text: t('laterAdd') })
+    const sheet = el('div', { class: 'sheet' }, [el('div', { class: 'sheethead' }, [post, laterBtn, tagAll]), tagList])
+    const laterClose = el('button', { text: '✕', title: t('mClose') })
+    const laterHead = el('div', { class: 'laterhead' }, [el('span', { class: 'lt' }), laterClose])
+    const laterGrid = el('div', { class: 'latergrid' })
+    const laterNote = el('div', { class: 'laternote' })
+    const laterView = el('div', { class: 'laterview' }, [laterHead, laterGrid, laterNote])
     sheet.hidden = true
     const full = el('button', { text: '⛶', title: t('mFull') })
     const turn = el('button', { text: '↻', title: t('mTurn') })
@@ -2151,10 +2181,12 @@
     badge.hidden = true
     const prev = el('button', { class: 'side prev', text: '‹', title: t('mPrev') })
     const next = el('button', { class: 'side next', text: '›', title: t('mNext') })
-    const box = el('div', { class: 'm' }, [stage, status, el('div', { class: 'bar' }, [close, menu, full, turn, fav, up, count]), prev, next, sheet, toast, badge])
+    const box = el('div', { class: 'm' }, [stage, status, el('div', { class: 'bar' }, [close, menu, full, turn, fav, up, count]), prev, next, sheet, laterView, toast, badge])
     close.addEventListener('click', () => closeModal(false))
     full.addEventListener('click', () => toggleModalFullscreen())
     menu.addEventListener('click', () => toggleMenu())
+    laterBtn.addEventListener('click', () => toggleLaterHere())
+    laterClose.addEventListener('click', () => closeModal(false))
     fsBtn.addEventListener('click', () => toggleModalFullscreen())
     turn.addEventListener('click', () => turnScreen())
     fav.addEventListener('click', modalFavorite)
@@ -2170,7 +2202,7 @@
     installImageZoom(stage, image)
     installVideoGestures(layer, video)
     root.append(style, box)
-    modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, score, toast, badge, turn, fsBtn, menu, sheet, tagList, tagAll, turned: null, open: false, link: null, seq: 0 }
+    modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, score, toast, badge, turn, fsBtn, menu, sheet, tagList, tagAll, laterBtn, laterView, laterHead, laterGrid, laterNote, listLinks: null, turned: null, open: false, link: null, seq: 0 }
   }
 
   let toastTimer = 0
@@ -2263,6 +2295,164 @@
       favLookups.set(id, p)
     }
     return p
+  }
+
+  // ── Storage shared with the bridge ──
+  // The lists live in Violentmonkey's storage, on the device, when the storage
+  // bridge (ibh-storage-bridge.user.js) is installed: a second script with the
+  // @grant this one cannot have. They talk through events on window, as JSON
+  // strings. Without the bridge, the site's own localStorage holds them.
+  const STORE_TIMEOUT_MS = 700
+  let storeBridge = null   // unknown until it answers, or stays silent once
+  const storeWaiters = new Map()
+  let storeSeq = 0
+
+  window.addEventListener('ibh-store-reply', ev => {
+    let msg
+    try { msg = JSON.parse(ev.detail) } catch (e) { return }
+    const waiter = msg && storeWaiters.get(msg.id)
+    if (!waiter) return
+    storeWaiters.delete(msg.id)
+    clearTimeout(waiter.timer)
+    storeBridge = true
+    waiter.resolve(msg.value)
+  })
+  // Loaded after a first silent try: use it from now on.
+  window.addEventListener('ibh-store-ready', () => { storeBridge = true })
+
+  // Resolves with the stored value, or undefined when no bridge answered.
+  function bridgeCall(op, key, value) {
+    return new Promise(resolve => {
+      if (storeBridge === false) { resolve(undefined); return }
+      const id = ++storeSeq
+      const timer = setTimeout(() => {
+        storeWaiters.delete(id)
+        if (storeBridge === null) { storeBridge = false; info('storage bridge not installed: lists kept in the site’s data') }
+        resolve(undefined)
+      }, STORE_TIMEOUT_MS)
+      storeWaiters.set(id, { resolve, timer })
+      window.dispatchEvent(new CustomEvent('ibh-store-request', { detail: JSON.stringify({ id, op, key, value }) }))
+    })
+  }
+
+  async function storeGet(key) {
+    const local = readJSON(`IBH_${key}`, null)
+    const value = await bridgeCall('get', key)
+    if (value === undefined) return local
+    // First time with the bridge: move what the site's data held into it.
+    if (local && (value === null || (Array.isArray(value) && !value.length))) {
+      await bridgeCall('set', key, local)
+      try { localStorage.removeItem(`IBH_${key}`) } catch (e) { /* ignore */ }
+      info(`storage: ${key} moved into Violentmonkey`)
+      return local
+    }
+    return value
+  }
+
+  async function storeSet(key, value) {
+    if ((await bridgeCall('set', key, value)) === undefined) writeJSON(`IBH_${key}`, value)
+  }
+
+  // ── Watch later ──
+  // Posts saved from the ☰ menu, newest first, opened from the 🕒 button in
+  // the same modal: a tap opens one, and the swipe walks the list. Each item
+  // keeps what the modal needs to show it off the page it came from: the post
+  // link, its thumbnail and its tags (they tell a video or a GIF apart).
+  const LATER_MAX = 500
+
+  async function laterList() {
+    const list = await storeGet('later')
+    return Array.isArray(list) ? list : []
+  }
+
+  function laterItem(link) {
+    const img = link.querySelector('img')
+    return {
+      site: SITE,
+      href: link.href,
+      thumb: (img && img.getAttribute('src')) || '',   // the thumbnail, not an upgrade in srcset
+      tags: nativeTags(link).trim(),
+      webm: !!link.querySelector('img.webm-thumb'),
+      added: Date.now(),
+    }
+  }
+
+  // A detached stand-in for a page thumbnail, which is what the modal reads.
+  function laterLink(item) {
+    const a = document.createElement('a')
+    a.href = item.href
+    const img = document.createElement('img')
+    img.src = item.thumb
+    img.title = item.tags
+    if (item.webm) img.className = 'webm-thumb'
+    a.appendChild(img)
+    return a
+  }
+
+  async function toggleLaterHere() {
+    const link = modal.link
+    if (!link) return
+    const list = await laterList()
+    const i = list.findIndex(item => item.href === link.href)
+    if (i >= 0) list.splice(i, 1)
+    else list.unshift(laterItem(link))
+    list.length = Math.min(list.length, LATER_MAX)
+    await storeSet('later', list)
+    setLaterButton(i < 0)
+    flash(t(i < 0 ? 'laterAdded' : 'laterRemoved'))
+    info(`later: ${i < 0 ? 'saved' : 'removed'} post ${postId(link)} (${list.length} in the list)`)
+  }
+
+  function setLaterButton(saved) {
+    modal.laterBtn.textContent = t(saved ? 'laterIn' : 'laterAdd')
+    modal.laterBtn.classList.toggle('on', saved)
+  }
+
+  function refreshLaterButton(link, seq) {
+    setLaterButton(false)
+    laterList().then(list => {
+      if (modal.seq === seq) setLaterButton(list.some(item => item.href === link.href))
+    })
+  }
+
+  async function showLater() {
+    if (!modal) buildModal()
+    resetMedia()
+    modal.box.classList.add('later-mode')
+    openShell()
+    await renderLater()
+  }
+
+  async function renderLater() {
+    const list = (await laterList()).filter(item => item.site === SITE)
+    modal.laterHead.querySelector('.lt').textContent = `🕒 ${t('laterTitle')} · ${list.length}`
+    modal.laterNote.textContent = t(storeBridge ? 'laterOnDevice' : 'laterOnSite')
+    if (!list.length) {
+      modal.laterGrid.replaceChildren(el('div', { class: 'none', text: t('laterEmpty') }))
+      return
+    }
+    const links = list.map(laterLink)
+    modal.laterGrid.replaceChildren(...list.map((item, i) => {
+      const img = el('img', { src: item.thumb, alt: '' })
+      img.loading = 'lazy'
+      const rm = el('button', { class: 'rm', text: '✕', title: t('laterRemoved') })
+      const tile = el('div', { class: 'tile' }, [img, rm])
+      if (item.webm || /\s(video|mp4|webm|animated|gif)\s/i.test(` ${item.tags} `)) tile.appendChild(el('span', { class: 'play', text: '▶' }))
+      tile.addEventListener('click', ev => {
+        if (ev.target === rm) return
+        modal.listLinks = links
+        modal.dir = 1
+        openModal(links[i])
+      })
+      rm.addEventListener('click', async () => {
+        const all = await laterList()
+        await storeSet('later', all.filter(other => other.href !== item.href))
+        info(`later: removed post ${postId(links[i])} from the list`)
+        renderLater()
+      })
+      return tile
+    }))
+    dbg(`later: list shown, ${list.length} posts`)
   }
 
   // ── Tags menu ──
@@ -3102,10 +3292,11 @@
 
     modal.link = link
     modal.post.href = link.href
+    modal.box.classList.remove('later-mode')
     applyMarks(link, seq)
     if (!modal.sheet.hidden) renderTags(link, seq)   // the menu follows the post
     modal.score.textContent = ''
-    const list = siteLinks()
+    const list = modalLinks()
     modal.count.textContent = `${list.indexOf(link) + 1} / ${list.length}`
     modal.status.textContent = t('mLoading')
     modal.status.hidden = false
@@ -3130,26 +3321,34 @@
       showImage(placeholder, fileCandidates(pic.src, ORIGINAL_EXTS), 'orig', hash)
       sniffVideo(pic.src, link)
     }
+    refreshLaterButton(link, seq)
     // Only now: the preloaded image stays referenced until the modal shows it.
     dropAhead()
     // A post that never finishes loading must not hold the next one back.
     setTimeout(() => preloadAhead(seq), AHEAD_FALLBACK_MS)
 
-    if (!modal.open) {
-      modal.open = true
-      suspendPage()
-      if (!modal.host.isConnected) document.documentElement.appendChild(modal.host)
-      modal.host.style.display = ''
-      document.documentElement.style.setProperty('overflow', 'hidden', 'important')
-      // An entry for the back button to close the modal instead of the page.
-      // Leaving it, the browser would put back the scroll it saved for the
-      // page, undoing the scroll that followed the modal: we place it ourselves.
-      modal.scrollMode = history.scrollRestoration
-      history.scrollRestoration = 'manual'
-      history.pushState({ ibhModal: true }, '')
-    }
+    openShell()
     info(`modal: ${kind} post ${postId(link)}`)
   }
+
+  // Shows the modal over the page (a post, or the Watch later list).
+  function openShell() {
+    if (modal.open) return
+    modal.open = true
+    suspendPage()
+    if (!modal.host.isConnected) document.documentElement.appendChild(modal.host)
+    modal.host.style.display = ''
+    document.documentElement.style.setProperty('overflow', 'hidden', 'important')
+    // An entry for the back button to close the modal instead of the page.
+    // Leaving it, the browser would put back the scroll it saved for the
+    // page, undoing the scroll that followed the modal: we place it ourselves.
+    modal.scrollMode = history.scrollRestoration
+    history.scrollRestoration = 'manual'
+    history.pushState({ ibhModal: true }, '')
+  }
+
+  // The posts the modal steps through: the page's, or the Watch later list's.
+  const modalLinks = () => (modal && modal.listLinks) || siteLinks()
 
   function closeModal(fromBack) {
     if (!modal || !modal.open) return
@@ -3158,6 +3357,8 @@
     modal.turned = null   // its fullscreenchange comes after open is false
     modal.turn.classList.remove('on')
     closeMenu()
+    modal.listLinks = null
+    modal.box.classList.remove('later-mode')
     dropAhead()
     resetMedia()
     modal.host.style.display = 'none'
@@ -3216,7 +3417,7 @@
   }
 
   function stepModal(dir) {
-    const list = siteLinks()
+    const list = modalLinks()
     const target = list[list.indexOf(modal.link) + dir]
     if (!target) return
     modal.dir = dir   // the preload follows the direction of travel
@@ -3238,7 +3439,7 @@
 
   function preloadAhead(seq) {
     if (!CFG.modalPreload || !modal.open || modal.seq !== seq) return
-    const list = siteLinks()
+    const list = modalLinks()
     const link = list[list.indexOf(modal.link) + (modal.dir || 1)]
     if (!link || (ahead && ahead.link === link)) return
     dropAhead()
@@ -3864,6 +4065,7 @@
     body.appendChild(toggle('feedNav', t('tNav'), t('noteReload')))
     body.appendChild(toggle('sortButton', t('tSortBtn'), t('noteReload')))
     body.appendChild(toggle('freeButton', t('tFreeBtn'), null, ensureFeedNav))
+    body.appendChild(toggle('laterButton', t('tLaterBtn'), null, ensureFeedNav))
     body.appendChild(toggle('videoModal', t('tModal'), t('noteReload')))
     body.appendChild(toggle('siteTheme', t('tTheme'), null, applySiteTheme))
     body.appendChild(toggle('rotateLandscape', t('tRotate')))
@@ -3965,11 +4167,12 @@
     const feed = wantsFeedButtons()
     const sort = wantsSortButton()
     const free = !!CFG.freeButton
-    const want = `${feed ? 'f' : ''}${sort ? 's' : ''}${free ? 'c' : ''}`
+    const later = wantsLaterButton()
+    const want = `${feed ? 'f' : ''}${sort ? 's' : ''}${free ? 'c' : ''}${later ? 'l' : ''}`
     let nav = shadow.querySelector('.feednav')
     if (nav && nav.dataset.set !== want) { nav.remove(); nav = null }
     if (!nav && want) {
-      nav = buildFeedNav(feed, sort, free)
+      nav = buildFeedNav(feed, sort, free, later)
       nav.dataset.set = want
       shadow.appendChild(nav)
       dbg(`buttons added: ${feed ? 'feed ' : ''}${sort ? 'sort ' : ''}${free ? 'free' : ''}`.trim())
@@ -4085,7 +4288,25 @@
     return btn
   }
 
-  function buildFeedNav(feed, sort, free) {
+  // Material Design's "watch later" icon (a clock), as path data.
+  const CLOCK_ICON = 'M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm4.2 14.2L11 13V7h1.5v5.2l4.5 2.7-.8 1.3z'
+
+  function iconButton(cls, title, d) {
+    const btn = el('button', { class: cls, title })
+    const ns = 'http://www.w3.org/2000/svg'
+    const svg = document.createElementNS(ns, 'svg')
+    svg.setAttribute('viewBox', '0 0 24 24')
+    const path = document.createElementNS(ns, 'path')
+    path.setAttribute('d', d)
+    svg.appendChild(path)
+    btn.appendChild(svg)
+    return btn
+  }
+
+  // The list opens in the post modal, which exists on the site's own pages.
+  const wantsLaterButton = () => !!CFG.laterButton && !!CFG.videoModal && !!document.querySelector(SITE_LINK)
+
+  function buildFeedNav(feed, sort, free, later) {
     const rows = []
     if (feed) {
       const top = el('button', { text: '⤒', title: t('navTop') })
@@ -4103,6 +4324,11 @@
     }
     const second = []
     if (free) second.push(trashButton())
+    if (later) {
+      const clock = iconButton('trash', t('navLater'), CLOCK_ICON)   // same look as the trash can
+      clock.addEventListener('click', () => showLater())
+      second.push(clock)
+    }
     if (sort) {
       const star = el('button', { text: '★', title: t('navSort') })
       if (sortedByScore()) star.classList.add('on')
