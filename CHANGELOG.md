@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.46.1 (bridge 1.2.1)
+
+- Video downloads work: rule34's video host answers 403 to a request without
+  the site as `Referer` (measured: 403 without, 206 with), which the browser
+  sends when it plays the video and the extension did not. The bridge sends it
+
 ## 0.46.1
 
 - Download saves on Firefox for Android (bridge 1.2.0): `GM_download` showed

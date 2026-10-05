@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper — storage bridge
 // @namespace    joao.imageboardhelper
-// @version      1.2.0
+// @version      1.2.1
 // @description  Keeps Image Board Helper's lists (Watch later) in Violentmonkey's own storage, on the device, and saves files for its Download button
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -54,6 +54,9 @@
       url,
       responseType: 'blob',
       timeout: 180000,
+      // The video hosts refuse a request without the site as referrer (403),
+      // which the browser sends when it plays the video and the extension not.
+      headers: { Referer: `${location.origin}/` },
       onload: res => {
         if (res.status !== 200 || !res.response) { done(false, `HTTP ${res.status}`); return }
         const href = URL.createObjectURL(res.response)
