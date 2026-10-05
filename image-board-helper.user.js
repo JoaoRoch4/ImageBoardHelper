@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.45.3
+// @version      0.46.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.45.3'
+  const VERSION = '0.46.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -191,6 +191,8 @@
       tSortBtn: 'Sort-by-score button', navSort: 'Sort by score (tap again to undo)',
       tFreeBtn: 'Free-memory shortcut button', navFree: 'Free memory & cache',
       tLaterBtn: 'Watch later button', navLater: 'Watch later', laterTitle: 'Watch later',
+      dlBtn: '⬇ Download', dlWait: 'The file is still loading', dlStart: 'Downloading…', dlDone: 'Saved to Downloads',
+      dlFail: 'Download failed', dlOpened: 'Opened in a new tab: hold it to save',
       laterAdd: '🕒 Watch later', laterIn: '✓ In Watch later', laterAdded: 'Saved for later', laterRemoved: 'Removed from the list',
       laterEmpty: 'Nothing saved yet. Use 🕒 in a post’s ☰ menu.', laterOnDevice: 'kept by Violentmonkey, on this device',
       laterOnSite: 'Kept in this site’s data. Tap to install the storage bridge and keep it in Violentmonkey',
@@ -242,6 +244,8 @@
       tSortBtn: 'Botão ordenar por score', navSort: 'Ordenar por score (toque de novo para desfazer)',
       tFreeBtn: 'Botão de atalho para limpar a memória', navFree: 'Limpar memória e cache',
       tLaterBtn: 'Botão Ver depois', navLater: 'Ver depois', laterTitle: 'Ver depois',
+      dlBtn: '⬇ Baixar', dlWait: 'O arquivo ainda está carregando', dlStart: 'Baixando…', dlDone: 'Salvo em Downloads',
+      dlFail: 'Falha no download', dlOpened: 'Aberto em outra aba: segure para salvar',
       laterAdd: '🕒 Ver depois', laterIn: '✓ Na lista', laterAdded: 'Salvo para ver depois', laterRemoved: 'Tirado da lista',
       laterEmpty: 'Nada salvo ainda. Use o 🕒 no menu ☰ de um post.', laterOnDevice: 'guardado pelo Violentmonkey, neste aparelho',
       laterOnSite: 'Guardado nos dados deste site. Toque para instalar a ponte de armazenamento e guardar no Violentmonkey',
@@ -2091,7 +2095,7 @@
       position: absolute; left: 0; right: 0; bottom: 0; max-height: 55%; overflow-y: auto; overscroll-behavior: contain;
       background: rgba(10, 14, 16, .97); border-top: 1px solid #2a3a3f; border-radius: 14px 14px 0 0; padding: 10px 10px 18px;
     }
-    .sheethead { display: flex; align-items: center; gap: 8px; margin-bottom: 10px; }
+    .sheethead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
     button.pill { width: auto; height: 36px; border-radius: 18px; padding: 0 14px; font-size: 13px; }
     .taglist { display: flex; flex-wrap: wrap; gap: 6px; }
     button.tag {
@@ -2162,7 +2166,8 @@
     const tagAll = el('button', { class: 'pill', text: t('tagsCopyAll') })
     const tagList = el('div', { class: 'taglist' })
     const laterBtn = el('button', { class: 'pill', text: t('laterAdd') })
-    const sheet = el('div', { class: 'sheet' }, [el('div', { class: 'sheethead' }, [post, laterBtn, tagAll]), tagList])
+    const dlBtn = el('button', { class: 'pill', text: t('dlBtn') })
+    const sheet = el('div', { class: 'sheet' }, [el('div', { class: 'sheethead' }, [post, laterBtn, dlBtn, tagAll]), tagList])
     const laterClose = el('button', { text: '✕', title: t('mClose') })
     const laterHead = el('div', { class: 'laterhead' }, [el('span', { class: 'lt' }), laterClose])
     const laterGrid = el('div', { class: 'latergrid' })
@@ -2187,6 +2192,7 @@
     full.addEventListener('click', () => toggleModalFullscreen())
     menu.addEventListener('click', () => toggleMenu())
     laterBtn.addEventListener('click', () => toggleLaterHere())
+    dlBtn.addEventListener('click', () => modalDownload())
     laterClose.addEventListener('click', () => closeModal(false))
     fsBtn.addEventListener('click', () => toggleModalFullscreen())
     turn.addEventListener('click', () => turnScreen())
@@ -2335,6 +2341,44 @@
       storeWaiters.set(id, { resolve, timer })
       window.dispatchEvent(new CustomEvent('ibh-store-request', { detail: JSON.stringify({ id, op, key, value }) }))
     })
+  }
+
+  // ── Download ──
+  // Saves the post's own file (the original image, the GIF, the video) as
+  // SITE_ID.ext. Only the storage bridge can save a file from the image hosts;
+  // without it the file opens in a new tab, to be saved with a long press (still
+  // inside the tap's user activation, so the popup blocker lets it through).
+  const downloads = new Map()   // bridge id -> post id, for the outcome
+
+  window.addEventListener('ibh-download-done', ev => {
+    let msg
+    try { msg = JSON.parse(ev.detail) } catch (e) { return }
+    const post = downloads.get(msg.id)
+    if (post === undefined) return
+    downloads.delete(msg.id)
+    if (modal && modal.open) flash(t(msg.ok ? 'dlDone' : 'dlFail'))
+    if (msg.ok) info(`download: post ${post} saved`)
+    else warn(`download: post ${post} failed — ${msg.error}`)
+  })
+
+  async function modalDownload() {
+    const url = modal.fileUrl
+    if (!url) { flash(t('dlWait')); return }
+    const post = postId(modal.link)
+    const ext = (url.split(/[?#]/)[0].match(/\.(\w+)$/) || [])[1] || 'bin'
+    const name = `${SITE.split('.')[0]}_${post}.${ext}`
+    const id = storeSeq + 1   // the id bridgeCall is about to use
+    downloads.set(id, post)
+    const started = await bridgeCall('download', null, { url, name })
+    if (started === undefined) {
+      downloads.delete(id)
+      window.open(url, '_blank', 'noopener')
+      flash(t('dlOpened'))
+      info(`download: no storage bridge, post ${post} opened in a new tab`)
+      return
+    }
+    flash(t('dlStart'))
+    info(`download: post ${post} as ${name}`)
   }
 
   async function storeGet(key) {
@@ -3010,6 +3054,7 @@
   // Stop whatever is showing and invalidate loads still in flight (seq).
   function resetMedia() {
     modal.seq++
+    modal.fileUrl = null   // the post's own file, once it loaded (Download)
     const v = modal.video
     v.pause()
     v.onerror = v.oncanplay = v.onloadedmetadata = null
@@ -3154,6 +3199,7 @@
     v.oncanplay = () => { modal.status.hidden = true; preloadAhead(seq) }
     v.onloadedmetadata = () => {
       cacheSet('video', hash, urls[i - 1], vcached)
+      if (modal.seq === seq) modal.fileUrl = urls[i - 1]
       fitFullscreenOrientation()   // swiped onto a wide video while fullscreen
       if (onFound) onFound()
     }
@@ -3196,6 +3242,7 @@
     probe.onload = () => {
       cacheSet(kind, hash, probe.src, icached)
       if (modal.seq !== seq) return   // the user moved on
+      modal.fileUrl = probe.src
       const decoded = typeof probe.decode === 'function' ? probe.decode().catch(() => {}) : Promise.resolve()
       decoded.then(() => {
         if (modal.seq !== seq) return

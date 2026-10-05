@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.46.0
+
+- ⬇ Download in the modal's ☰ menu: saves the post's own file (original
+  image, GIF or video, once it has loaded) to Downloads as `SITE_ID.ext`,
+  posts opened from Watch later included. The storage bridge does the saving
+  (bridge 1.1.0, `GM_download`): a page script cannot save a file from the
+  image hosts, which send no CORS headers. Without the bridge the file opens
+  in a new tab, to be saved with a long press
+
 ## 0.45.3
 
 - Sharp pictures in the Watch later grid: tiles scrolling into view swap the
