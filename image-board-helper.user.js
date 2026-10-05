@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.41.1
+// @version      0.41.2
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.41.1'
+  const VERSION = '0.41.2'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -2307,10 +2307,15 @@
   const TAG_HOLD_MS = 450
   const tagSearchUrl = name => `/index.php?page=post&s=list&tags=${encodeURIComponent(name)}`
 
-  // Firefox for Android turns a long press into a context menu and may cancel
-  // the pointer, so no pointerup arrives: the hold also counts from the
-  // contextmenu event, and the tab opens from touchend as well (also a user
-  // gesture), whichever ending comes first.
+  // Measured on the phone (event log): Firefox for Android ends a long press
+  // three ways — contextmenu then pointerup; contextmenu then pointercancel;
+  // or pointercancel ~110 ms in, with no contextmenu, as soon as the finger
+  // trembles (it takes the touch for a scroll of the sheet). Touch events go
+  // on through all three, so a touch hold is measured on them: long enough,
+  // the finger nearly still and the sheet not scrolled. Pointer events only
+  // serve the mouse. The tab opens from touchend/pointerup, both user gestures.
+  const HOLD_SLOP = 12   // px the finger may wander and still be holding
+
   function chipGestures(chip, url, onTap) {
     let down = null
     let skipClick = false
@@ -2319,34 +2324,31 @@
       down = null
       chip.classList.remove('held')
     }
-    const hold = () => {
-      if (!down) return
-      down.held = true
-      chip.classList.add('held')   // lit, so the finger knows it can let go
+    const start = (x, y) => {
+      skipClick = false
+      // Lit once held long enough, so the finger knows it can let go.
+      down = { x, y, t: Date.now(), scroll: modal.sheet.scrollTop, timer: setTimeout(() => chip.classList.add('held'), TAG_HOLD_MS) }
     }
-    const finish = () => {
+    const moved = (x, y) => down && Math.hypot(x - down.x, y - down.y) > HOLD_SLOP
+    const finish = ev => {
       if (!down) return
-      const held = down.held || Date.now() - down.t >= TAG_HOLD_MS
+      const held = Date.now() - down.t >= TAG_HOLD_MS && Math.abs(modal.sheet.scrollTop - down.scroll) < HOLD_SLOP
       reset()
       if (!held) return
       skipClick = true   // a click that may follow is not a copy
+      if (ev.cancelable) ev.preventDefault()   // and stop it where we can
       window.open(url, '_blank', 'noopener')
       flash(t('tagOpened'))
       dbg(`modal: tag search opened in a new tab (${url})`)
     }
-    chip.addEventListener('pointerdown', ev => {
-      skipClick = false
-      down = { x: ev.clientX, y: ev.clientY, t: Date.now(), held: false, timer: setTimeout(hold, TAG_HOLD_MS) }
-    })
-    chip.addEventListener('pointermove', ev => {
-      if (down && !down.held && Math.hypot(ev.clientX - down.x, ev.clientY - down.y) > 10) reset()   // scrolling the sheet
-    })
-    // Before the hold: the sheet's scroll took the touch. After it: the long
-    // press itself, which still ends in touchend.
-    chip.addEventListener('pointercancel', () => { if (down && !down.held) reset() })
-    chip.addEventListener('pointerup', finish)
+    chip.addEventListener('touchstart', ev => start(ev.touches[0].clientX, ev.touches[0].clientY), { passive: true })
+    chip.addEventListener('touchmove', ev => { if (moved(ev.touches[0].clientX, ev.touches[0].clientY)) reset() }, { passive: true })
     chip.addEventListener('touchend', finish)
-    chip.addEventListener('contextmenu', ev => { ev.preventDefault(); hold() })   // the hold is ours
+    chip.addEventListener('touchcancel', reset)
+    chip.addEventListener('pointerdown', ev => { if (ev.pointerType === 'mouse') start(ev.clientX, ev.clientY) })
+    chip.addEventListener('pointermove', ev => { if (ev.pointerType === 'mouse' && moved(ev.clientX, ev.clientY)) reset() })
+    chip.addEventListener('pointerup', ev => { if (ev.pointerType === 'mouse') finish(ev) })
+    chip.addEventListener('contextmenu', ev => ev.preventDefault())   // the hold is ours
     chip.addEventListener('click', () => {
       if (skipClick) { skipClick = false; return }
       onTap()

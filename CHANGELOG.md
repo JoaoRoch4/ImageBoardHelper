@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.41.2
+
+- Holding a tag works every time: an event log on the phone showed Firefox
+  cancelling the pointer ~110 ms into some long presses (a trembling finger
+  reads as a scroll of the sheet), with no context menu and no pointerup.
+  Touch holds are now measured on touch events, which go on regardless: long
+  enough, the finger nearly still and the sheet not scrolled
+
 ## 0.41.1
 
 - Holding a tag opens its search more reliably on Firefox for Android: a long
