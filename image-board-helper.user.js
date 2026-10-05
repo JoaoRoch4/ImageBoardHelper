@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.45.1
+// @version      0.45.2
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.45.1'
+  const VERSION = '0.45.2'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -3828,6 +3828,16 @@
     .feednav button.on { background: #5eead4; color: #0f1417; border-color: #5eead4; }
     .feednav button.trash { display: grid; place-items: center; padding: 0; }
     .feednav button.trash svg { width: 20px; height: 20px; fill: currentColor; }
+    /* Top right, below the site's own header icons (gear, menu). */
+    .laterfab {
+      position: fixed; top: 72px; right: 12px; z-index: 2147483000;
+      width: 44px; height: 44px; border-radius: 50%; padding: 0; display: grid; place-items: center;
+      border: 1px solid #2a3a3f; background: rgba(15, 20, 23, .8); color: #5eead4;
+      box-shadow: 0 4px 14px rgba(0,0,0,.5);
+    }
+    .laterfab:active { background: #16211f; }
+    .laterfab svg { width: 22px; height: 22px; fill: currentColor; }
+    .panel:not([hidden]) ~ .laterfab { display: none; }
     .feednav button:disabled { opacity: .35; }
     .feednav.raised { bottom: 76px; }
 
@@ -4173,15 +4183,22 @@
     const feed = wantsFeedButtons()
     const sort = wantsSortButton()
     const free = !!CFG.freeButton
-    const later = wantsLaterButton()
-    const want = `${feed ? 'f' : ''}${sort ? 's' : ''}${free ? 'c' : ''}${later ? 'l' : ''}`
+    const want = `${feed ? 'f' : ''}${sort ? 's' : ''}${free ? 'c' : ''}`
     let nav = shadow.querySelector('.feednav')
     if (nav && nav.dataset.set !== want) { nav.remove(); nav = null }
     if (!nav && want) {
-      nav = buildFeedNav(feed, sort, free, later)
+      nav = buildFeedNav(feed, sort, free)
       nav.dataset.set = want
       shadow.appendChild(nav)
       dbg(`buttons added: ${feed ? 'feed ' : ''}${sort ? 'sort ' : ''}${free ? 'free' : ''}`.trim())
+    }
+    // Watch later: a button of its own in the top-right corner.
+    let clock = shadow.querySelector('.laterfab')
+    if (clock && !wantsLaterButton()) { clock.remove(); clock = null }
+    if (!clock && wantsLaterButton()) {
+      clock = iconButton('laterfab', t('navLater'), CLOCK_ICON)
+      clock.addEventListener('click', () => showLater())
+      shadow.appendChild(clock)
     }
     // Masonry's refresh button sits in the same corner; stay above it.
     if (nav) nav.classList.toggle('raised', !!document.querySelector('.v-application'))
@@ -4312,7 +4329,7 @@
   // The list opens in the post modal, which exists on the site's own pages.
   const wantsLaterButton = () => !!CFG.laterButton && !!CFG.videoModal && !!document.querySelector(SITE_LINK)
 
-  function buildFeedNav(feed, sort, free, later) {
+  function buildFeedNav(feed, sort, free) {
     const rows = []
     if (feed) {
       const top = el('button', { text: '⤒', title: t('navTop') })
@@ -4330,11 +4347,6 @@
     }
     const second = []
     if (free) second.push(trashButton())
-    if (later) {
-      const clock = iconButton('trash', t('navLater'), CLOCK_ICON)   // same look as the trash can
-      clock.addEventListener('click', () => showLater())
-      second.push(clock)
-    }
     if (sort) {
       const star = el('button', { text: '★', title: t('navSort') })
       if (sortedByScore()) star.classList.add('on')

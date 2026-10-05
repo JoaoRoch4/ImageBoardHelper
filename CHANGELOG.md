@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.45.2
+
+- The 🕒 Watch later button moved to the top-right corner, on its own, below
+  the site's header icons
+
 ## 0.45.1
 
 - Without the storage bridge, the note under the Watch later list is a link
