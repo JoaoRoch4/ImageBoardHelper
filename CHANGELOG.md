@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.54.0
+
+- Tabs in the modal's ☰ menu: Tags, and Info with the file's kind,
+  resolution (flagged above 1080p, where mid-range phones decode in
+  software), format and duration, the frames playback has dropped so far
+  (measured by the video), and the post page's statistics (id, posted, by,
+  source, rating, score). MediaCapabilities was tried and left out: Firefox
+  for Android calls even 4K smooth on a phone whose decoder stops at 1088p
+- A tap outside the ☰ menu closes it and does nothing else; a tap outside
+  the ◐ panel closes the panel
+
 ## 0.53.0
 
 - At most 3 GIFs animate at once (`gifMaxLive`, 1 to 10 from the panel, at

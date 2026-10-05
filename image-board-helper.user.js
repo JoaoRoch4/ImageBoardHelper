@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.53.0
+// @version      0.54.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.53.0'
+  const VERSION = '0.54.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -222,6 +222,9 @@
       mClose: 'Close', mOpen: 'Open the post', mPrev: 'Previous post', mNext: 'Next post',
       mLoading: 'Loading…', mFail: 'Could not load it',
       mFav: 'Add to favorites', mUp: 'Upvote', mFull: 'Fullscreen', mFullExit: 'Exit fullscreen', mMenu: 'Tags and post page',
+      tabTags: 'Tags', tabInfo: 'Info', infoKind: 'Kind', infoRes: 'Resolution', infoFormat: 'Format', infoDuration: 'Duration',
+      infoDrops: 'Dropped frames', infoDropsOf: 'of', infoAbove: 'above 1080p: mid-range phones decode it in software', infoLoading: 'loading…',
+      kindVideo: 'Video', kindGif: 'GIF', kindImage: 'Image',
       tagsCopyAll: 'Copy all', tagOpened: 'Opened in a new tab', tagCopied: 'Copied', tagCopyFail: 'Could not copy', tagsNone: 'No tags', mTurn: 'Rotate the screen',
       mPlay: 'Play / pause', mMute: 'Sound on / off',
       tRotate: 'Landscape in player fullscreen',
@@ -286,6 +289,9 @@
       mClose: 'Fechar', mOpen: 'Abrir o post', mPrev: 'Post anterior', mNext: 'Próximo post',
       mLoading: 'Carregando…', mFail: 'Não foi possível carregar',
       mFav: 'Favoritar', mUp: 'Votar positivo', mFull: 'Tela cheia', mFullExit: 'Sair da tela cheia', mMenu: 'Tags e página do post',
+      tabTags: 'Tags', tabInfo: 'Info', infoKind: 'Tipo', infoRes: 'Resolução', infoFormat: 'Formato', infoDuration: 'Duração',
+      infoDrops: 'Quadros perdidos', infoDropsOf: 'de', infoAbove: 'acima de 1080p: celulares intermediários decodificam em software', infoLoading: 'carregando…',
+      kindVideo: 'Vídeo', kindGif: 'GIF', kindImage: 'Imagem',
       tagsCopyAll: 'Copiar todas', tagOpened: 'Aberto em outra aba', tagCopied: 'Copiado', tagCopyFail: 'Não foi possível copiar', tagsNone: 'Sem tags', mTurn: 'Girar a tela',
       mPlay: 'Tocar / pausar', mMute: 'Som liga / desliga',
       tRotate: 'Paisagem na tela cheia do player',
@@ -2199,6 +2205,16 @@
     button.tag.held { background: #1d3b38; border-color: #5eead4; }
     button.tag { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
     .sheet .none { color: #4e6469; font-size: 13px; }
+    .tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+    button.tab { width: auto; height: 32px; border-radius: 16px; padding: 0 16px; font-size: 13px; }
+    button.tab.on { background: #5eead4; color: #0f1417; border-color: #5eead4; }
+    .infolist { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 13px; color: #d7dee0; }
+    .infolist[hidden] { display: none; }
+    .infolist .k { color: #7f9aa0; white-space: nowrap; }
+    .infolist .v { word-break: break-word; }
+    .infolist .v.warn { color: #f2ac08; }
+    .infolist a { color: #5eead4; }
+    .tagsbox[hidden] { display: none; }
     /* Watch later: a grid of the saved posts over the modal. */
     .laterview { display: none; position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain;
       background: #0b0f11; padding: 10px; }
@@ -2256,7 +2272,12 @@
     const tagList = el('div', { class: 'taglist' })
     const laterBtn = el('button', { class: 'pill', text: t('laterAdd') })
     const dlBtn = el('button', { class: 'pill', text: t('dlBtn') })
-    const sheet = el('div', { class: 'sheet' }, [el('div', { class: 'sheethead' }, [post, laterBtn, dlBtn, tagAll]), tagList])
+    const tabTags = el('button', { class: 'tab on', text: t('tabTags') })
+    const tabInfo = el('button', { class: 'tab', text: t('tabInfo') })
+    const infoList = el('div', { class: 'infolist' })
+    infoList.hidden = true
+    const sheet = el('div', { class: 'sheet' }, [el('div', { class: 'sheethead' }, [post, laterBtn, dlBtn, tagAll]),
+      el('div', { class: 'tabs' }, [tabTags, tabInfo]), tagList, infoList])
     const laterClose = el('button', { text: '✕', title: t('mClose') })
     const laterHead = el('div', { class: 'laterhead' }, [el('span', { class: 'lt' }), laterClose])
     const laterGrid = el('div', { class: 'latergrid' })
@@ -2280,6 +2301,25 @@
     close.addEventListener('click', () => closeModal(false))
     full.addEventListener('click', () => toggleModalFullscreen())
     menu.addEventListener('click', () => toggleMenu())
+    tabTags.addEventListener('click', () => showTab('tags'))
+    tabInfo.addEventListener('click', () => showTab('info'))
+    // A tap outside the open menu only closes it: no step, no close, no pause.
+    let swallowClick = 0
+    box.addEventListener('pointerdown', ev => {
+      if (sheet.hidden) return
+      const path = ev.composedPath()
+      if (path.includes(sheet) || path.includes(menu)) return
+      closeMenu()
+      swallowClick = Date.now() + 600
+      ev.stopPropagation()
+      ev.preventDefault()
+    }, true)
+    box.addEventListener('click', ev => {
+      if (Date.now() > swallowClick) return
+      swallowClick = 0
+      ev.stopPropagation()
+      ev.preventDefault()
+    }, true)
     laterBtn.addEventListener('click', () => toggleLaterHere())
     dlBtn.addEventListener('click', () => modalDownload())
     laterClose.addEventListener('click', () => closeModal(false))
@@ -2298,7 +2338,7 @@
     installImageZoom(stage, image)
     installVideoGestures(layer, video)
     root.append(style, box)
-    modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, score, toast, badge, turn, fsBtn, menu, sheet, tagList, tagAll, laterBtn, dlBtn, laterView, laterHead, laterGrid, laterNote, listLinks: null, turned: null, open: false, link: null, seq: 0 }
+    modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, score, toast, badge, turn, fsBtn, menu, sheet, tagList, tagAll, laterBtn, dlBtn, tabTags, tabInfo, infoList, sheetTab: 'tags', laterView, laterHead, laterGrid, laterNote, listLinks: null, turned: null, open: false, link: null, seq: 0 }
   }
 
   let toastTimer = 0
@@ -2373,7 +2413,13 @@
       const q = a && a.getAttribute('href').match(/[?&]tags=([^&]+)/)
       if (q) tags.push({ name: decodeURIComponent(q[1].replace(/\+/g, ' ')), type })
     }
-    return { fav: heart ? heart[1] === 'heart-added' : null, tags }
+    // The sidebar's statistics: Id, Posted … by, Size, Source, Rating, Score.
+    const stats = [...doc.querySelectorAll('#stats li')].map(li => {
+      const text = li.textContent.replace(/\s+/g, ' ').replace(/\(\s*vote.*$/i, '').trim()
+      const link = li.querySelector('a[href^="http"]')
+      return { text, href: link ? link.getAttribute('href') : null }
+    }).filter(st => st.text)
+    return { fav: heart ? heart[1] === 'heart-added' : null, tags, stats }
   }
 
   const favLookups = new Map()   // id -> Promise<true | false | null>
@@ -3392,7 +3438,70 @@
     const open = modal.sheet.hidden
     modal.sheet.hidden = !open
     modal.menu.classList.toggle('on', open)
-    if (open) renderTags(modal.link, modal.seq)
+    if (open) renderSheet(modal.link, modal.seq)
+  }
+
+  function renderSheet(link, seq) {
+    if (modal.sheetTab === 'info') renderInfo(link, seq)
+    else renderTags(link, seq)
+  }
+
+  function showTab(tab) {
+    modal.sheetTab = tab
+    modal.tabTags.classList.toggle('on', tab === 'tags')
+    modal.tabInfo.classList.toggle('on', tab === 'info')
+    modal.tagList.hidden = modal.tagAll.hidden = tab !== 'tags'
+    modal.infoList.hidden = tab !== 'info'
+    renderSheet(modal.link, modal.seq)
+  }
+
+  // Info tab: what the file says (kind, size, format, length), how playback
+  // is going here (frames dropped so far, measured by the video itself), and
+  // the post page's statistics. Redrawn when the file's metadata arrives.
+  // (MediaCapabilities was no use: Firefox for Android answers "smooth,
+  // power efficient" even for 4K on a phone whose decoder stops at 1088p.)
+  async function renderInfo(link, seq) {
+    const v = modal.video
+    const img = modal.image
+    const video = !v.hidden
+    const url = modal.fileUrl
+    const rows = []
+    const kind = video ? t('kindVideo') : /\.gif(\?|$)/i.test(url || '') ? t('kindGif') : t('kindImage')
+    rows.push([t('infoKind'), kind])
+    const w = video ? v.videoWidth : (url ? img.naturalWidth : 0)
+    const h = video ? v.videoHeight : (url ? img.naturalHeight : 0)
+    rows.push([t('infoRes'), w && h ? `${w} × ${h}` : t('infoLoading')])
+    // A typical mid-range hardware decoder stops at 1920×1088 (this phone's does).
+    if (video && w && h && (Math.max(w, h) > 1920 || Math.min(w, h) > 1088)) rows.push(['', t('infoAbove'), true])
+    rows.push([t('infoFormat'), url ? ((url.split(/[?#]/)[0].match(/\.(\w+)$/) || [])[1] || '?').toUpperCase() : t('infoLoading')])
+    if (video) rows.push([t('infoDuration'), Number.isFinite(v.duration) ? mmss(v.duration) : t('infoLoading')])
+    if (video && typeof v.getVideoPlaybackQuality === 'function') {
+      const q = v.getVideoPlaybackQuality()
+      if (q.totalVideoFrames >= 30) {
+        const pct = Math.round((q.droppedVideoFrames / q.totalVideoFrames) * 100)
+        rows.push([t('infoDrops'), `${pct}% (${q.droppedVideoFrames} ${t('infoDropsOf')} ${q.totalVideoFrames})`, pct >= 10])
+      }
+    }
+    if (modal.seq !== seq || modal.sheetTab !== 'info') return
+    fillInfo(rows, [])
+    const info = await postInfo(postId(link))
+    if (modal.seq !== seq || modal.sheetTab !== 'info' || !info || !info.stats) return
+    fillInfo(rows, info.stats)
+  }
+
+  function fillInfo(rows, stats) {
+    const cells = []
+    for (const [k, value, warn] of rows) cells.push(el('span', { class: 'k', text: k }), el('span', { class: warn ? 'v warn' : 'v', text: value }))
+    for (const st of stats) {
+      const m = st.text.match(/^([^:]{1,20}):\s*(.*)$/)
+      const k = m ? m[1] : ''
+      const value = m ? m[2] : st.text
+      const cell = st.href
+        ? el('span', { class: 'v' }, [el('a', { href: st.href, target: '_blank', rel: 'noopener', text: value })])
+        : el('span', { class: 'v', text: value })
+      cells.push(el('span', { class: 'k', text: k }), cell)
+    }
+    modal.infoList.replaceChildren(...cells)
   }
 
   function closeMenu() {
@@ -4040,6 +4149,7 @@
     v.onloadedmetadata = () => {
       cacheSet('video', hash, urls[i - 1], vcached)
       if (modal.seq === seq) modal.fileUrl = urls[i - 1]
+      if (modal.seq === seq && !modal.sheet.hidden && modal.sheetTab === 'info') renderInfo(modal.link, seq)
       fitFullscreenOrientation()   // swiped onto a wide video while fullscreen
       if (onFound) onFound()
     }
@@ -4083,6 +4193,7 @@
       cacheSet(kind, hash, probe.src, icached)
       if (modal.seq !== seq) return   // the user moved on
       modal.fileUrl = probe.src
+      if (!modal.sheet.hidden && modal.sheetTab === 'info') setTimeout(() => renderInfo(modal.link, seq), 50)   // once swapped in
       const decoded = typeof probe.decode === 'function' ? probe.decode().catch(() => {}) : Promise.resolve()
       decoded.then(() => {
         if (modal.seq !== seq) return
@@ -4236,7 +4347,7 @@
     modal.post.href = link.href
     modal.box.classList.remove('later-mode')
     applyMarks(link, seq)
-    if (!modal.sheet.hidden) renderTags(link, seq)   // the menu follows the post
+    if (!modal.sheet.hidden) renderSheet(link, seq)   // the menu follows the post
     modal.score.textContent = ''
     const list = modalLinks()
     modal.count.textContent = `${list.indexOf(link) + 1} / ${list.length}`
@@ -5081,6 +5192,13 @@
       .then(() => info('log copied'))
       .catch(e => error(`could not copy the log — ${describeError(e)}`))
   }
+
+  // A tap anywhere outside the open panel closes it (the ◐ button toggles it itself).
+  window.addEventListener('pointerdown', ev => {
+    if (!panelOpen || !panelHost) return
+    if (ev.composedPath().includes(panelHost)) return
+    togglePanel(false)
+  }, true)
 
   function togglePanel(open) {
     panelOpen = open == null ? !panelOpen : open
