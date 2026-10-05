@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.47.1
+// @version      0.47.2
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.47.1'
+  const VERSION = '0.47.2'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -161,8 +161,8 @@
   function setCfg(key, value) {
     CFG[key] = value
     writeJSON(CFG_KEY, CFG)
-    // The copy in Violentmonkey (not yet reachable this early in the boot).
-    try { bridgeCall('set', 'cfg', CFG) } catch (e) { /* the boot copy in restoreCfg covers it */ }
+    // The copies (see restoreCfg); not yet reachable this early in the boot.
+    try { backupCfg() } catch (e) { /* the boot copy in restoreCfg covers it */ }
     info(`option ${key} = ${value}${NEEDS_RELOAD.has(key) ? ' (reload the page)' : ''}`)
   }
 
@@ -208,7 +208,7 @@
       dlFail: 'Download failed', dlOpened: 'Opened in a new tab: hold it to save',
       laterAdd: '🕒 Watch later', laterIn: '✓ In Watch later', laterAdded: 'Saved for later', laterRemoved: 'Removed from the list',
       laterEmpty: 'Nothing saved yet. Use 🕒 in a post’s ☰ menu.', laterOnDevice: 'kept by Violentmonkey, on this device',
-      laterOnSite: 'Kept in this site’s data. Tap to install the storage bridge and keep it in Violentmonkey',
+      laterOnSite: 'Kept in this site’s data (IndexedDB). Tap to install the storage bridge and keep it in Violentmonkey',
       tModal: 'Open posts in a player over the page',
       tTheme: 'Dark theme on site pages',
       mClose: 'Close', mOpen: 'Open the post', mPrev: 'Previous post', mNext: 'Next post',
@@ -267,7 +267,7 @@
       dlFail: 'Falha no download', dlOpened: 'Aberto em outra aba: segure para salvar',
       laterAdd: '🕒 Ver depois', laterIn: '✓ Na lista', laterAdded: 'Salvo para ver depois', laterRemoved: 'Tirado da lista',
       laterEmpty: 'Nada salvo ainda. Use o 🕒 no menu ☰ de um post.', laterOnDevice: 'guardado pelo Violentmonkey, neste aparelho',
-      laterOnSite: 'Guardado nos dados deste site. Toque para instalar a ponte de armazenamento e guardar no Violentmonkey',
+      laterOnSite: 'Guardado nos dados deste site (IndexedDB). Toque para instalar a ponte de armazenamento e guardar no Violentmonkey',
       tModal: 'Abrir posts num player sobre a página',
       tTheme: 'Tema escuro nas páginas do site',
       mClose: 'Fechar', mOpen: 'Abrir o post', mPrev: 'Post anterior', mNext: 'Próximo post',
@@ -2447,31 +2447,102 @@
     info(`download: post ${post} as ${name}`)
   }
 
-  // Settings gone from the site's data (cleared by another script, or by
-  // clearing site data) come back from the bridge's copy, and the page
+  // A copy of the settings in the site's IndexedDB, which localStorage.clear()
+  // leaves alone (another script's reset cleared localStorage and the
+  // settings with it), and in Violentmonkey when the storage bridge is there.
+  function backupCfg() {
+    const copy = JSON.parse(JSON.stringify(CFG))
+    idbSet('cfg', copy)
+    bridgeCall('set', 'cfg', copy)
+  }
+
+  // Settings gone from localStorage come back from a copy, and the page
   // reloads once so every option applies from the start. Settings still
-  // there refresh the copy. Run a moment after load, once the bridge is up.
+  // there refresh the copies. Run a moment after load, once the bridge is up.
   async function restoreCfg() {
-    if (CFG_FOUND) { bridgeCall('set', 'cfg', CFG); return }
-    const saved = await bridgeCall('get', 'cfg')
+    if (CFG_FOUND) { backupCfg(); return }
+    let saved = await idbGet('cfg')
+    if (!saved || typeof saved !== 'object' || !Object.keys(saved).length) saved = await bridgeCall('get', 'cfg')
     if (!saved || typeof saved !== 'object' || !Object.keys(saved).length) return
     try {
       if (sessionStorage.getItem('IBH_CFG_RESTORED')) return   // once: no reload loop
       sessionStorage.setItem('IBH_CFG_RESTORED', '1')
     } catch (e) { return }
     writeJSON(CFG_KEY, saved)
-    warn('settings were missing from the site data (cleared by another script?); restored from Violentmonkey, reloading')
+    warn('settings were missing from localStorage (cleared by another script?); restored from their copy, reloading')
     location.reload()
   }
 
-  async function storeGet(key) {
+  // ── Site storage that outlives localStorage.clear() ──
+  // IndexedDB of the site: a store of its own, not touched by a script that
+  // clears localStorage, and far roomier (the favorites index runs to MBs).
+  // Resolves undefined when IndexedDB is not available.
+  let idbOpen = null
+
+  function idb() {
+    if (!idbOpen) {
+      idbOpen = new Promise((resolve, reject) => {
+        const req = indexedDB.open('ibh', 1)
+        req.onupgradeneeded = () => req.result.createObjectStore('kv')
+        req.onsuccess = () => resolve(req.result)
+        req.onerror = () => reject(req.error)
+      })
+    }
+    return idbOpen
+  }
+
+  async function idbGet(key) {
+    try {
+      const db = await idb()
+      return await new Promise((resolve, reject) => {
+        const req = db.transaction('kv').objectStore('kv').get(key)
+        req.onsuccess = () => resolve(req.result === undefined ? null : req.result)
+        req.onerror = () => reject(req.error)
+      })
+    } catch (e) {
+      return undefined
+    }
+  }
+
+  async function idbSet(key, value) {
+    try {
+      const db = await idb()
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction('kv', 'readwrite')
+        tx.objectStore('kv').put(value, key)
+        tx.oncomplete = resolve
+        tx.onerror = () => reject(tx.error)
+      })
+      return true
+    } catch (e) {
+      return false
+    }
+  }
+
+  // Without the bridge: IndexedDB, or localStorage where IndexedDB fails.
+  // What an older version left in localStorage moves into IndexedDB.
+  async function siteGet(key) {
+    const value = await idbGet(key)
     const local = readJSON(`IBH_${key}`, null)
-    const value = await bridgeCall('get', key)
     if (value === undefined) return local
+    if (value === null && local !== null && await idbSet(key, local)) {
+      try { localStorage.removeItem(`IBH_${key}`) } catch (e) { /* ignore */ }
+      return local
+    }
+    return value
+  }
+
+  async function siteSet(key, value) {
+    if (!(await idbSet(key, value))) writeJSON(`IBH_${key}`, value)
+  }
+
+  async function storeGet(key) {
+    const value = await bridgeCall('get', key)
+    if (value === undefined) return siteGet(key)
+    const local = await siteGet(key)
     // First time with the bridge: move what the site's data held into it.
     if (local && (value === null || (Array.isArray(value) && !value.length))) {
       await bridgeCall('set', key, local)
-      try { localStorage.removeItem(`IBH_${key}`) } catch (e) { /* ignore */ }
       info(`storage: ${key} moved into Violentmonkey`)
       return local
     }
@@ -2479,7 +2550,7 @@
   }
 
   async function storeSet(key, value) {
-    if ((await bridgeCall('set', key, value)) === undefined) writeJSON(`IBH_${key}`, value)
+    if ((await bridgeCall('set', key, value)) === undefined) await siteSet(key, value)
   }
 
   // ── Watch later ──

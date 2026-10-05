@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.47.2
+
+- The settings copy no longer needs the storage bridge: it lives in the
+  site's IndexedDB, which `localStorage.clear()` leaves alone (the bridge
+  keeps one too when installed). Without the bridge, the Watch later list
+  and the favorites index also go to IndexedDB instead of `localStorage`,
+  with room for a large index; what an older version stored moves over
+
 ## 0.47.1 (bridge 1.5.0)
 
 - Settings survive another script clearing the site's `localStorage` (the
