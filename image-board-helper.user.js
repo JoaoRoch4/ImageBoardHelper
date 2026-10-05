@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.54.0
+// @version      0.55.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.54.0'
+  const VERSION = '0.55.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -119,7 +119,7 @@
     freeButton:     true,   // trash-can button next to them: Free memory & cache in one tap
     laterButton:    true,   // 🕒 button next to them on site pages: the Watch later list
     favSearch:      true,   // search bar on your own rule34 favorites page, results in the page's own list
-    favAutopager:   true,   // favorites pages load the next page as you near the bottom
+    favAutopager:   true,   // search listings and favorites load the next page as you near the bottom
     siteSearch:     true,   // search bar on the site's listing pages: tags, kind, order, minimum score
     videoModal:     true,   // open posts from site pages in an overlay: video, GIF, image (needs reload)
     rotateLandscape: true,  // in the modal player's fullscreen, lock wide videos to landscape
@@ -203,8 +203,8 @@
       tFreeBtn: 'Free-memory shortcut button', navFree: 'Free memory & cache',
       tFavSearch: 'Search your favorites', tSiteSearch: 'Search bar on site pages',
       savedPick: 'Favorite searches…', recentPick: 'Recent searches…', saveSearch: '☆ Favorite', savedSearch: '★ Favorite', savedAll: '(everything)',
-      minScore: 'min. score', sitePlaceholder: 'search: tag -tag tag* ( a ~ b )', tPager: 'Autopager on favorites pages',
-      pagerLoading: 'Loading the next page…', pagerEnd: 'End of the favorites', pagerFail: 'Could not load the next page — tap to retry',
+      minScore: 'min. score', sitePlaceholder: 'search: tag -tag tag* ( a ~ b )', tPager: 'Autopager (searches and favorites)',
+      pagerLoading: 'Loading the next page…', pagerEnd: 'End of the list', pagerFail: 'Could not load the next page — tap to retry',
       favPlaceholder: 'search favorites: tag -tag tag* a ~ b score:>10', favGo: 'Search', favClear: 'Clear',
       favKindAll: 'All types', favKindImage: 'Images', favKindVideo: 'Videos', favKindGif: 'GIFs', favKindAnimated: 'Animated (video or GIF)',
       favSortNew: 'Newest', favSortOld: 'Oldest', favSortScore: 'Score', favSortRandom: 'Random',
@@ -270,8 +270,8 @@
       tFreeBtn: 'Botão de atalho para limpar a memória', navFree: 'Limpar memória e cache',
       tFavSearch: 'Buscar nos seus favoritos', tSiteSearch: 'Barra de busca nas páginas do site',
       savedPick: 'Buscas favoritas…', recentPick: 'Buscas recentes…', saveSearch: '☆ Favoritar', savedSearch: '★ Favorita', savedAll: '(tudo)',
-      minScore: 'score mín.', sitePlaceholder: 'buscar: tag -tag tag* ( a ~ b )', tPager: 'Autopager nas páginas de favoritos',
-      pagerLoading: 'Carregando a próxima página…', pagerEnd: 'Fim dos favoritos', pagerFail: 'Não deu para carregar a próxima página — toque para tentar de novo',
+      minScore: 'score mín.', sitePlaceholder: 'buscar: tag -tag tag* ( a ~ b )', tPager: 'Autopager (buscas e favoritos)',
+      pagerLoading: 'Carregando a próxima página…', pagerEnd: 'Fim da lista', pagerFail: 'Não deu para carregar a próxima página — toque para tentar de novo',
       favPlaceholder: 'buscar nos favoritos: tag -tag tag* a ~ b score:>10', favGo: 'Buscar', favClear: 'Limpar',
       favKindAll: 'Todos os tipos', favKindImage: 'Imagens', favKindVideo: 'Vídeos', favKindGif: 'GIFs', favKindAnimated: 'Animados (vídeo ou GIF)',
       favSortNew: 'Mais novos', favSortOld: 'Mais antigos', favSortScore: 'Score', favSortRandom: 'Aleatório',
@@ -3319,13 +3319,19 @@
     dbg('site search bar added')
   }
 
-  // ── Autopager on favorites pages ──
-  // The favorites paginator navigates from onclick handlers, with no real
-  // href, so autopager extensions find no next page there. The address is
-  // plain, though (pid steps by 50): fetch the next page as the bottom nears
+  // ── Autopager ──
+  // Search listings and favorites fetch the next page as the bottom nears
   // and append its thumbnails, the site's own nodes, to the list. The
   // observer treats them like any thumbnail (covers, feed, modal and swipe).
-  let pager = null   // { user, next, busy, done, io, sentinel }
+  // The next address comes from the paginator of each page fetched; the
+  // favorites paginator navigates from onclick handlers with no real href,
+  // which is why autopager extensions find no next page there.
+  let pager = null   // { next, busy, done, io, sentinel }
+
+  const onListPage = () => {
+    const q = new URLSearchParams(location.search)
+    return q.get('page') === 'post' && q.get('s') === 'list'
+  }
 
   const onFavoritesPage = () => {
     const q = new URLSearchParams(location.search)
@@ -3334,22 +3340,24 @@
 
   // Idempotent: the observer calls it on every change of the page.
   function ensureFavPager() {
-    const want = CFG.favAutopager && onFavoritesPage() && !!document.querySelector('.image-list')
+    const want = CFG.favAutopager && (onFavoritesPage() || onListPage()) && !document.querySelector('.v-application') &&
+      !!document.querySelector('.image-list')
     if (!want) {
       if (pager) { pager.io.disconnect(); pager.sentinel.remove(); pager = null }
       return
     }
     if (pager && pager.sentinel.isConnected) return
-    const q = new URLSearchParams(location.search)
     const sentinel = el('div', { id: 'ibh-pager' })
     ;(document.getElementById('ibh-favmore') || document.querySelector('.image-list')).after(sentinel)
     sentinel.addEventListener('click', () => { if (pager && !pager.done) favPagerNext() })   // retry after a failure
-    pager = { user: q.get('id'), next: Number(q.get('pid') || 0) + FAV_PAGE, busy: false, done: false, sentinel }
+    const next = pageTarget(1)
+    pager = { next, busy: false, done: !next, page: 1, sentinel }
+    if (!next) sentinel.textContent = t('pagerEnd')
     pager.io = new IntersectionObserver(entries => {
       if (entries.some(e => e.isIntersecting)) favPagerNext()
     }, { rootMargin: '1500px 0px' })
     pager.io.observe(sentinel)
-    dbg('autopager: watching the bottom of the favorites page')
+    dbg(`autopager: watching the bottom of the page${next ? '' : ' (last page)'}`)
   }
 
   async function favPagerNext() {
@@ -3359,7 +3367,8 @@
     p.busy = true
     p.sentinel.textContent = t('pagerLoading')
     try {
-      const res = await fetch(`/index.php?page=favorites&s=view&id=${encodeURIComponent(p.user)}&pid=${p.next}`, { credentials: 'same-origin' })
+      const url = p.next
+      const res = await fetch(url, { credentials: 'same-origin' })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const doc = new DOMParser().parseFromString(await res.text(), 'text/html')
       const src = doc.querySelector('.image-list')
@@ -3368,12 +3377,14 @@
       if (!items.length || !list) {
         p.done = true
         p.sentinel.textContent = t('pagerEnd')
-        info(`autopager: end of the favorites at pid ${p.next}`)
+        info(`autopager: end of the list at ${url.replace(/^.*\?/, '?')}`)
         return
       }
       list.append(...items.map(node => document.adoptNode(node)))
-      info(`autopager: favorites page ${p.next / FAV_PAGE + 1} added (${items.length} posts)`)
-      p.next += FAV_PAGE
+      p.page++
+      p.next = pageTarget(1, doc, url)
+      info(`autopager: page ${p.page} added (${items.length} posts)`)
+      if (!p.next) { p.done = true; p.sentinel.textContent = t('pagerEnd'); return }
       p.sentinel.textContent = ''
     } catch (e) {
       warn(`autopager: next favorites page failed — ${describeError(e)}`)
@@ -5317,22 +5328,23 @@
   // The site's own pagination link for the next (dir 1) or previous page.
   // Favorites put the address in an onclick (href is just "#"). Without a
   // usable link, step pid by the number of posts on this page.
-  function pageTarget(dir) {
-    const box = document.querySelector('#paginator, .pagination')
+  // Of this page, or of a page the autopager fetched (root, at base).
+  function pageTarget(dir, root = document, base = location.href) {
+    const box = root.querySelector('#paginator, .pagination')
     if (box) {
       const want = dir > 0 ? /^(>|›|next)$/i : /^(<|‹|back|prev(ious)?)$/i
       const a = [...box.querySelectorAll('a')].find(x => want.test(x.textContent.trim()) || want.test(x.getAttribute('alt') || ''))
       if (a) {
         const href = a.getAttribute('href')
-        if (href && href !== '#') return new URL(href, location.href).href
+        if (href && href !== '#') return new URL(href, base).href
         const m = (a.getAttribute('onclick') || '').match(/location\s*=\s*['"]([^'"]+)['"]/)
-        if (m) return new URL(m[1], location.href).href
+        if (m) return new URL(m[1], base).href
       }
       if (box.querySelector('a')) return null   // paginator present but no such link: first or last page
     }
-    const url = new URL(location.href)
+    const url = new URL(base)
     const pid = Number(url.searchParams.get('pid')) || 0
-    const per = document.querySelectorAll(FEED_POST).length
+    const per = root.querySelectorAll(FEED_POST).length
     if (!per || (dir < 0 && pid === 0)) return null
     url.searchParams.set('pid', String(Math.max(0, pid + dir * per)))
     return url.href

@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.55.0
+
+- The autopager covers search listings too, not only favorites: the next
+  page loads as the bottom nears and its thumbnails join the list (covers,
+  feed, modal and swipe carry on). The next address comes from the paginator
+  of each page fetched, so it works whatever the page size. Off Masonry,
+  which scrolls on its own
+
 ## 0.54.0
 
 - Tabs in the modal's ☰ menu: Tags, and Info with the file's kind,
