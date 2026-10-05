@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.47.1 (bridge 1.5.0)
+
+- Settings survive another script clearing the site's `localStorage` (the
+  "Rule34 Favorites Search" reset does): the storage bridge keeps a copy,
+  and a page that finds the settings gone restores it and reloads once
+
 ## 0.47.0 (bridge 1.4.0)
 
 - Favorites search on your own rule34 favorites page (`favSearch`, on): a

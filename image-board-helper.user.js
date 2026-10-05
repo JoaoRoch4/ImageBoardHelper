@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.47.0
+// @version      0.47.1
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.47.0'
+  const VERSION = '0.47.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -134,6 +134,10 @@
   // Options that only take effect when the app boots.
   const NEEDS_RELOAD = new Set(['sharpThumbs', 'forceRule34Api', 'originalThumbs', 'memorySaver', 'feedNav', 'sortButton', 'videoModal', 'videoScrub'])
 
+  // Whether this page found the settings at all: a script that clears the
+  // site's localStorage (one did, on its reset) takes them along, and the
+  // copy kept by the storage bridge brings them back (restoreCfg).
+  const CFG_FOUND = (() => { try { return localStorage.getItem(CFG_KEY) !== null } catch (e) { return true } })()
   const CFG = Object.assign({}, DEFAULTS, readJSON(CFG_KEY, {}))
 
   function readJSON(key, fallback) {
@@ -157,6 +161,8 @@
   function setCfg(key, value) {
     CFG[key] = value
     writeJSON(CFG_KEY, CFG)
+    // The copy in Violentmonkey (not yet reachable this early in the boot).
+    try { bridgeCall('set', 'cfg', CFG) } catch (e) { /* the boot copy in restoreCfg covers it */ }
     info(`option ${key} = ${value}${NEEDS_RELOAD.has(key) ? ' (reload the page)' : ''}`)
   }
 
@@ -2439,6 +2445,23 @@
     downloading.add(post)
     refreshDlButton()
     info(`download: post ${post} as ${name}`)
+  }
+
+  // Settings gone from the site's data (cleared by another script, or by
+  // clearing site data) come back from the bridge's copy, and the page
+  // reloads once so every option applies from the start. Settings still
+  // there refresh the copy. Run a moment after load, once the bridge is up.
+  async function restoreCfg() {
+    if (CFG_FOUND) { bridgeCall('set', 'cfg', CFG); return }
+    const saved = await bridgeCall('get', 'cfg')
+    if (!saved || typeof saved !== 'object' || !Object.keys(saved).length) return
+    try {
+      if (sessionStorage.getItem('IBH_CFG_RESTORED')) return   // once: no reload loop
+      sessionStorage.setItem('IBH_CFG_RESTORED', '1')
+    } catch (e) { return }
+    writeJSON(CFG_KEY, saved)
+    warn('settings were missing from the site data (cleared by another script?); restored from Violentmonkey, reloading')
+    location.reload()
   }
 
   async function storeGet(key) {
@@ -4964,6 +4987,8 @@
   logSnapshot()
   if (CFG.originalThumbs) info('original thumbnails on: visible thumbnails load the full file')
   if (CFG.nativeFeed) info(`feed on: ${CFG.feedColumns} columns, ${CFG.feedLayout}; site pages show samples`)
+
+  setTimeout(restoreCfg, 2000)   // after the storage bridge has loaded
 
   const boot = () => {
     injectPageCSS()
