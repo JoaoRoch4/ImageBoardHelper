@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.50.0
+// @version      0.51.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.50.0'
+  const VERSION = '0.51.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -200,7 +200,7 @@
       tSortBtn: 'Sort-by-score button', navSort: 'Sort by score (tap again to undo)',
       tFreeBtn: 'Free-memory shortcut button', navFree: 'Free memory & cache',
       tFavSearch: 'Search your favorites', tSiteSearch: 'Search bar on site pages',
-      savedPick: 'Saved searches…', saveSearch: '☆ Save', savedSearch: '★ Saved', savedAll: '(everything)',
+      savedPick: 'Favorite searches…', recentPick: 'Recent searches…', saveSearch: '☆ Favorite', savedSearch: '★ Favorite', savedAll: '(everything)',
       minScore: 'min. score', sitePlaceholder: 'search: tag -tag tag* ( a ~ b )', tPager: 'Autopager on favorites pages',
       pagerLoading: 'Loading the next page…', pagerEnd: 'End of the favorites', pagerFail: 'Could not load the next page — tap to retry',
       favPlaceholder: 'search favorites: tag -tag tag* a ~ b score:>10', favGo: 'Search', favClear: 'Clear',
@@ -263,7 +263,7 @@
       tSortBtn: 'Botão ordenar por score', navSort: 'Ordenar por score (toque de novo para desfazer)',
       tFreeBtn: 'Botão de atalho para limpar a memória', navFree: 'Limpar memória e cache',
       tFavSearch: 'Buscar nos seus favoritos', tSiteSearch: 'Barra de busca nas páginas do site',
-      savedPick: 'Buscas salvas…', saveSearch: '☆ Salvar', savedSearch: '★ Salva', savedAll: '(tudo)',
+      savedPick: 'Buscas favoritas…', recentPick: 'Buscas recentes…', saveSearch: '☆ Favoritar', savedSearch: '★ Favorita', savedAll: '(tudo)',
       minScore: 'score mín.', sitePlaceholder: 'buscar: tag -tag tag* ( a ~ b )', tPager: 'Autopager nas páginas de favoritos',
       pagerLoading: 'Carregando a próxima página…', pagerEnd: 'Fim dos favoritos', pagerFail: 'Não deu para carregar a próxima página — toque para tentar de novo',
       favPlaceholder: 'buscar nos favoritos: tag -tag tag* a ~ b score:>10', favGo: 'Buscar', favClear: 'Limpar',
@@ -2703,6 +2703,7 @@
   let favResults = []
   let favShown = 0
   let favBarSync = null        // refreshes the ☆ button of the favorites bar
+  let favBarReload = null      // refreshes its lists
 
   // The favorites bar's search, remembered for the next visit (active: shown).
   async function rememberFavSearch(active) {
@@ -2711,7 +2712,9 @@
     const store = await searchStore()
     store.favLast = { text: bar.querySelector('input[type="search"]').value, kind: bar.querySelector('select.kind').value,
       sort: bar.querySelector('select.sort').value, min: bar.querySelector('input.min').value, active }
+    if (active) addRecent(store, { where: 'fav', ...store.favLast, active: undefined })   // one write for both
     await storeSet('searches', store)
+    if (active && favBarReload) favBarReload()
   }
 
   async function loadFavIndex() {
@@ -2936,8 +2939,9 @@
       input.value = q.text; kind.value = q.kind; sort.value = q.sort; min.value = q.min || ''
       searchFavs()
     })
-    const box = el('div', { id: 'ibh-favsearch', class: 'ibh-search' }, [input, kind, sort, min, go, clear, saved.star, saved.pick, st])
+    const box = el('div', { id: 'ibh-favsearch', class: 'ibh-search' }, [input, kind, sort, min, go, clear, saved.star, saved.pick, saved.recentPick, st])
     favBarSync = saved.sync
+    favBarReload = saved.reload
     list.before(box)
     const more = el('button', { type: 'button', id: 'ibh-favmore' })
     more.hidden = true
@@ -2986,12 +2990,27 @@
   }
 
   // ── Saved searches ──
-  // Both bars keep their searches (text, kind, order, minimum score) in the
-  // same storage as the lists, and the favorites bar its last search, shown
-  // again on the next visit until Clear. Stored as { saved: [], favLast }.
+  // Every search a bar runs is kept on its own among the recent ones; ☆
+  // makes one a favorite. The favorites bar also keeps its last search, shown
+  // again on the next visit until Clear. Stored with the lists as
+  // { saved (the favorites), recent, favLast }.
+  const RECENT_MAX = 15   // per bar
+
   async function searchStore() {
     const v = await storeGet('searches')
-    return v && typeof v === 'object' && !Array.isArray(v) ? { saved: v.saved || [], favLast: v.favLast || null } : { saved: [], favLast: null }
+    const ok = v && typeof v === 'object' && !Array.isArray(v)
+    return { saved: (ok && v.saved) || [], recent: (ok && v.recent) || [], favLast: (ok && v.favLast) || null }
+  }
+
+  // Nothing typed and no filter: not worth keeping.
+  const emptySearch = q => !q.text.trim() && q.kind === 'all' && !q.min && q.sort === 'new'
+
+  function addRecent(store, q) {
+    if (emptySearch(q)) return
+    const key = searchKey(q)
+    store.recent = [q, ...store.recent.filter(other => searchKey(other) !== key)]
+    const mine = store.recent.filter(other => other.where === q.where)
+    if (mine.length > RECENT_MAX) store.recent = store.recent.filter(other => !mine.slice(RECENT_MAX).includes(other))
   }
 
   const searchKey = q => [q.where, q.text.trim().replace(/\s+/g, ' '), q.kind, q.sort, String(q.min || '')].join('|')
@@ -3002,29 +3021,37 @@
       .filter(Boolean).join(' · ')
   }
 
-  // The pick list and the ☆ button for a bar: read() gives its search,
-  // apply() fills it in and runs it.
+  // The two pick lists (favorites, recent) and the ☆ button for a bar:
+  // read() gives its search, apply() fills it in and runs it.
   function savedControls(where, read, apply) {
     const pick = el('select', { class: 'saved' })
+    const recentPick = el('select', { class: 'saved' })
     const star = el('button', { type: 'button', class: 'star' })
     let saved = []
+    let recent = []
     const sync = () => {
       const on = saved.some(q => searchKey(q) === searchKey(read()))
       star.textContent = t(on ? 'savedSearch' : 'saveSearch')
       star.classList.toggle('on', on)
     }
+    const fillOne = (select, list, title) => {
+      const mine = list.filter(q => q.where === where)
+      select.replaceChildren(el('option', { value: '', text: t(title) }), ...mine.map((q, i) => el('option', { value: String(i), text: searchLabel(q) })))
+      select.hidden = !mine.length
+    }
     const fill = () => {
-      const mine = saved.filter(q => q.where === where)
-      pick.replaceChildren(el('option', { value: '', text: t('savedPick') }), ...mine.map((q, i) => el('option', { value: String(i), text: searchLabel(q) })))
-      pick.hidden = !mine.length
+      fillOne(pick, saved, 'savedPick')
+      fillOne(recentPick, recent, 'recentPick')
       sync()
     }
-    const reload = async () => { saved = (await searchStore()).saved; fill() }
-    pick.addEventListener('change', () => {
-      const q = saved.filter(other => other.where === where)[Number(pick.value)]
-      pick.value = ''
+    const reload = async () => { const store = await searchStore(); saved = store.saved; recent = store.recent; fill() }
+    const onPick = (select, source) => select.addEventListener('change', () => {
+      const q = source().filter(other => other.where === where)[Number(select.value)]
+      select.value = ''
       if (q) apply(q)
     })
+    onPick(pick, () => saved)
+    onPick(recentPick, () => recent)
     star.addEventListener('click', async () => {
       const store = await searchStore()
       const q = read()
@@ -3037,7 +3064,15 @@
       fill()
     })
     reload()
-    return { pick, star, sync }
+    return { pick, recentPick, star, sync, reload }
+  }
+
+  // A search the site bar finds in the address (typed, or a tag link) is a recent one.
+  async function recordSiteSearch(q) {
+    if (emptySearch(q)) return
+    const store = await searchStore()
+    addRecent(store, q)
+    await storeSet('searches', store)
   }
 
   // ── Search bar on site pages ──
@@ -3095,8 +3130,9 @@
       input.value = q.text; kind.value = q.kind; sort.value = q.sort; min.value = q.min || ''
       submit()
     })
-    const box = el('div', { id: 'ibh-sitesearch', class: 'ibh-search' }, [input, kind, sort, min, go, saved.star, saved.pick])
+    const box = el('div', { id: 'ibh-sitesearch', class: 'ibh-search' }, [input, kind, sort, min, go, saved.star, saved.pick, saved.recentPick])
     document.querySelector('.image-list').before(box)
+    recordSiteSearch(read()).then(saved.reload)
     input.addEventListener('input', saved.sync)
     min.addEventListener('input', saved.sync)
     const submit = () => {

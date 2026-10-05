@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.51.0
+
+- Searches save themselves: every search a bar runs joins its Recent
+  searches list (15 per bar, no repeats; on the site bar also a search opened
+  from a tag link). ☆ now marks a Favorite search, and its list is Favorite
+  searches
+
 ## 0.50.0 (bridge 1.6.0)
 
 - Saved searches in both search bars: ☆ Save keeps the search on screen
