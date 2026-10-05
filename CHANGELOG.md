@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.42.1
+
+- The floating buttons hide while the panel is open: they sat over its bottom
+  row and covered Reload
+- The trash-can button also shows with the panel turned off
+
 ## 0.42.0
 
 - Trash-can shortcut button with the floating buttons (`freeButton`, on): one

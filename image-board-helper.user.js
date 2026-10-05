@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.42.0
+// @version      0.42.1
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.42.0'
+  const VERSION = '0.42.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -3578,6 +3578,9 @@
       font-size: 13px;
     }
     .panel[hidden] { display: none; }
+    /* The floating buttons sit over the panel's bottom (they covered Reload):
+       hidden while it is open. The nav is appended after the panel. */
+    .panel:not([hidden]) ~ .feednav { display: none; }
 
     header {
       display: flex; align-items: center; gap: 8px;
@@ -3861,7 +3864,7 @@
   }
 
   function mountPanel() {
-    const nav = wantsFeedButtons() || wantsSortButton()
+    const nav = wantsFeedButtons() || wantsSortButton() || CFG.freeButton
     if (!CFG.panel && !nav) return
     if (panelHost && panelHost.isConnected) return
     if (!document.body) return
