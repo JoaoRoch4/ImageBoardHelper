@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.46.2
+// @version      0.46.3
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.46.2'
+  const VERSION = '0.46.3'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -2097,6 +2097,12 @@
     }
     .sheethead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
     button.pill { width: auto; height: 36px; border-radius: 18px; padding: 0 14px; font-size: 13px; }
+    button.pill:disabled { opacity: .85; }
+    /* Download in progress: the button spins until the file is fetched. */
+    .spin { display: inline-block; width: 12px; height: 12px; margin-right: 7px; vertical-align: -2px;
+      border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%;
+      animation: ibh-spin .8s linear infinite; }
+    @keyframes ibh-spin { to { transform: rotate(360deg); } }
     .taglist { display: flex; flex-wrap: wrap; gap: 6px; }
     button.tag {
       width: auto; height: auto; border-radius: 14px; padding: 6px 10px; font-size: 13px; line-height: 1.3;
@@ -2209,7 +2215,7 @@
     installImageZoom(stage, image)
     installVideoGestures(layer, video)
     root.append(style, box)
-    modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, score, toast, badge, turn, fsBtn, menu, sheet, tagList, tagAll, laterBtn, laterView, laterHead, laterGrid, laterNote, listLinks: null, turned: null, open: false, link: null, seq: 0 }
+    modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, score, toast, badge, turn, fsBtn, menu, sheet, tagList, tagAll, laterBtn, dlBtn, laterView, laterHead, laterGrid, laterNote, listLinks: null, turned: null, open: false, link: null, seq: 0 }
   }
 
   let toastTimer = 0
@@ -2350,13 +2356,36 @@
   // inside the tap's user activation, so the popup blocker lets it through).
   const downloads = new Map()   // bridge id -> post id, for the outcome
   const downloading = new Set() // post ids in flight: a second tap does not start another
+  const dlPercent = new Map()   // post id -> last progress, for the button
+  const DL_DONE_MS = 1500       // the ✓ stays this long before the button comes back
+  let dlDoneAt = { post: null, until: 0 }
+
+  // The button follows the post on screen: spinning with the progress while
+  // it downloads (and disabled, the cooldown), ✓ for a moment once done.
+  function refreshDlButton() {
+    const btn = modal && modal.dlBtn
+    if (!btn) return
+    const post = modal.link && postId(modal.link)
+    if (downloading.has(post)) {
+      btn.disabled = true
+      const pct = dlPercent.get(post)
+      btn.replaceChildren(el('span', { class: 'spin' }), document.createTextNode(pct == null ? t('dlStart') : `${pct}%`))
+    } else if (dlDoneAt.post === post && Date.now() < dlDoneAt.until) {
+      btn.disabled = true
+      btn.textContent = '✓'
+    } else {
+      btn.disabled = false
+      btn.textContent = t('dlBtn')
+    }
+  }
 
   window.addEventListener('ibh-download-progress', ev => {
     let msg
     try { msg = JSON.parse(ev.detail) } catch (e) { return }
     const post = downloads.get(msg.id)
-    if (post === undefined || !modal || !modal.open || postId(modal.link) !== post) return
-    flash(`${t('dlStart')} ${Math.round((msg.loaded / msg.total) * 100)}%`)
+    if (post === undefined) return
+    dlPercent.set(post, Math.round((msg.loaded / msg.total) * 100))
+    refreshDlButton()
   })
 
   window.addEventListener('ibh-download-done', ev => {
@@ -2366,6 +2395,12 @@
     if (post === undefined) return
     downloads.delete(msg.id)
     downloading.delete(post)
+    dlPercent.delete(post)
+    if (msg.ok) {
+      dlDoneAt = { post, until: Date.now() + DL_DONE_MS }
+      setTimeout(refreshDlButton, DL_DONE_MS)
+    }
+    refreshDlButton()
     if (modal && modal.open) flash(t(msg.ok ? 'dlDone' : 'dlFail'))
     if (msg.ok) info(`download: post ${post} fetched, handed to Firefox to save`)
     else warn(`download: post ${post} failed — ${msg.error}`)
@@ -2389,7 +2424,7 @@
       return
     }
     downloading.add(post)
-    flash(t('dlStart'))
+    refreshDlButton()
     info(`download: post ${post} as ${name}`)
   }
 
@@ -3436,6 +3471,7 @@
       sniffVideo(pic.src, link)
     }
     refreshLaterButton(link, seq)
+    refreshDlButton()
     // Only now: the preloaded image stays referenced until the modal shows it.
     dropAhead()
     // A post that never finishes loading must not hold the next one back.

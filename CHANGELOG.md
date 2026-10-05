@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.46.3
+
+- ⬇ Download has a cooldown: while the post downloads the button spins with
+  the progress (45%) and stays disabled, then shows ✓ for a moment; it
+  follows the post on screen, so swiping back to one still downloading shows
+  its progress
+
 ## 0.46.2 (bridge 1.3.0)
 
 - Download shows its progress ("Downloading… 45%"): a 39 MB PNG took long
