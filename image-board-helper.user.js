@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.46.1
+// @version      0.46.2
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.46.1'
+  const VERSION = '0.46.2'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -191,7 +191,7 @@
       tSortBtn: 'Sort-by-score button', navSort: 'Sort by score (tap again to undo)',
       tFreeBtn: 'Free-memory shortcut button', navFree: 'Free memory & cache',
       tLaterBtn: 'Watch later button', navLater: 'Watch later', laterTitle: 'Watch later',
-      dlBtn: '⬇ Download', dlWait: 'The file is still loading', dlStart: 'Downloading…', dlDone: 'Downloaded: confirm in Firefox to save',
+      dlBtn: '⬇ Download', dlWait: 'The file is still loading', dlStart: 'Downloading…', dlBusy: 'Already downloading this post', dlDone: 'Downloaded: confirm in Firefox to save',
       dlFail: 'Download failed', dlOpened: 'Opened in a new tab: hold it to save',
       laterAdd: '🕒 Watch later', laterIn: '✓ In Watch later', laterAdded: 'Saved for later', laterRemoved: 'Removed from the list',
       laterEmpty: 'Nothing saved yet. Use 🕒 in a post’s ☰ menu.', laterOnDevice: 'kept by Violentmonkey, on this device',
@@ -244,7 +244,7 @@
       tSortBtn: 'Botão ordenar por score', navSort: 'Ordenar por score (toque de novo para desfazer)',
       tFreeBtn: 'Botão de atalho para limpar a memória', navFree: 'Limpar memória e cache',
       tLaterBtn: 'Botão Ver depois', navLater: 'Ver depois', laterTitle: 'Ver depois',
-      dlBtn: '⬇ Baixar', dlWait: 'O arquivo ainda está carregando', dlStart: 'Baixando…', dlDone: 'Baixado: confirme no Firefox para salvar',
+      dlBtn: '⬇ Baixar', dlWait: 'O arquivo ainda está carregando', dlStart: 'Baixando…', dlBusy: 'Este post já está baixando', dlDone: 'Baixado: confirme no Firefox para salvar',
       dlFail: 'Falha no download', dlOpened: 'Aberto em outra aba: segure para salvar',
       laterAdd: '🕒 Ver depois', laterIn: '✓ Na lista', laterAdded: 'Salvo para ver depois', laterRemoved: 'Tirado da lista',
       laterEmpty: 'Nada salvo ainda. Use o 🕒 no menu ☰ de um post.', laterOnDevice: 'guardado pelo Violentmonkey, neste aparelho',
@@ -2349,6 +2349,15 @@
   // without it the file opens in a new tab, to be saved with a long press (still
   // inside the tap's user activation, so the popup blocker lets it through).
   const downloads = new Map()   // bridge id -> post id, for the outcome
+  const downloading = new Set() // post ids in flight: a second tap does not start another
+
+  window.addEventListener('ibh-download-progress', ev => {
+    let msg
+    try { msg = JSON.parse(ev.detail) } catch (e) { return }
+    const post = downloads.get(msg.id)
+    if (post === undefined || !modal || !modal.open || postId(modal.link) !== post) return
+    flash(`${t('dlStart')} ${Math.round((msg.loaded / msg.total) * 100)}%`)
+  })
 
   window.addEventListener('ibh-download-done', ev => {
     let msg
@@ -2356,6 +2365,7 @@
     const post = downloads.get(msg.id)
     if (post === undefined) return
     downloads.delete(msg.id)
+    downloading.delete(post)
     if (modal && modal.open) flash(t(msg.ok ? 'dlDone' : 'dlFail'))
     if (msg.ok) info(`download: post ${post} fetched, handed to Firefox to save`)
     else warn(`download: post ${post} failed — ${msg.error}`)
@@ -2365,6 +2375,7 @@
     const url = modal.fileUrl
     if (!url) { flash(t('dlWait')); return }
     const post = postId(modal.link)
+    if (downloading.has(post)) { flash(t('dlBusy')); return }
     const ext = (url.split(/[?#]/)[0].match(/\.(\w+)$/) || [])[1] || 'bin'
     const name = `${SITE.split('.')[0]}_${post}.${ext}`
     const id = storeSeq + 1   // the id bridgeCall is about to use
@@ -2377,6 +2388,7 @@
       info(`download: no storage bridge, post ${post} opened in a new tab`)
       return
     }
+    downloading.add(post)
     flash(t('dlStart'))
     info(`download: post ${post} as ${name}`)
   }

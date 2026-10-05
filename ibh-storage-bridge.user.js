@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper — storage bridge
 // @namespace    joao.imageboardhelper
-// @version      1.2.1
+// @version      1.3.0
 // @description  Keeps Image Board Helper's lists (Watch later) in Violentmonkey's own storage, on the device, and saves files for its Download button
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -48,8 +48,15 @@
   // link to save, and keep that link alive long enough to confirm the prompt.
   const BLOB_LIFE_MS = 120000
 
-  function saveFile(url, name, done) {
+  function saveFile(url, name, done, progress) {
+    let last = 0
     GM_xmlhttpRequest({
+      // A big file takes a while: report how far it got, twice a second at most.
+      onprogress: e => {
+        if (!e.total || Date.now() - last < 500) return
+        last = Date.now()
+        progress(e.loaded, e.total)
+      },
       method: 'GET',
       url,
       responseType: 'blob',
@@ -88,7 +95,9 @@
     if (msg.op === 'download' && msg.value && siteFile(msg.value.url)) {
       const done = (ok, error) => window.dispatchEvent(new CustomEvent('ibh-download-done',
         { detail: JSON.stringify({ id: msg.id, ok, error: error || null }) }))
-      saveFile(msg.value.url, String(msg.value.name || 'download').replace(/[\\/:*?"<>|]/g, '_'), done)
+      const progress = (loaded, total) => window.dispatchEvent(new CustomEvent('ibh-download-progress',
+        { detail: JSON.stringify({ id: msg.id, loaded, total }) }))
+      saveFile(msg.value.url, String(msg.value.name || 'download').replace(/[\\/:*?"<>|]/g, '_'), done, progress)
       reply(msg.id, 'started')
       return
     }

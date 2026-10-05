@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.46.2 (bridge 1.3.0)
+
+- Download shows its progress ("Downloading… 45%"): a 39 MB PNG took long
+  enough to look stuck, and each extra tap started another copy. A second tap
+  on a post already downloading now only says so
+
 ## 0.46.1 (bridge 1.2.1)
 
 - Video downloads work: rule34's video host answers 403 to a request without
