@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.41.1
+
+- Holding a tag opens its search more reliably on Firefox for Android: a long
+  press there becomes a context menu and may cancel the pointer before any
+  pointerup, so the hold also counts from the context menu event and the tab
+  opens from touchend as well
+
 ## 0.41.0
 
 - Tags menu: holding a tag opens its search in a new tab (a tap still copies

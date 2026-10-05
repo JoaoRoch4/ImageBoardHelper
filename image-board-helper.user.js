@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.41.0
+// @version      0.41.1
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.41.0'
+  const VERSION = '0.41.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -2307,37 +2307,50 @@
   const TAG_HOLD_MS = 450
   const tagSearchUrl = name => `/index.php?page=post&s=list&tags=${encodeURIComponent(name)}`
 
+  // Firefox for Android turns a long press into a context menu and may cancel
+  // the pointer, so no pointerup arrives: the hold also counts from the
+  // contextmenu event, and the tab opens from touchend as well (also a user
+  // gesture), whichever ending comes first.
   function chipGestures(chip, url, onTap) {
     let down = null
     let skipClick = false
-    const cancel = () => {
+    const reset = () => {
       if (down) clearTimeout(down.timer)
       down = null
       chip.classList.remove('held')
     }
-    chip.addEventListener('pointerdown', ev => {
-      // Lit once held long enough, so the finger knows it can let go.
-      down = { x: ev.clientX, y: ev.clientY, t: Date.now(), timer: setTimeout(() => chip.classList.add('held'), TAG_HOLD_MS) }
-    })
-    chip.addEventListener('pointermove', ev => {
-      if (down && Math.hypot(ev.clientX - down.x, ev.clientY - down.y) > 10) cancel()   // scrolling the sheet
-    })
-    chip.addEventListener('pointercancel', cancel)
-    chip.addEventListener('pointerup', () => {
+    const hold = () => {
       if (!down) return
-      const held = Date.now() - down.t >= TAG_HOLD_MS
-      cancel()
+      down.held = true
+      chip.classList.add('held')   // lit, so the finger knows it can let go
+    }
+    const finish = () => {
+      if (!down) return
+      const held = down.held || Date.now() - down.t >= TAG_HOLD_MS
+      reset()
       if (!held) return
-      skipClick = true   // the click that follows is not a copy
+      skipClick = true   // a click that may follow is not a copy
       window.open(url, '_blank', 'noopener')
       flash(t('tagOpened'))
       dbg(`modal: tag search opened in a new tab (${url})`)
+    }
+    chip.addEventListener('pointerdown', ev => {
+      skipClick = false
+      down = { x: ev.clientX, y: ev.clientY, t: Date.now(), held: false, timer: setTimeout(hold, TAG_HOLD_MS) }
     })
+    chip.addEventListener('pointermove', ev => {
+      if (down && !down.held && Math.hypot(ev.clientX - down.x, ev.clientY - down.y) > 10) reset()   // scrolling the sheet
+    })
+    // Before the hold: the sheet's scroll took the touch. After it: the long
+    // press itself, which still ends in touchend.
+    chip.addEventListener('pointercancel', () => { if (down && !down.held) reset() })
+    chip.addEventListener('pointerup', finish)
+    chip.addEventListener('touchend', finish)
+    chip.addEventListener('contextmenu', ev => { ev.preventDefault(); hold() })   // the hold is ours
     chip.addEventListener('click', () => {
       if (skipClick) { skipClick = false; return }
       onTap()
     })
-    chip.addEventListener('contextmenu', ev => ev.preventDefault())   // the hold is ours
   }
 
   async function copyText(text, chip) {
