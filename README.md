@@ -107,7 +107,7 @@ All of them live in the panel and are stored in `localStorage` under `IBH_CFG`.
 
 ### Storage bridge (optional)
 
-`ibh-storage-bridge.user.js` is a second, small userscript that keeps the Watch later list in Violentmonkey's own storage, on the device, so it survives clearing the site's data. It exists because the main script must keep `@grant none` (it patches the page's own objects) and GM storage needs a `@grant`; the two talk through events on `window`. Install it from <https://raw.githubusercontent.com/JoaoRoch4/ImageBoardHelper/main/ibh-storage-bridge.user.js>. Without it, the list stays in the site's `localStorage`; the first time the bridge answers, the list moves into it.
+`ibh-storage-bridge.user.js` is a second, small userscript that keeps the Watch later list in Violentmonkey's own storage, on the device, so it survives clearing the site's data, and saves files for the modal's ⬇ Download button (`GM_download`, only from the site's own hosts; a page script cannot save files from the image hosts, which send no CORS headers; without the bridge the file opens in a new tab). It exists because the main script must keep `@grant none` (it patches the page's own objects) and GM storage needs a `@grant`; the two talk through events on `window`. Install it from <https://raw.githubusercontent.com/JoaoRoch4/ImageBoardHelper/main/ibh-storage-bridge.user.js>. Without it, the list stays in the site's `localStorage`; the first time the bridge answers, the list moves into it.
 
 ### About `forceRule34Api`
 
