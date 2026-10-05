@@ -97,7 +97,7 @@ All of them live in the panel and are stored in `localStorage` under `IBH_CFG`.
 | `rotateLandscape` | on | in the modal player's own fullscreen, a video wider than tall locks the screen to landscape; outside fullscreen nothing is turned |
 | `modalPreload` | on | in the modal, once the post on screen has loaded, the next one in the direction of travel is fetched: an image or GIF downloaded and decoded, so the swipe shows it at once; a video's host found and its header read, so it starts sooner. One post ahead only |
 | `siteTheme` | on | the modal's dark theme on the site's own pages: dark slate background, light text, teal links, buttons, fields and paginator, lines in neon green, tag kinds in colour. Masonry keeps its own interface. Applies at once |
-| `forceRule34Api` | **off** | see below (needs reload) |
+| `forceRule34Api` | on | automatic, no panel switch: see below (needs reload) |
 | `lang` | automatic | panel language: automatic, Portuguese or English |
 | `debug` | off | mirrors the log into the browser console |
 | `panel` | on | floating button and panel |
@@ -112,7 +112,7 @@ hostname == "rule34.xxx" && (UA contains "Firefox" || !credentialQuery)
 
 Because of the `||`, Firefox falls into the HTML scraper even with an API credential filled in — and that adapter comes before the API one in `fetchPostsActions`. Removing the word `Firefox` from the `userAgent` makes the first half false, so the list reaches `booruAction`, which uses the API and returns a ready `file_url`.
 
-**Off by default, on purpose.** The scraper sends the session cookie (`credentials: "include"`) and honours the account blacklist, `filter_ai` and `post_threshold`. The API goes to `api.rule34.xxx`, a different host, with no cookie: you gain a correct URL and lose your account filters.
+**Your account filters come along.** The scraper sends the session cookie (`credentials: "include"`), so the site applies the account blacklist, `filter_ai` and `post_threshold`; the API goes to `api.rule34.xxx`, a different host, with no cookie. The site keeps those filters in cookies the page can read (`tag_blacklist`, `filter_ai`, `post_threshold`), and Masonry's booru client calls the API with the page's `fetch`, so the script filters the answer before Masonry parses it: correct URLs, and what the site would hide stays hidden. It only acts with an API credential set in Masonry; without one the scraper stays. There is no panel switch; `__ibh.set('forceRule34Api', false)` turns it off.
 
 ---
 

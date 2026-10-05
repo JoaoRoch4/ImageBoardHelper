@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.42.1
+// @version      0.43.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.42.1'
+  const VERSION = '0.43.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -124,7 +124,7 @@
     gestures:       true,   // swipe, double tap and pinch
     originalThumbs: false,  // swap visible thumbnails for the original file (heavy, needs reload)
     nativeFeed:     false,  // one-column feed with sharp images on the site's own pages (needs reload)
-    forceRule34Api: false,  // see applyRule34ApiUnlock (needs reload)
+    forceRule34Api: true,   // rule34 on Masonry: API path, account filters applied here; automatic, no panel entry (needs reload)
   }
 
   // Options that only take effect when the app boots.
@@ -202,7 +202,7 @@
       tFancybox: 'Repair Fancybox', tGestures: 'Touch gestures',
       tOriginal: 'Original thumbnails (heavy)',
       tFeed: 'One-column feed on site pages',
-      tApi: 'Force API (loses filters)', tDebug: 'Log to console',
+      tDebug: 'Log to console',
       noteReload: 'reload',
       bTest: 'Test URLs', bClearHost: 'Clear host',
       bCopy: 'Copy log', bReload: 'Reload', bFree: 'Free memory & cache', bRedo: 'Redo thumbnails',
@@ -247,7 +247,7 @@
       tFancybox: 'Consertar Fancybox', tGestures: 'Gestos de toque',
       tOriginal: 'Miniatura original (pesado)',
       tFeed: 'Feed de uma coluna no site',
-      tApi: 'Forçar API (perde filtros)', tDebug: 'Log no console',
+      tDebug: 'Log no console',
       noteReload: 'recarregar',
       bTest: 'Testar URLs', bClearHost: 'Limpar host',
       bCopy: 'Copiar log', bReload: 'Recarregar', bFree: 'Limpar memória e cache', bRedo: 'Refazer miniaturas',
@@ -3354,7 +3354,7 @@
   function applyRule34ApiUnlock() {
     if (!CFG.forceRule34Api || SITE !== 'rule34.xxx') return
     if (!masonrySettings().credentialQuery) {
-      warn('API path requested without a credential; keeping the scraper')
+      dbg('rule34: no API credential in Masonry, keeping the scraper (it keeps the account filters itself)')
       return
     }
     try {
@@ -3365,9 +3365,59 @@
         configurable: true,
         get: () => ua,
       })
-      info('rule34 API path unlocked (no session cookie)')
+      installAccountFilters()
+      info('rule34 API path unlocked; account filters applied by the script')
     } catch (e) {
       error(`could not unlock the rule34 API path — ${describeError(e)}`)
+    }
+  }
+
+  // The API answers without the session cookie, so the account's own filters
+  // would be lost. The site keeps them in cookies the page can read:
+  // tag_blacklist, post_threshold and filter_ai. Masonry's booru client calls
+  // the API with the page's fetch (it runs in page mode), so the answer is
+  // filtered here before it parses it: what the site would hide stays hidden.
+  const AI_TAGS = ['ai_generated', 'ai_assisted']
+
+  function readCookie(name) {
+    const m = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`))
+    return m ? m[1] : null
+  }
+
+  function accountFilters() {
+    let raw = readCookie('tag_blacklist') || ''
+    // Stored encoded twice (spaces come back as %20 after one pass).
+    for (let i = 0; i < 2; i++) { try { raw = decodeURIComponent(raw) } catch (e) { break } }
+    const words = raw.split(/\s+/).filter(Boolean)
+    const tags = new Set(words.filter(w => !w.includes(':')))
+    const ratings = new Set(words.filter(w => w.startsWith('rating:')).map(w => w.slice(7, 8)))   // e, q, s
+    if (readCookie('filter_ai') === '1') AI_TAGS.forEach(tag => tags.add(tag))
+    return { tags, ratings, threshold: Number(readCookie('post_threshold')) || 0 }
+  }
+
+  function accountHides(post, f) {
+    if (f.threshold && Number(post.score) < f.threshold) return true
+    if (f.ratings.size && post.rating && f.ratings.has(String(post.rating)[0])) return true
+    return String(post.tags || '').split(/\s+/).some(tag => f.tags.has(tag))
+  }
+
+  function installAccountFilters() {
+    const pageFetch = window.fetch
+    window.fetch = async function (input, init) {
+      const res = await pageFetch.apply(this, arguments)
+      const url = typeof input === 'string' ? input : (input && input.url) || ''
+      if (!/\/\/api\.rule34\.xxx\/index\.php\?.*s=post&q=index/.test(url) || !/json=1/.test(url)) return res
+      try {
+        const posts = await res.clone().json()
+        if (!Array.isArray(posts)) return res
+        const f = accountFilters()
+        const kept = posts.filter(post => !accountHides(post, f))
+        if (kept.length === posts.length) return res
+        info(`rule34 API: account filters hid ${posts.length - kept.length} of ${posts.length} posts`)
+        return new Response(JSON.stringify(kept), { status: res.status, statusText: res.statusText, headers: res.headers })
+      } catch (e) {
+        return res   // not the JSON we expected: hand it over untouched
+      }
     }
   }
 
@@ -3814,7 +3864,6 @@
     body.appendChild(toggle('urlCache', t('tUrlCache')))
     body.appendChild(toggle('fixFancybox', t('tFancybox')))
     body.appendChild(toggle('gestures', t('tGestures')))
-    body.appendChild(toggle('forceRule34Api', t('tApi'), t('noteReload')))
     body.appendChild(toggle('debug', t('tDebug')))
 
     body.appendChild(el('div', { class: 'sec', text: t('language') }))

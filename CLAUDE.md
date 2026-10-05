@@ -84,7 +84,7 @@ Não sugira estas de novo sem um motivo novo.
 
 **Derivar o arquivo do host da miniatura.** Alguns boorus servem miniatura e arquivo de hosts diferentes, e certos mirrors só têm miniatura — `miami.rule34.xxx` e `ny.rule34.xxx` são os mapeados. Dá 404 silencioso. O `imageBase()` resolve o host separado, ignora mirrors conhecidos, cai num fallback e guarda por sete dias.
 
-**Forçar o caminho da API no rule34 por padrão.** Funciona, mas o raspador de HTML manda o cookie de sessão (`credentials: "include"`) e respeita a blacklist da conta, o `filter_ai` e o `post_threshold`. A API vai para `api.rule34.xxx`, host diferente, sem cookie. Trocar URL correta por perda dos filtros da conta é mau negócio; a opção existe mas vem desligada.
+**Forçar o caminho da API no rule34 sem reaplicar os filtros.** O raspador de HTML manda o cookie de sessão e respeita a blacklist da conta, o `filter_ai` e o `post_threshold`; a API vai para `api.rule34.xxx`, sem cookie. Desde a 0.43.0 a API é o padrão (com credencial no Masonry) porque o script lê esses filtros dos cookies e filtra a resposta da API no `fetch` da página (`installAccountFilters`) — o Masonry roda em modo página no Violentmonkey, então usa esse `fetch`. Se algum dia o Masonry passar a rodar em sandbox (`@inject-into content`), o filtro deixa de pegar e posts bloqueados aparecem: confira com o log "account filters hid".
 
 **Abrir uma capa de vídeo por card visível, sem limite.** No Oppo A5 o Firefox decodifica uns quatro vídeos ao mesmo tempo; o resto fica em `readyState` 1 para sempre ou dá `MEDIA_ERR_DECODE`. Medido com 18 `<video>` simultâneos pela `ffrdp`. Daí `COVER_MAX_LIVE = 3` e a fila. Aba em segundo plano não decodifica nada — teste de vídeo só com o Firefox na frente.
 

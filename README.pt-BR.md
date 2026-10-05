@@ -97,7 +97,7 @@ Todas ficam no painel e são gravadas em `localStorage` sob a chave `IBH_CFG`.
 | `rotateLandscape` | ligado | na tela cheia do próprio player do modal, vídeo mais largo que alto trava a tela em paisagem; fora da tela cheia nada gira |
 | `modalPreload` | ligado | no modal, depois que o post da tela carrega, o próximo na direção em que você está indo é buscado: imagem ou GIF baixado e decodificado, então o swipe mostra na hora; vídeo com o host achado e o cabeçalho lido, então começa mais cedo. Só um post à frente |
 | `siteTheme` | ligado | o tema escuro do modal nas páginas do próprio site: fundo cinza-escuro azulado, texto claro, links, botões, campos e paginador em verde-água, linhas em verde neon, tipos de tag coloridos. O Masonry mantém a interface dele. Vale na hora |
-| `forceRule34Api` | **desligado** | ver abaixo (requer recarregar) |
+| `forceRule34Api` | ligado | automático, sem botão no painel: ver abaixo (requer recarregar) |
 | `lang` | automático | idioma do painel: automático, português ou inglês |
 | `debug` | desligado | espelha o log no console do navegador |
 | `panel` | ligado | botão flutuante e painel |
@@ -112,7 +112,7 @@ hostname == "rule34.xxx" && (UA inclui "Firefox" || !credentialQuery)
 
 Por causa do `||`, o Firefox cai no raspador de HTML mesmo com credencial de API preenchida — e esse adaptador vem antes do da API em `fetchPostsActions`. Removendo a palavra `Firefox` do `userAgent`, a primeira metade fica falsa e a lista chega em `booruAction`, que usa a API e devolve `file_url` pronto.
 
-**Desligado por padrão, de propósito.** O raspador manda o cookie de sessão (`credentials: "include"`) e respeita a blacklist da conta, o `filter_ai` e o `post_threshold`. A API vai para `api.rule34.xxx`, host diferente, sem cookie: você ganha URL correta e perde os filtros da sua conta.
+**Os filtros da sua conta vêm junto.** O raspador manda o cookie de sessão (`credentials: "include"`), então o site aplica a blacklist da conta, o `filter_ai` e o `post_threshold`; a API vai para `api.rule34.xxx`, host diferente, sem cookie. O site guarda esses filtros em cookies que a página lê (`tag_blacklist`, `filter_ai`, `post_threshold`), e o cliente booru do Masonry chama a API com o `fetch` da página, então o script filtra a resposta antes de o Masonry ler: URL correta, e o que o site esconderia continua escondido. Só age com credencial de API configurada no Masonry; sem ela, fica o raspador. Não há botão no painel; `__ibh.set('forceRule34Api', false)` desliga.
 
 ---
 

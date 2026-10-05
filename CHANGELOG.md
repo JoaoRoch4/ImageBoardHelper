@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.43.0
+
+- rule34 on Masonry is automatic: with an API credential set in Masonry, the
+  API path (correct file URLs and types) is used and the account's own
+  filters are applied by the script, so nothing is lost. The site keeps them
+  in cookies the page can read (`tag_blacklist`, `filter_ai`, `post_threshold`);
+  Masonry's booru client fetches the API with the page's `fetch`, and the
+  answer is filtered before it parses it. Without a credential the scraper
+  stays, as before. The "Force API" switch is gone from the panel
+  (`__ibh.set('forceRule34Api', false)` still turns it off)
+
 ## 0.42.1
 
 - The floating buttons hide while the panel is open: they sat over its bottom
