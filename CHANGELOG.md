@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.45.1
+
+- Without the storage bridge, the note under the Watch later list is a link
+  to install it (Violentmonkey opens its install page). `@require` cannot do
+  it: it pastes the code into this script, under its `@grant none`, where the
+  storage is out of reach
+
 ## 0.45.0
 
 - Watch later list on site pages: ☰ in a post has a 🕒 Watch later button

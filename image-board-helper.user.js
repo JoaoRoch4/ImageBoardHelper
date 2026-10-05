@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.45.0
+// @version      0.45.1
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.45.0'
+  const VERSION = '0.45.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -193,7 +193,7 @@
       tLaterBtn: 'Watch later button', navLater: 'Watch later', laterTitle: 'Watch later',
       laterAdd: '🕒 Watch later', laterIn: '✓ In Watch later', laterAdded: 'Saved for later', laterRemoved: 'Removed from the list',
       laterEmpty: 'Nothing saved yet. Use 🕒 in a post’s ☰ menu.', laterOnDevice: 'kept by Violentmonkey, on this device',
-      laterOnSite: 'kept in this site’s data (install the storage bridge to keep it in Violentmonkey)',
+      laterOnSite: 'Kept in this site’s data. Tap to install the storage bridge and keep it in Violentmonkey',
       tModal: 'Open posts in a player over the page',
       tTheme: 'Dark theme on site pages',
       mClose: 'Close', mOpen: 'Open the post', mPrev: 'Previous post', mNext: 'Next post',
@@ -244,7 +244,7 @@
       tLaterBtn: 'Botão Ver depois', navLater: 'Ver depois', laterTitle: 'Ver depois',
       laterAdd: '🕒 Ver depois', laterIn: '✓ Na lista', laterAdded: 'Salvo para ver depois', laterRemoved: 'Tirado da lista',
       laterEmpty: 'Nada salvo ainda. Use o 🕒 no menu ☰ de um post.', laterOnDevice: 'guardado pelo Violentmonkey, neste aparelho',
-      laterOnSite: 'guardado nos dados deste site (instale a ponte de armazenamento para guardar no Violentmonkey)',
+      laterOnSite: 'Guardado nos dados deste site. Toque para instalar a ponte de armazenamento e guardar no Violentmonkey',
       tModal: 'Abrir posts num player sobre a página',
       tTheme: 'Tema escuro nas páginas do site',
       mClose: 'Fechar', mOpen: 'Abrir o post', mPrev: 'Post anterior', mNext: 'Próximo post',
@@ -2120,6 +2120,7 @@
       border-radius: 10px; padding: 1px 7px; pointer-events: none; }
     .tile button.rm { position: absolute; top: 4px; right: 4px; width: 28px; height: 28px; font-size: 14px; }
     .laternote { color: #4e6469; font-size: 12px; margin-top: 14px; text-align: center; }
+    .laternote a { color: #5eead4; }
     .latergrid .none { grid-column: 1 / -1; color: #7f9aa0; font-size: 14px; text-align: center; padding: 30px 10px; }
     .toast {
       position: absolute; left: 50%; bottom: 84px; transform: translateX(-50%);
@@ -2303,6 +2304,7 @@
   // @grant this one cannot have. They talk through events on window, as JSON
   // strings. Without the bridge, the site's own localStorage holds them.
   const STORE_TIMEOUT_MS = 700
+  const BRIDGE_URL = 'https://raw.githubusercontent.com/JoaoRoch4/ImageBoardHelper/main/ibh-storage-bridge.user.js'
   let storeBridge = null   // unknown until it answers, or stays silent once
   const storeWaiters = new Map()
   let storeSeq = 0
@@ -2426,7 +2428,11 @@
   async function renderLater() {
     const list = (await laterList()).filter(item => item.site === SITE)
     modal.laterHead.querySelector('.lt').textContent = `🕒 ${t('laterTitle')} · ${list.length}`
-    modal.laterNote.textContent = t(storeBridge ? 'laterOnDevice' : 'laterOnSite')
+    // Without the bridge, the note is the way to install it: Violentmonkey
+    // opens its install page for a .user.js link. (@require would paste the
+    // bridge into this script, under its @grant none, without the storage.)
+    if (storeBridge) modal.laterNote.textContent = t('laterOnDevice')
+    else modal.laterNote.replaceChildren(el('a', { href: BRIDGE_URL, target: '_blank', rel: 'noopener', text: t('laterOnSite') }))
     if (!list.length) {
       modal.laterGrid.replaceChildren(el('div', { class: 'none', text: t('laterEmpty') }))
       return
