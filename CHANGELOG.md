@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.48.1
+
+- The favorites search bar and the autopager show up: building the bar's
+  status line passed plain strings where the element helper took only nodes,
+  which threw on every page change and stopped the autopager behind it
+
 ## 0.48.0
 
 - Autopager on favorites pages (`favAutopager`, on): the next page loads as

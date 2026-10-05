@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.48.0
+// @version      0.48.1
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.48.0'
+  const VERSION = '0.48.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -4490,7 +4490,8 @@
       else if (k === 'class') node.className = v
       else node.setAttribute(k, v)
     }
-    if (children) children.forEach(c => node.appendChild(c))
+    // Children are nodes or plain strings (as text).
+    if (children) children.forEach(c => node.appendChild(typeof c === 'string' ? document.createTextNode(c) : c))
     return node
   }
 
