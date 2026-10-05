@@ -86,6 +86,7 @@ All of them live in the panel and are stored in `localStorage` under `IBH_CFG`.
 | `slideStep` | `10` | hold slideshow: jump between scenes, in % of the video (5, 10, 20 or 25: 20, 10, 5 or 4 scenes per loop) |
 | `slideDwell` | `0.2` | hold slideshow: seconds each scene stays once painted (0.1 to 1) |
 | `gifInline` | on | GIF cards animate while on screen and go back to the still when they leave; a GIF that breaks under memory pressure frees what is off screen and is rebuilt, twice at most |
+| `gifMaxLive` | `3` | with `gifInline`, how many GIFs animate at once (1 to 10); the rest wait as stills and start, nearest the middle of the screen first, as others scroll away. Applies at once |
 | `fixFancybox` | on | fills empty `src` in Fancybox |
 | `gestures` | on | swipe, double tap and pinch |
 | `originalThumbs` | **off** | swaps visible thumbnails, on Masonry and on the site's own pages, for the original file; sharper, but several times the data and memory (needs reload) |

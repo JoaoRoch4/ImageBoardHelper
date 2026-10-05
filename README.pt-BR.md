@@ -86,6 +86,7 @@ Todas ficam no painel e são gravadas em `localStorage` sob a chave `IBH_CFG`.
 | `slideStep` | `10` | slideshow ao segurar: pulo entre cenas, em % do vídeo (5, 10, 20 ou 25: 20, 10, 5 ou 4 cenas por volta) |
 | `slideDwell` | `0.2` | slideshow ao segurar: segundos que cada cena fica na tela depois de desenhada (0,1 a 1) |
 | `gifInline` | ligado | card de GIF anima enquanto está na tela e volta à imagem parada quando sai; GIF que quebra por falta de memória libera o que está fora da tela e é reconstruído, até duas vezes |
+| `gifMaxLive` | `3` | com o `gifInline`, quantos GIFs animam ao mesmo tempo (1 a 10); os outros esperam como imagem parada e começam, os mais perto do centro da tela primeiro, quando outros saem da tela. Vale na hora |
 | `fixFancybox` | ligado | preenche `src` vazio no Fancybox |
 | `gestures` | ligado | swipe, toque duplo e pinça |
 | `originalThumbs` | **desligado** | troca as miniaturas visíveis, no Masonry e nas páginas do próprio site, pelo arquivo original; mais nítido, mas gasta várias vezes mais dados e memória (requer recarregar) |

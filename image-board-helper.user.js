@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.52.0
+// @version      0.53.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.52.0'
+  const VERSION = '0.53.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -107,6 +107,7 @@
     sharpThumbs:    true,   // enable "thumbnail uses large image" (needs reload)
     videoCovers:    true,   // overlay the real video frame on the card
     gifInline:      true,   // animate GIF cards while they are on screen
+    gifMaxLive:     3,      // at most this many of them animating at once
     videoScrub:     true,   // scene preview on video thumbnails (needs reload)
     scrubMode:      'drag', // 'drag': finger position picks the scene; 'hold': hold for a slideshow
     slideStep:      10,     // hold slideshow: jump between scenes, in % of the video
@@ -188,7 +189,7 @@
       notResolved: 'not resolved', cached: 'cached',
       filled: 'filled', empty: 'empty',
       coversFmt: (ok, bad, all) => `${ok} ok · ${bad} failed · ${all} videos`,
-      tSharp: 'Large thumbnails', tCovers: 'Video covers', tGif: 'Animated GIFs in the grid',
+      tSharp: 'Large thumbnails', tCovers: 'Video covers', tGif: 'Animated GIFs in the grid', tGifMax: 'GIFs animating at once',
       tScrub: 'Scene preview on video thumbnails',
       tScrubMode: 'scene preview gesture', modeDrag: 'Drag sideways', modeHold: 'Hold (slideshow)',
       tSlideStep: 'slideshow jump', tSlideDwell: 'time per scene', scenes: 'scenes',
@@ -252,7 +253,7 @@
       notResolved: 'não resolvido', cached: 'cache',
       filled: 'preenchida', empty: 'vazia',
       coversFmt: (ok, bad, all) => `${ok} ok · ${bad} falha · ${all} vídeos`,
-      tSharp: 'Miniatura grande', tCovers: 'Capa de vídeo', tGif: 'GIF animado na grade',
+      tSharp: 'Miniatura grande', tCovers: 'Capa de vídeo', tGif: 'GIF animado na grade', tGifMax: 'GIFs animando ao mesmo tempo',
       tScrub: 'Prévia de cenas nas miniaturas de vídeo',
       tScrubMode: 'gesto da prévia de cenas', modeDrag: 'Arrastar de lado', modeHold: 'Segurar (slideshow)',
       tSlideStep: 'pulo do slideshow', tSlideDwell: 'tempo por cena', scenes: 'cenas',
@@ -865,8 +866,54 @@
   // GIF cards show a still (sample or thumbnail .jpg). While on screen, swap in
   // the original .gif, probed off-screen first; put the still back on the way
   // out, because animated GIFs hold every decoded frame in memory.
+  // Every animated GIF keeps all its frames decoded: past a few at once the
+  // phone runs out of memory and Firefox drops them (the broken-GIF rebuild,
+  // see watchGif). Cards past the limit wait as stills, nearest the middle of
+  // the screen first, and take the place of one that scrolls away.
+  const gifQueue = new Set()
+  const gifsLive = () => document.querySelectorAll('[data-ibh-gif="playing"], [data-ibh-gif="loading"]').length
+
+  function nextGif() {
+    // Stopped to free memory (the modal, a scene preview, a hidden tab): those
+    // bring their GIFs back themselves when they end.
+    if (document.hidden || (modal && modal.open) || scrub) return
+    const max = Number(CFG.gifMaxLive) || 3
+    const middle = window.innerHeight / 2
+    const waiting = [...gifQueue].filter(card => {
+      if (card.isConnected && card.dataset.ibhSeen && !card.dataset.ibhGif) return true
+      gifQueue.delete(card)
+      return false
+    })
+    waiting.sort((a, b) => {
+      const da = Math.abs(a.getBoundingClientRect().top + a.offsetHeight / 2 - middle)
+      const db = Math.abs(b.getBoundingClientRect().top + b.offsetHeight / 2 - middle)
+      return da - db
+    })
+    for (const card of waiting) {
+      if (gifsLive() >= max) break
+      gifQueue.delete(card)
+      playGif(card)
+    }
+  }
+
+  // The panel changed the limit: stop the GIFs farthest from the middle past
+  // it, or start waiting ones in the room it made.
+  function applyGifLimit() {
+    const max = Number(CFG.gifMaxLive) || 3
+    const middle = window.innerHeight / 2
+    const live = [...document.querySelectorAll('[data-ibh-gif="playing"], [data-ibh-gif="loading"]')]
+      .sort((a, b) => Math.abs(b.getBoundingClientRect().top - middle) - Math.abs(a.getBoundingClientRect().top - middle))
+    while (live.length > max) {
+      const card = live.shift()
+      stopGif(card)
+      gifQueue.add(card)
+    }
+    nextGif()
+  }
+
   function playGif(card) {
     if (card.dataset.ibhGif) return   // loading, playing or failed
+    if (gifsLive() >= (Number(CFG.gifMaxLive) || 3)) { gifQueue.add(card); return }   // waits its turn
     const pic = cardPicture(card)
     if (!pic) { whenPictured(card, playGif); return }
     const hash = (thumbParts(pic.src) || {}).hash
@@ -888,6 +935,7 @@
         cacheSet('gif', hash, null)
         if (card.dataset.ibhKind === 'gif') { STATE.covers.failed++; touch() }
         dbg(`gif: no host answered for ${pic.src}`)
+        nextGif()   // its place goes to a waiting one
         return
       }
       probe.src = urls[i++]
@@ -969,12 +1017,16 @@
   }
 
   function stopGif(card) {
+    gifQueue.delete(card)
     const state = card.dataset.ibhGif
     if (state === 'playing' && card.dataset.ibhStill) {
       const pic = cardPicture(card)
       if (pic) pic.set(card.dataset.ibhStill)
     }
-    if (state === 'playing' || state === 'loading') delete card.dataset.ibhGif
+    if (state === 'playing' || state === 'loading') {
+      delete card.dataset.ibhGif
+      setTimeout(nextGif, 0)   // after the caller's own stops, e.g. a page-wide release
+    }
   }
 
   // Opening decoders only for what is on screen keeps the phone alive.
@@ -4987,6 +5039,7 @@
     body.appendChild(toggle('modalPreload', t('tPreload')))
     body.appendChild(toggle('videoCovers', t('tCovers')))
     body.appendChild(toggle('gifInline', t('tGif')))
+    body.appendChild(choiceSelect('gifMaxLive', t('tGifMax'), [1, 2, 3, 4, 6, 10].map(n => [n, String(n)]), applyGifLimit))
     body.appendChild(toggle('videoScrub', t('tScrub'), t('noteReload')))
     scrubModeControls(body)
     body.appendChild(toggle('memorySaver', t('tMemory'), t('noteReload')))

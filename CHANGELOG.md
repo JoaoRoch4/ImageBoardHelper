@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.53.0
+
+- At most 3 GIFs animate at once (`gifMaxLive`, 1 to 10 from the panel, at
+  once): each animated GIF keeps all its frames decoded, and past a few the
+  phone runs out of memory and Firefox drops them. The rest wait as stills,
+  nearest the middle of the screen first, and start as others scroll away
+
 ## 0.52.0
 
 - Mass favorite (`bulkFavButton`, on): a ♥ button next to 🕒 turns on a mode
