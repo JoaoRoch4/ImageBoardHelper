@@ -141,7 +141,7 @@ console.log(en.filter(k=>!pt.includes(k)), pt.filter(k=>!en.includes(k)));
 
 Funções puras (`thumbParts`, `fileCandidates`, `orTags`) podem ser extraídas com regex e rodadas num `new Function` com stubs — veja o padrão usado no histórico do projeto. Vale a pena quando mexer na derivação de URL ou na montagem da busca.
 
-O resto é testado no aparelho, pelo painel: **Testar URLs** lista cada candidata com OK ou FALHA, e **Copiar log** monta um relatório com versão, `userAgent`, host resolvido e histórico. Com o painel desligado, o console tem `window.__ibh` (`version`, `cfg`, `state`, `log()`, `probe()`, `clearHostCache()`, `set(chave, valor)`, `stored()` — tamanho de cada lista guardada e o estado da migração).
+O resto é testado no aparelho, pelo painel: **Testar URLs** lista cada candidata com OK ou FALHA, e **Copiar log** monta um relatório com versão, `userAgent`, host resolvido e histórico. Com o painel desligado, o console tem `window.__ibh` (`version`, `cfg`, `state`, `log()`, `probe()`, `clearHostCache()`, `set(chave, valor)`, `stored()` — tamanho de cada lista guardada e o estado da migração; `moveAgain()` — junta de novo as listas da ponte, se uma aba antiga gravou nela depois da migração).
 
 Ambiente: Firefox para Android com Violentmonkey, num Oppo A5 4G. Sem PC na maior parte do tempo, então prefira mudanças que eu consiga aplicar e verificar pelo celular.
 
