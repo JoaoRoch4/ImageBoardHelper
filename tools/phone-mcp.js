@@ -296,10 +296,11 @@ async function deploy({ confirm = false, dry_run = false, wait_s = 60, match = '
   openUrl({ url })
   steps.push('opened the raw link in Firefox Beta')
 
-  // A plain update installs and closes the confirm tab by itself; changed
-  // grants keep it open for a tap (or for confirm: true).
+  // Violentmonkey shows its confirm page on every install and closes it by
+  // itself within seconds; one that stays open waits for a tap (or for
+  // confirm: true).
   const start = Date.now()
-  let seen = false
+  let seen = 0   // when the confirm page first showed up
   let clicked = false
   let waitingSaid = false
   while (Date.now() - start < wait_s * 1000) {
@@ -307,19 +308,21 @@ async function deploy({ confirm = false, dry_run = false, wait_s = 60, match = '
     const tabs = await withFirefox(c => ff.listTabs(c))
     const page = tabs.find(t => /^moz-extension:\/\/[^/]+\/confirm\//.test(t.url))
     if (page) {
-      seen = true
+      seen = seen || Date.now()
+      if (Date.now() - seen < 6000) continue
       if (confirm && !clicked) {
         clicked = true
         steps.push(`Violentmonkey confirm page: ${await withFirefox(c => ff.evaluate(c, page.url, CLICK_INSTALL, 0))}`)
       } else if (!confirm && !waitingSaid) {
         waitingSaid = true
-        steps.push('Violentmonkey is asking for confirmation (changed grants?): waiting for the user to tap it')
+        steps.push('Violentmonkey is waiting for confirmation: ask the user to tap it')
       }
       continue
     }
     if (seen || Date.now() - start > 8000) break
   }
-  steps.push(seen ? 'confirm page closed' : 'no confirm page seen (installed silently, or still loading)')
+  steps.push(!seen ? 'no confirm page seen (installed silently, or still loading)'
+    : waitingSaid || clicked ? 'confirm page closed' : 'installed: Violentmonkey closed its page by itself')
 
   const tabs = await inTabs(match, '({ hidden: document.visibilityState === "hidden", version: (window.__ibh && window.__ibh.version) || null })')
   for (const t of tabs) {

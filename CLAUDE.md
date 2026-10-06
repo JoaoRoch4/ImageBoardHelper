@@ -170,7 +170,6 @@ O servidor MCP `phone` (`tools/phone-mcp.js`, sem dependências, registrado no `
 
 ## Tarefas abertas
 
-- **Primeiro `deploy` de verdade pelo MCP `phone`:** até agora só rodou em `dry_run`.
 - `HOSTS` só tem o rule34 mapeado. safebooru e xbooru podem ter mirrors próprios; descobrir com **Testar URLs** e preencher.
 - **Voltar com tbib e realbooru** (tirados do `@match` na 1.0.1): as listagens deles não usam `.image-list` — o tbib põe os `span.thumb` em `#post-list .content > div`, o realbooru usa `div.items > div.col.thumb` —, então a barra de busca não aparecia e o feed e o autopager não agiam. Generalizar o seletor da lista por site e testar cada um com `node tools/smoke.js '<URL>'`.
 - safebooru e xbooru passam no `npm run smoke`; no aparelho (toque, vídeo, endpoints logados) só o rule34 foi testado de verdade. Favoritar em massa, 🔖 e a busca nos favoritos são só do rule34.
