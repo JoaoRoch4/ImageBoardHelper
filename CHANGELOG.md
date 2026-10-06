@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.3.0
+
+- Double tap a thumbnail on rule34 (logged in) to favorite and upvote the
+  post without opening it (`doubleTapFav`, on); it gets the same ♥ mark as
+  mass favorite. A single tap still opens the post, about 0.3 s later, the
+  wait for a second tap. Thumbnails no longer take the browser's double-tap
+  zoom
+
 ## 1.2.0
 
 - Hold slideshow from keyframes (`slideReel`, on): for MP4s the script reads

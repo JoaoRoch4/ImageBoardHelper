@@ -74,6 +74,7 @@ Todas ficam no painel e são gravadas em `localStorage` sob a chave `IBH_CFG`.
 | `feedLayout` | `masonry` | com o `nativeFeed` e mais de uma coluna: `masonry` mantém cada imagem inteira, em colunas; `grid` faz quadros quadrados iguais, cortados para preencher. Vale na hora |
 | `feedNav` | ligado | com o `nativeFeed`, botões redondos no canto inferior direito, em duas fileiras: ⤒ topo, ‹ › post anterior/próximo (por exemplo para passar um comic longo), ⤓ fim da página; « » (canto superior esquerdo) página anterior/próxima pela paginação do próprio site (requer recarregar) |
 | `bulkFavButton` | ligado | nas páginas do rule34 (logado), um botão ♥ ao lado do 🕒 liga o favoritar em massa: um toque numa miniatura favorita e vota no post em vez de abrir, e marca com ♥ (✕ se falhar). Toque no ♥ de novo para sair |
+| `doubleTapFav` | ligado | no rule34 (logado), um toque duplo na miniatura favorita e vota no post sem abrir, e marca com ♥ (✕ se falhar), como o favoritar em massa; o toque simples continua abrindo o post, uns 0,3 s depois (a espera por um segundo toque) |
 | `favsButton` | ligado | no rule34 (logado), um botão 🔖 no canto superior direito, ao lado do ♥ e do 🕒, abre a sua página de favoritos |
 | `freeButton` | ligado | botão de atalho com ícone de lixeira junto dos botões flutuantes: um toque roda o **Limpar memória e cache** (inclusive nas outras abas do site) |
 | `redoButton` | ligado | atalho ↻ ao lado da lixeira: roda **Limpar memória e cache** nesta aba e depois **Refazer miniaturas** (todas recomeçam, inclusive as que falharam) |

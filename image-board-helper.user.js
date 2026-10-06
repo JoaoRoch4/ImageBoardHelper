@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.2.0
+// @version      1.3.0
 // @description  For the phone, on Gelbooru 0.2 boards (rule34.xxx and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -62,7 +62,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.2.0'
+  const VERSION = '1.3.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -89,6 +89,7 @@
     holdRaw:        true,   // hold an image on site pages to load its original (raw) file in place
     favsButton:     true,   // 🔖 button next to ♥ and 🕒 on rule34: your favorites page
     bulkFavButton:  true,   // ♥ button next to 🕒 on site pages: a mode where each tapped post is favorited and upvoted
+    doubleTapFav:   true,   // double tap a thumbnail on rule34: favorite and upvote it; a single tap opens the post a moment later
     freeButton:     true,   // trash-can button next to them: Free memory & cache in one tap
     redoButton:     true,   // ↻ button beside it: free memory, then redo every thumbnail
     eyeButton:      true,   // 👁 button beside ◐: hides the other floating buttons, and brings them back
@@ -173,7 +174,7 @@
       tFavsBtn: 'Your-favorites shortcut button', navFavs: 'Your favorites',
       tBulkBtn: 'Mass-favorite button', navBulk: 'Mass favorite: each tapped post gets ♥ and ▲',
       bulkOn: 'Mass favorite on: tap posts to favorite and upvote them', bulkOff: 'Mass favorite off',
-      tRedoBtn: 'Redo-thumbnails shortcut button', navRedo: 'Free memory, then redo thumbnails',
+      tRedoBtn: 'Redo-thumbnails shortcut button', navRedo: 'Free memory, then redo thumbnails', tDoubleTap: 'Double tap a thumbnail: favorite + upvote',
       tEyeBtn: '👁 button: hides the other buttons', eyeHide: 'Hide the buttons', eyeShow: 'Show the buttons',
       tFreeBtn: 'Free-memory shortcut button', navFree: 'Free memory & cache',
       tFavSearch: 'Search your favorites', tSiteSearch: 'Search bar on site pages',
@@ -242,7 +243,7 @@
       tFavsBtn: 'Botão de atalho para os seus favoritos', navFavs: 'Seus favoritos',
       tBulkBtn: 'Botão de favoritar em massa', navBulk: 'Favoritar em massa: cada post tocado ganha ♥ e ▲',
       bulkOn: 'Favoritar em massa ligado: toque nos posts para favoritar e votar', bulkOff: 'Favoritar em massa desligado',
-      tRedoBtn: 'Botão de atalho para refazer as miniaturas', navRedo: 'Limpar a memória e refazer as miniaturas',
+      tRedoBtn: 'Botão de atalho para refazer as miniaturas', navRedo: 'Limpar a memória e refazer as miniaturas', tDoubleTap: 'Toque duplo na miniatura: favoritar + votar',
       tEyeBtn: 'Botão 👁: oculta os outros botões', eyeHide: 'Ocultar os botões', eyeShow: 'Mostrar os botões',
       tFreeBtn: 'Botão de atalho para limpar a memória', navFree: 'Limpar memória e cache',
       tFavSearch: 'Buscar nos seus favoritos', tSiteSearch: 'Barra de busca nas páginas do site',
@@ -3394,7 +3395,7 @@
     badge.style.background = tone
   }
 
-  async function bulkFavorite(link) {
+  async function bulkFavorite(link, via = 'mass favorite') {
     const id = postId(link)
     if (link.dataset.ibhBulk) return   // done or in progress
     link.dataset.ibhBulk = '1'
@@ -3405,11 +3406,11 @@
       if (code !== '3' && code !== '1') throw new Error(`answer ${code.slice(0, 20)}`)
       await upvotePost(id)
       bulkBadge(link, '♥', '#e5534b')
-      info(`mass favorite: post ${id} ${code === '3' ? 'favorited' : 'was a favorite'}, upvoted`)
+      info(`${via}: post ${id} ${code === '3' ? 'favorited' : 'was a favorite'}, upvoted`)
     } catch (e) {
       delete link.dataset.ibhBulk
       bulkBadge(link, '✕', '#b42318')
-      warn(`mass favorite: post ${id} failed — ${describeError(e)}`)
+      warn(`${via}: post ${id} failed — ${describeError(e)}`)
     }
   }
 
@@ -3555,6 +3556,39 @@
     ev.preventDefault()
     ev.stopImmediatePropagation()
     bulkFavorite(link)
+  }
+
+  // Double tap on a thumbnail: favorite and upvote it on the spot, as mass
+  // favorite does, without the mode. A single tap still opens the post, only
+  // a moment later: that is how long a second tap is waited for. Registered
+  // after the scrub's and the raw hold's click guards, before the modal.
+  const DOUBLE_TAP_MS = 300
+  let pendingTap = null   // { link, timer }: a first tap waiting for a second
+  let passTap = null      // the single tap going through to whatever opens the post
+
+  const wantsDoubleTap = () => !!CFG.doubleTapFav && SITE === 'rule34.xxx' && !!userId()
+
+  function onDoubleTapClick(ev) {
+    if (ev.defaultPrevented || ev.button !== 0 || bulkMode) return
+    const link = ev.target.closest && ev.target.closest(SITE_LINK)
+    if (!link || link === passTap || !wantsDoubleTap()) return
+    ev.preventDefault()
+    ev.stopImmediatePropagation()
+    if (pendingTap && pendingTap.link === link) {
+      clearTimeout(pendingTap.timer)
+      pendingTap = null
+      bulkFavorite(link, 'double tap')
+      return
+    }
+    if (pendingTap) clearTimeout(pendingTap.timer)   // a tap on another thumbnail replaces it
+    pendingTap = { link, timer: setTimeout(() => { pendingTap = null; openTapped(link) }, DOUBLE_TAP_MS) }
+  }
+
+  // The single tap, replayed: the modal (or the link itself) takes it from here.
+  function openTapped(link) {
+    if (!link.isConnected) return
+    passTap = link
+    try { link.click() } finally { passTap = null }
   }
 
   // ── Saved searches ──
@@ -5734,6 +5768,7 @@
     }
     body.appendChild(toggle('feedNav', t('tNav'), t('noteReload')))
     body.appendChild(toggle('bulkFavButton', t('tBulkBtn'), null, ensureFeedNav))
+    body.appendChild(toggle('doubleTapFav', t('tDoubleTap')))
     body.appendChild(toggle('favsButton', t('tFavsBtn'), null, ensureFeedNav))
     body.appendChild(toggle('holdRaw', t('tHoldRaw')))
     body.appendChild(toggle('freeButton', t('tFreeBtn'), null, ensureFeedNav))
@@ -6261,10 +6296,14 @@
     .image-list a img { -webkit-touch-callout: none; }
   `
 
+  // Two quick taps on a thumbnail are a double tap for the script, never the
+  // browser's double-tap zoom (video cards set their own touch-action).
+  const TAP_CSS = '.image-list span.thumb a:not([data-ibh-video]) { touch-action: manipulation; }'
+
   function injectPageCSS() {
     if (document.querySelector('style[data-ibh]')) return
     const style = el('style', { 'data-ibh': '1' })
-    style.textContent = NATIVE_MARK_CSS + THEME_CSS + FAVSEARCH_CSS +
+    style.textContent = NATIVE_MARK_CSS + THEME_CSS + FAVSEARCH_CSS + TAP_CSS +
       (CFG.videoScrub ? SCRUB_CSS : '')
     ;(document.head || document.documentElement).appendChild(style)
   }
@@ -6300,6 +6339,7 @@
   window.addEventListener('touchcancel', cancelRawHold, true)
   window.addEventListener('contextmenu', onRawContextMenu, true)
   installVideoScrub()   // before the modal: its click guard must run first
+  window.addEventListener('click', onDoubleTapClick, true)   // after the guards, before the modal
   installVideoModal()
   logSnapshot()
   if (CFG.originalThumbs) info('original thumbnails on: visible thumbnails load the full file')
