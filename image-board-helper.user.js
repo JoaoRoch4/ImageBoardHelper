@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.58.2
+// @version      0.58.3
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.58.2'
+  const VERSION = '0.58.3'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -200,7 +200,7 @@
       tNav: 'Top / previous / next buttons',
       navPrev: 'Previous post', navNext: 'Next post', navTop: 'Top of the page', navBottom: 'Bottom of the page',
       navPrevPage: 'Previous page', navNextPage: 'Next page',
-      tHoldRaw: 'Hold an image for its raw file', rawFailed: 'No original file found',
+      tHoldRaw: 'Hold an image for its raw file', rawFailed: 'No original file found', rawAlready: 'This image already is the original (the post has no sample)',
       tBulkBtn: 'Mass-favorite button', navBulk: 'Mass favorite: each tapped post gets ♥ and ▲',
       bulkOn: 'Mass favorite on: tap posts to favorite and upvote them', bulkOff: 'Mass favorite off',
       tFreeBtn: 'Free-memory shortcut button', navFree: 'Free memory & cache',
@@ -270,7 +270,7 @@
       tNav: 'Botões topo / anterior / próximo',
       navPrev: 'Post anterior', navNext: 'Próximo post', navTop: 'Topo da página', navBottom: 'Fim da página',
       navPrevPage: 'Página anterior', navNextPage: 'Próxima página',
-      tHoldRaw: 'Segurar a imagem para carregar a original (raw)', rawFailed: 'Arquivo original não encontrado',
+      tHoldRaw: 'Segurar a imagem para carregar a original (raw)', rawFailed: 'Arquivo original não encontrado', rawAlready: 'Esta imagem já é o original (o post não tem sample)',
       tBulkBtn: 'Botão de favoritar em massa', navBulk: 'Favoritar em massa: cada post tocado ganha ♥ e ▲',
       bulkOn: 'Favoritar em massa ligado: toque nos posts para favoritar e votar', bulkOff: 'Favoritar em massa desligado',
       tFreeBtn: 'Botão de atalho para limpar a memória', navFree: 'Limpar memória e cache',
@@ -3318,6 +3318,14 @@
     if (!parts) return
     const cached = knownOriginal(parts.hash)
     if (cached === null) { bulkBadge(link, '✕', '#b42318', 'ibh-rawbadge'); pageToast(t('rawFailed')); return }
+    // A post without a sample already shows its original in the feed: the
+    // same file again would change nothing (measured: 2 of 3 posts held).
+    if (/\/images\//.test(img.getAttribute('srcset') || '')) {
+      pageToast(t('rawAlready'))
+      if (navigator.vibrate) navigator.vibrate(15)
+      dbg(`raw: post ${postId(link)} already shows its original`)
+      return
+    }
     img.dataset.ibhRaw = 'loading'
     img.dataset.ibhPreRaw = img.getAttribute('srcset') || ''   // what comes back on a second hold
     bulkBadge(link, 'RAW…', 'rgba(15, 20, 23, .85)', 'ibh-rawbadge')

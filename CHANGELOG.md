@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.58.3
+
+- Holding an image that already shows its original (a post without a
+  sample) says so instead of fetching the same file again: 2 of the 3 posts
+  held in a test were such posts, where the raw file changed nothing
+
 ## 0.58.2
 
 - The modal's download button reads "Download raw": it has saved the
