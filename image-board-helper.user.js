@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.59.0
+// @version      0.59.1
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.59.0'
+  const VERSION = '0.59.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -3969,7 +3969,6 @@
   // position is its layout position plus the translation.
   const zoom = { scale: 1, x: 0, y: 0, multi: false }
   const ZOOM_MAX = 6
-  const ZOOM_DOUBLE_TAP = 2.5
 
   function applyZoom() {
     const img = modal.image
@@ -4034,24 +4033,19 @@
       if (pts.size === 0) {
         pan = null
         if (zoom.scale < 1.05) resetZoom()   // let go near 1x: snap back
-        // Double tap: zoom in on that spot, or back to 1x.
+        // Double tap: fullscreen, as on videos (the tap is the user gesture it
+        // needs); zoomed in, it first comes back to 1x. Zoom is the pinch.
         if (ev.type === 'pointerup' && p && !zoom.multi && Date.now() - p.t < 250 &&
             Math.hypot(ev.clientX - p.x, ev.clientY - p.y) < 10) {
           const now = Date.now()
           if (now - lastTap.t < 300 && Math.hypot(ev.clientX - lastTap.x, ev.clientY - lastTap.y) < 30) {
             if (zoom.scale > 1) resetZoom()
-            else {
-              const o = origin()
-              zoom.scale = ZOOM_DOUBLE_TAP
-              zoom.x = ev.clientX - o.left - (ev.clientX - o.left) * ZOOM_DOUBLE_TAP
-              zoom.y = ev.clientY - o.top - (ev.clientY - o.top) * ZOOM_DOUBLE_TAP
-              applyZoom()
-            }
+            else toggleModalFullscreen()
             lastTap.t = 0
           } else {
             lastTap = { t: now, x: ev.clientX, y: ev.clientY }
             // A single tap in fullscreen shows or hides the bar, once it is
-            // clear no second tap (zoom) follows.
+            // clear no second tap (fullscreen) follows.
             const tapAt = now
             setTimeout(() => {
               if (lastTap.t === tapAt && modal.root.fullscreenElement) setCleanUi(!modal.box.classList.contains('clean'))

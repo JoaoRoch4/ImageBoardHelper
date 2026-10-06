@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.59.1
+
+- Double tap on a modal image toggles fullscreen, as on videos; zoomed in,
+  it first comes back to 1x. Zooming is the pinch
+
 ## 0.59.0
 
 - A SAMPLE / RAW button in the modal, bottom left, for images that have a
