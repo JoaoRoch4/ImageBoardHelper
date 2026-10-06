@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.57.1
+// @version      0.58.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.57.1'
+  const VERSION = '0.58.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -115,6 +115,7 @@
     memorySaver:    true,   // release far off-screen images and removed videos (needs reload)
     urlCache:       true,   // remember which candidate URL worked for each file
     feedNav:        true,   // ⤒ ‹ › buttons: top of page, previous and next post in the feed (needs reload)
+    holdRaw:        true,   // hold an image on site pages to load its original (raw) file in place
     bulkFavButton:  true,   // ♥ button next to 🕒 on site pages: a mode where each tapped post is favorited and upvoted
     freeButton:     true,   // trash-can button next to them: Free memory & cache in one tap
     laterButton:    true,   // 🕒 button next to them on site pages: the Watch later list
@@ -199,6 +200,7 @@
       tNav: 'Top / previous / next buttons',
       navPrev: 'Previous post', navNext: 'Next post', navTop: 'Top of the page', navBottom: 'Bottom of the page',
       navPrevPage: 'Previous page', navNextPage: 'Next page',
+      tHoldRaw: 'Hold an image for its raw file', rawFailed: 'No original file found',
       tBulkBtn: 'Mass-favorite button', navBulk: 'Mass favorite: each tapped post gets ♥ and ▲',
       bulkOn: 'Mass favorite on: tap posts to favorite and upvote them', bulkOff: 'Mass favorite off',
       tFreeBtn: 'Free-memory shortcut button', navFree: 'Free memory & cache',
@@ -268,6 +270,7 @@
       tNav: 'Botões topo / anterior / próximo',
       navPrev: 'Post anterior', navNext: 'Próximo post', navTop: 'Topo da página', navBottom: 'Fim da página',
       navPrevPage: 'Página anterior', navNextPage: 'Próxima página',
+      tHoldRaw: 'Segurar a imagem para carregar a original (raw)', rawFailed: 'Arquivo original não encontrado',
       tBulkBtn: 'Botão de favoritar em massa', navBulk: 'Favoritar em massa: cada post tocado ganha ♥ e ▲',
       bulkOn: 'Favoritar em massa ligado: toque nos posts para favoritar e votar', bulkOff: 'Favoritar em massa desligado',
       tFreeBtn: 'Botão de atalho para limpar a memória', navFree: 'Limpar memória e cache',
@@ -1512,6 +1515,7 @@
     })
     const swap = () => {
       if (gen !== upgradeGen) { done(); return }   // memory freed meanwhile: the element was reset
+      if (el.dataset.ibhRaw) { done(); return }   // held for the raw file meanwhile: keep it
       // The modal unloads the page while it is open: drop this upgrade and let
       // it run again when the modal closes.
       if (modal && modal.open) {
@@ -3190,11 +3194,11 @@
   }
 
   // A mark on the thumbnail: ♥ done, … working, ✕ failed.
-  function bulkBadge(link, text, tone) {
-    let badge = link.querySelector('.ibh-bulkbadge')
+  function bulkBadge(link, text, tone, cls = 'ibh-bulkbadge') {
+    let badge = link.querySelector(`.${cls}`)
     if (!badge) {
       badge = document.createElement('span')
-      badge.className = 'ibh-bulkbadge'
+      badge.className = cls
       badge.dataset.ibhUi = '1'   // the site theme leaves it alone
       if (getComputedStyle(link).position === 'static') link.style.position = 'relative'
       link.appendChild(badge)
@@ -3220,6 +3224,95 @@
       bulkBadge(link, '✕', '#b42318')
       warn(`mass favorite: post ${id} failed — ${describeError(e)}`)
     }
+  }
+
+  // ── Hold an image for its raw file ──
+  // The feed shows the sample (as sharp as the screen can show); holding an
+  // image half a second swaps in the original right there, for reading the
+  // small print of a comic. Measured on touch events: Firefox for Android
+  // cancels the pointer during a long press (see chipGestures). The release
+  // does not open the post, and the long-press menu stays out of the way.
+  const RAW_HOLD_MS = 500
+  let rawHold = null
+  let rawClickUntil = 0
+
+  // An image post's thumbnail on a site page (not a video or GIF: those have
+  // their own hold, the scene preview, or play on their own).
+  function rawTarget(target) {
+    const img = target && target.closest && target.closest(`${SITE_LINK} img`)
+    const link = img && img.closest(SITE_LINK)
+    if (!link || link.dataset.ibhVideo || isVideoCard(link) || isGifCard(link)) return null
+    return { img, link }
+  }
+
+  function onRawTouchStart(ev) {
+    rawHold = null
+    if (!CFG.holdRaw || bulkMode || ev.touches.length !== 1 || (modal && modal.open)) return
+    const hit = rawTarget(ev.target)
+    if (!hit) return
+    const touch = ev.touches[0]
+    rawHold = { ...hit, x: touch.clientX, y: touch.clientY, scrollY: window.scrollY, fired: false }
+    rawHold.timer = setTimeout(() => {
+      const h = rawHold
+      if (!h || Math.abs(window.scrollY - h.scrollY) > 12) return   // the page scrolled: not a hold
+      h.fired = true
+      rawClickUntil = Date.now() + 800   // the click after the release opens nothing
+      loadRaw(h.img, h.link)
+    }, RAW_HOLD_MS)
+  }
+
+  function cancelRawHold() {
+    if (rawHold && !rawHold.fired) clearTimeout(rawHold.timer)
+    rawHold = null
+  }
+
+  function onRawTouchMove(ev) {
+    if (!rawHold || rawHold.fired) return
+    const touch = ev.touches[0]
+    if (ev.touches.length > 1 || Math.hypot(touch.clientX - rawHold.x, touch.clientY - rawHold.y) > 12) cancelRawHold()
+  }
+
+  function onRawClick(ev) {
+    if (Date.now() > rawClickUntil) return
+    rawClickUntil = 0
+    ev.preventDefault()
+    ev.stopImmediatePropagation()
+  }
+
+  function onRawContextMenu(ev) {
+    if (CFG.holdRaw && rawTarget(ev.target)) ev.preventDefault()   // the hold is ours
+  }
+
+  function loadRaw(img, link) {
+    if (img.dataset.ibhRaw) return   // loading or loaded
+    const src = img.getAttribute('src')
+    const parts = thumbParts(src)
+    if (!parts) return
+    const cached = knownOriginal(parts.hash)
+    if (cached === null) { bulkBadge(link, '✕', '#b42318', 'ibh-rawbadge'); pageToast(t('rawFailed')); return }
+    img.dataset.ibhRaw = 'loading'
+    bulkBadge(link, 'RAW…', 'rgba(15, 20, 23, .85)', 'ibh-rawbadge')
+    if (navigator.vibrate) navigator.vibrate(15)
+    raceImage([fileCandidates(src, ORIGINAL_EXTS)], cached, probe => {
+      cacheSet('orig', parts.hash, probe.src, cached)
+      const decoded = typeof probe.decode === 'function' ? probe.decode().catch(() => {}) : Promise.resolve()
+      decoded.then(() => {
+        if (!img.isConnected || img.dataset.ibhRaw !== 'loading') return
+        const pic = pictureOf(img)
+        if (!pic) return
+        // Release goes back to the thumbnail like any upgrade (see G).
+        if (img.dataset.ibhOrig !== 'done') { img.dataset.ibhThumb = src; img.dataset.ibhOrig = 'done'; watchDistance(img) }
+        pic.set(probe.src)
+        img.dataset.ibhRaw = '1'
+        bulkBadge(link, 'RAW', '#2f7d72', 'ibh-rawbadge')
+        info(`raw: post ${postId(link)} shows its original (${probe.src.split('/').pop()})`)
+      })
+    }, () => {
+      delete img.dataset.ibhRaw
+      cacheSet('orig', parts.hash, null)
+      bulkBadge(link, '✕', '#b42318', 'ibh-rawbadge')
+      pageToast(t('rawFailed'))
+    }, 'high')
   }
 
   // Registered before the modal's click handler, so a tap favorites instead.
@@ -4880,6 +4973,11 @@
     }
     delete el.dataset.ibhOrig
     delete el.dataset.ibhThumb
+    if (el.dataset.ibhRaw) {
+      delete el.dataset.ibhRaw
+      const badge = el.closest('a') && el.closest('a').querySelector('.ibh-rawbadge')
+      if (badge) badge.remove()
+    }
   }
 
   // Other tabs of the same site running the script hear the Free memory
@@ -5295,6 +5393,7 @@
     }
     body.appendChild(toggle('feedNav', t('tNav'), t('noteReload')))
     body.appendChild(toggle('bulkFavButton', t('tBulkBtn'), null, ensureFeedNav))
+    body.appendChild(toggle('holdRaw', t('tHoldRaw')))
     body.appendChild(toggle('freeButton', t('tFreeBtn'), null, ensureFeedNav))
     body.appendChild(toggle('laterButton', t('tLaterBtn'), null, ensureFeedNav))
     body.appendChild(toggle('favSearch', t('tFavSearch'), null, ensureFavSearch))
@@ -5735,9 +5834,11 @@
     #ibh-favmore { display: block; margin: 14px auto; padding: 9px 18px; font-size: 14px; }
     #ibh-favmore[hidden] { display: none; }
     #ibh-pager { min-height: 1px; padding: 14px 0; text-align: center; font-size: 13px; opacity: .85; }
-    .ibh-bulkbadge { position: absolute; top: 6px; right: 6px; z-index: 3; min-width: 26px; height: 26px; padding: 0 6px;
+    .ibh-bulkbadge, .ibh-rawbadge { position: absolute; top: 6px; right: 6px; z-index: 3; min-width: 26px; height: 26px; padding: 0 6px;
       border-radius: 13px; color: #fff; font: 600 15px/26px system-ui, sans-serif; text-align: center; pointer-events: none;
       box-shadow: 0 2px 8px rgba(0,0,0,.5); }
+    .ibh-rawbadge { right: auto; left: 6px; font-size: 12px; }
+    .image-list a img { -webkit-touch-callout: none; }
   `
 
   function injectPageCSS() {
@@ -5777,6 +5878,12 @@
   installGestures()
   installMemorySaver()
   window.addEventListener('click', onBulkClick, true)   // before the modal: in mass favorite a tap favorites
+  window.addEventListener('click', onRawClick, true)    // before the modal: the release of a raw hold
+  window.addEventListener('touchstart', onRawTouchStart, { capture: true, passive: true })
+  window.addEventListener('touchmove', onRawTouchMove, { capture: true, passive: true })
+  window.addEventListener('touchend', () => { if (rawHold && !rawHold.fired) cancelRawHold() }, true)
+  window.addEventListener('touchcancel', cancelRawHold, true)
+  window.addEventListener('contextmenu', onRawContextMenu, true)
   installVideoScrub()   // before the modal: its click guard must run first
   installVideoModal()
   logSnapshot()

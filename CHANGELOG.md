@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.58.0
+
+- Hold an image on site pages for its raw file (`holdRaw`, on): half a
+  second swaps the original in place of the sample, for the small print of a
+  comic, with a RAW… / RAW badge in the corner. The release opens nothing,
+  scrolling or pinching cancels, and the long-press menu stays out of the
+  way on image thumbnails. Measured on touch events, which Firefox for
+  Android keeps sending through a long press
+
 ## 0.57.1
 
 - Comics load fast on site pages and stay legible: with Original thumbnails
