@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.57.0
+// @version      0.57.1
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.57.0'
+  const VERSION = '0.57.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -1382,12 +1382,30 @@
       .map(b => `${b.replace(/\/images$/, '/samples')}/${p.dir}/sample_${p.hash}.jpg`)
   }
 
-  // Candidates in stages for raceImage: samples are tried before
-  // originals, so a big original never loads beside a sample that exists.
-  function upgradeStages(el, src) {
-    if (thumbKind(el) === 'video') return [fileCandidates(src, ['jpg'])]
+  // What an upgrade fetches, and under which cache kind. Candidates come in
+  // stages for raceImage: samples before originals, so a big original never
+  // loads beside a sample that exists.
+  //
+  // On the site's pages the sample (850 px wide on Gelbooru 0.2) is taken
+  // whenever it covers the image's width on screen in device pixels: as
+  // sharp as the screen can show, comics legible, at a fraction of the size
+  // (measured: a comic page 705 KB against a 51 MB PNG original, another 2 MB
+  // against 31 MB). originalThumbs then only fetches the original where the
+  // box is wider than the sample (a desktop screen).
+  const SAMPLE_WIDTH = 850
+
+  function displayPixels(el) {
+    const box = el.closest('.image-list span.thumb') || el
+    return (box.clientWidth || el.clientWidth || 0) * (window.devicePixelRatio || 1)
+  }
+
+  function upgradePlan(el, src) {
+    if (thumbKind(el) === 'video') return { kind: 'poster', stages: [fileCandidates(src, ['jpg'])] }
     const originals = fileCandidates(src, ORIGINAL_EXTS)
-    return !CFG.originalThumbs && inFeed(el) ? [sampleCandidates(src), originals] : [originals]
+    const sitePage = !isCard(el)
+    const sampleDoes = sitePage && (!CFG.originalThumbs || displayPixels(el) <= SAMPLE_WIDTH * 1.1)
+    if (sampleDoes && (inFeed(el) || CFG.originalThumbs)) return { kind: 'sample', stages: [sampleCandidates(src), originals] }
+    return { kind: 'orig', stages: [originals] }
   }
 
   // Downloads already run on the browser's network threads; the slots shared
@@ -1431,9 +1449,6 @@
     return true
   }
 
-  // Cache kind for an upgrade: the candidate lists differ, so do the winners.
-  const upgradeKind = el => thumbKind(el) === 'video' ? 'poster'
-    : !CFG.originalThumbs && inFeed(el) ? 'sample' : 'orig'
 
   // The queued image nearest the screen goes next. One scrolled two screens
   // away goes back to waiting (the observer queues it again when it comes
@@ -1466,11 +1481,12 @@
       if (!el) break
       const pic = pictureOf(el)
       if (!pic) continue
-      const ck = { kind: upgradeKind(el), hash: (thumbParts(pic.src) || {}).hash }
+      const plan = upgradePlan(el, pic.src)
+      const ck = { kind: plan.kind, hash: (thumbParts(pic.src) || {}).hash }
       ck.cached = cacheGet(ck.kind, ck.hash)
       if (ck.cached === null) { el.dataset.ibhOrig = 'failed'; continue }   // known: nothing loads
       imagesInflight++
-      probeOriginal(el, pic.src, upgradeStages(el, pic.src), giveImageSlot, ck)
+      probeOriginal(el, pic.src, plan.stages, giveImageSlot, ck)
     }
   }
 

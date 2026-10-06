@@ -89,7 +89,7 @@ Todas ficam no painel e são gravadas em `localStorage` sob a chave `IBH_CFG`.
 | `gifMaxLive` | `3` | com o `gifInline`, quantos GIFs animam ao mesmo tempo (1 a 10); os outros esperam como imagem parada e começam, os mais perto do centro da tela primeiro, quando outros saem da tela. Vale na hora |
 | `fixFancybox` | ligado | preenche `src` vazio no Fancybox |
 | `gestures` | ligado | swipe, toque duplo e pinça |
-| `originalThumbs` | **desligado** | troca as miniaturas visíveis, no Masonry e nas páginas do próprio site, pelo arquivo original; mais nítido, mas gasta várias vezes mais dados e memória (requer recarregar) |
+| `originalThumbs` | **desligado** | troca as miniaturas visíveis pelo arquivo original no Masonry; nas páginas do próprio site, só onde a imagem aparece mais larga que o sample de 850 px em pixels do aparelho (tela de PC), porque o sample já é tão nítido quanto o celular mostra (uma página de quadrinho: 705 KB contra 51 MB do original) (requer recarregar) |
 | `nativeFeed` | **desligado** | nas páginas do próprio site (rule34, safebooru, xbooru e outros Gelbooru 0.2): um feed com as colunas e o layout abaixo (por padrão, uma imagem por linha na largura toda da tela), trocada pelo sample (ou pelo original quando não houver) (vale na hora) |
 | `feedColumns` | `1` | com o `nativeFeed`: `auto` (quantas colunas de 170px couberem na tela) ou de 1 a 4. Vale na hora |
 | `feedLayout` | `masonry` | com o `nativeFeed` e mais de uma coluna: `masonry` mantém cada imagem inteira, em colunas; `grid` faz quadros quadrados iguais, cortados para preencher. Vale na hora |

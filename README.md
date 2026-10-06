@@ -89,7 +89,7 @@ All of them live in the panel and are stored in `localStorage` under `IBH_CFG`.
 | `gifMaxLive` | `3` | with `gifInline`, how many GIFs animate at once (1 to 10); the rest wait as stills and start, nearest the middle of the screen first, as others scroll away. Applies at once |
 | `fixFancybox` | on | fills empty `src` in Fancybox |
 | `gestures` | on | swipe, double tap and pinch |
-| `originalThumbs` | **off** | swaps visible thumbnails, on Masonry and on the site's own pages, for the original file; sharper, but several times the data and memory (needs reload) |
+| `originalThumbs` | **off** | swaps visible thumbnails for the original file on Masonry; on the site's own pages only where the image shows wider than the 850 px sample in device pixels (a desktop screen), since the sample is as sharp as a phone can show (a comic page: 705 KB against a 51 MB original) (needs reload) |
 | `nativeFeed` | **off** | on the site's own pages (rule34, safebooru, xbooru and other Gelbooru 0.2 sites): a feed with the columns and layout below (one image per row at the full screen width by default), upgraded to the sample (or the original when there is none) (applies at once) |
 | `feedColumns` | `1` | with `nativeFeed`: `auto` (as many 170px columns as the screen holds) or 1 to 4. Applies at once |
 | `feedLayout` | `masonry` | with `nativeFeed` and more than one column: `masonry` keeps each image whole, in columns; `grid` makes even square tiles, cropped to fill. Applies at once |

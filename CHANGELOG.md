@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.57.1
+
+- Comics load fast on site pages and stay legible: with Original thumbnails
+  on, the feed fetched the original even where the sample shows as much as
+  the screen can (measured: a comic page 705 KB as a sample against a 51 MB
+  PNG original, another 2 MB against 31 MB). The sample, 850 px wide, is now
+  taken whenever it covers the image's width on screen in device pixels (on
+  a phone, every feed image); the original only where the box is wider, as
+  on a desktop screen. Zooming in the modal still brings the original
+
 ## 0.57.0
 
 - Feed upgrades race their candidates too (samples first, then originals):
