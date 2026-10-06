@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.58.2
+
+- The modal's download button reads "Download raw": it has saved the
+  original file since 0.56.0, even with the sample on screen
+
 ## 0.58.1
 
 - Holding a RAW image again undoes it: back to the sample (or the thumbnail),
