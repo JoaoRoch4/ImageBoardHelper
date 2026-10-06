@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.64.0
+
+- OR field in both search bars: tags typed apart by spaces become one
+  either-of group, `( dog ~ horse ~ feral )` in the site's search (read back
+  from the address too) and `a ~ b` in the favorites search. Saved and
+  recent searches keep it
+
 ## 0.63.1
 
 - The site search bar orders at random too (`sort:random`)

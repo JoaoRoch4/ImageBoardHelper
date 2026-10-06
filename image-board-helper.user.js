@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.63.1
+// @version      0.64.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.63.1'
+  const VERSION = '0.64.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -210,6 +210,7 @@
       tFreeBtn: 'Free-memory shortcut button', navFree: 'Free memory & cache',
       tFavSearch: 'Search your favorites', tSiteSearch: 'Search bar on site pages',
       savedPick: 'Favorite searches…', recentPick: 'Recent searches…', saveSearch: '☆ Favorite', savedSearch: '★ Favorite', savedAll: '(everything)',
+      orPlaceholder: 'any of these tags (OR): tag tag tag',
       minScore: 'min. score', sitePlaceholder: 'search: tag -tag tag* ( a ~ b )', tPager: 'Autopager (searches and favorites)',
       pagerLoading: 'Loading the next page…', pagerEnd: 'End of the list', pagerFail: 'Could not load the next page — tap to retry',
       favPlaceholder: 'search favorites: tag -tag tag* a ~ b score:>10', favGo: 'Search', favClear: 'Clear',
@@ -283,6 +284,7 @@
       tFreeBtn: 'Botão de atalho para limpar a memória', navFree: 'Limpar memória e cache',
       tFavSearch: 'Buscar nos seus favoritos', tSiteSearch: 'Barra de busca nas páginas do site',
       savedPick: 'Buscas favoritas…', recentPick: 'Buscas recentes…', saveSearch: '☆ Favoritar', savedSearch: '★ Favorita', savedAll: '(tudo)',
+      orPlaceholder: 'qualquer destas tags (OU): tag tag tag',
       minScore: 'score mín.', sitePlaceholder: 'buscar: tag -tag tag* ( a ~ b )', tPager: 'Autopager (buscas e favoritos)',
       pagerLoading: 'Carregando a próxima página…', pagerEnd: 'Fim da lista', pagerFail: 'Não deu para carregar a próxima página — toque para tentar de novo',
       favPlaceholder: 'buscar nos favoritos: tag -tag tag* a ~ b score:>10', favGo: 'Buscar', favClear: 'Limpar',
@@ -2939,7 +2941,7 @@
     const bar = document.getElementById('ibh-favsearch')
     if (!bar) return
     const store = await searchStore()
-    store.favLast = { text: bar.querySelector('input[type="search"]').value, kind: bar.querySelector('select.kind').value,
+    store.favLast = { text: bar.querySelector('input[type="search"]').value, or: bar.querySelector('input.or').value, kind: bar.querySelector('select.kind').value,
       sort: bar.querySelector('select.sort').value, min: bar.querySelector('input.min').value, active }
     if (active) addRecent(store, { where: 'fav', ...store.favLast, active: undefined })   // one write for both
     await storeSet('searches', store)
@@ -3045,7 +3047,8 @@
   async function searchFavs() {
     const bar = document.getElementById('ibh-favsearch')
     if (!bar) return
-    const text = bar.querySelector('input').value
+    const either = orTags(bar.querySelector('input.or').value)
+    const text = `${bar.querySelector('input').value} ${either.join(' ~ ')}`.trim()
     let idx = await loadFavIndex()
     if (!idx.items.length) idx = (await updateFavIndex(true)) || idx
     else if (Date.now() - idx.updated > FAV_STALE_MS) idx = (await updateFavIndex(false)) || idx
@@ -3126,7 +3129,7 @@
     const more = document.getElementById('ibh-favmore')
     if (more) more.hidden = true
     const bar = document.getElementById('ibh-favsearch')
-    if (bar) bar.querySelector('input').value = ''
+    if (bar) { bar.querySelector('input').value = ''; bar.querySelector('input.or').value = '' }
     rememberFavSearch(false)
     if (favBarSync) favBarSync()
     setFavStatus()
@@ -3152,6 +3155,7 @@
     const input = el('input', { type: 'search', placeholder: t('favPlaceholder'), enterkeyhint: 'search' })
     input.setAttribute('autocapitalize', 'off')
     input.setAttribute('autocomplete', 'off')
+    const or = orInput()
     const kind = kindSelect()
     const sort = el('select', { class: 'sort' })
     for (const [value, label] of [['new', t('favSortNew')], ['old', t('favSortOld')], ['score', t('favSortScore')], ['random', t('favSortRandom')]]) {
@@ -3163,12 +3167,12 @@
     const update = el('a', { href: '#', text: t('favUpdate') })
     const rebuild = el('a', { href: '#', text: t('favRebuild') })
     const st = el('div', { class: 'st' }, [document.createTextNode(''), ' · ', update, ' · ', rebuild])
-    const read = () => ({ where: 'fav', text: input.value, kind: kind.value, sort: sort.value, min: min.value })
+    const read = () => ({ where: 'fav', text: input.value, or: or.value, kind: kind.value, sort: sort.value, min: min.value })
     const saved = savedControls('fav', read, q => {
-      input.value = q.text; kind.value = q.kind; sort.value = q.sort; min.value = q.min || ''
+      input.value = q.text; or.value = q.or || ''; kind.value = q.kind; sort.value = q.sort; min.value = q.min || ''
       searchFavs()
     })
-    const box = el('div', { id: 'ibh-favsearch', class: 'ibh-search' }, [input, kind, sort, min, go, clear, saved.star, saved.pick, saved.recentPick, st])
+    const box = el('div', { id: 'ibh-favsearch', class: 'ibh-search' }, [input, or, kind, sort, min, go, clear, saved.star, saved.pick, saved.recentPick, st])
     favBarSync = saved.sync
     favBarReload = saved.reload
     list.before(box)
@@ -3186,12 +3190,14 @@
     update.addEventListener('click', ev => { ev.preventDefault(); updateFavIndex(false) })
     rebuild.addEventListener('click', ev => { ev.preventDefault(); updateFavIndex(true) })
     input.addEventListener('input', saved.sync)
+    or.addEventListener('input', saved.sync)
+    or.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); or.blur(); searchFavs() } })
     min.addEventListener('input', saved.sync)
     // The last search comes back, results included, until Clear.
     searchStore().then(store => {
       const last = store.favLast
       if (!last || !last.active || !document.getElementById('ibh-favsearch')) return
-      input.value = last.text || ''; kind.value = last.kind || 'all'; sort.value = last.sort || 'new'; min.value = last.min || ''
+      input.value = last.text || ''; or.value = last.or || ''; kind.value = last.kind || 'all'; sort.value = last.sort || 'new'; min.value = last.min || ''
       saved.sync()
       searchFavs()
     })
@@ -3202,6 +3208,17 @@
     })
     info('favorites search bar added')
   }
+
+  // OR field: tags typed apart by spaces become one either-of group, the
+  // site's ( a ~ b ~ c ), or a ~ b for the favorites search.
+  function orInput() {
+    const field = el('input', { class: 'or', type: 'search', placeholder: t('orPlaceholder'), enterkeyhint: 'search' })
+    field.setAttribute('autocapitalize', 'off')
+    field.setAttribute('autocomplete', 'off')
+    return field
+  }
+
+  const orTags = text => String(text || '').trim().split(/[\s~()]+/).filter(Boolean)
 
   function minScoreInput() {
     const min = el('input', { class: 'min', type: 'number', min: '0', step: '1', inputmode: 'numeric', placeholder: t('minScore') })
@@ -3437,7 +3454,7 @@
   }
 
   // Nothing typed and no filter: not worth keeping.
-  const emptySearch = q => !q.text.trim() && q.kind === 'all' && !q.min && q.sort === 'new'
+  const emptySearch = q => !q.text.trim() && !orTags(q.or).length && q.kind === 'all' && !q.min && q.sort === 'new'
 
   function addRecent(store, q) {
     if (emptySearch(q)) return
@@ -3447,12 +3464,13 @@
     if (mine.length > RECENT_MAX) store.recent = store.recent.filter(other => !mine.slice(RECENT_MAX).includes(other))
   }
 
-  const searchKey = q => [q.where, q.text.trim().replace(/\s+/g, ' '), q.kind, q.sort, String(q.min || '')].join('|')
+  const searchKey = q => [q.where, q.text.trim().replace(/\s+/g, ' '), orTags(q.or).join(' '), q.kind, q.sort, String(q.min || '')].join('|')
 
   function searchLabel(q) {
     const kinds = { image: t('favKindImage'), video: t('favKindVideo'), gif: t('favKindGif'), animated: t('favKindAnimated') }
     const orders = { score: t('favSortScore'), random: t('favSortRandom'), old: t('favSortOld') }
-    return [q.text.trim() || t('savedAll'), kinds[q.kind], q.min ? `≥ ${q.min}` : '', orders[q.sort] || '']
+    const or = orTags(q.or)
+    return [q.text.trim() || (or.length ? '' : t('savedAll')), or.length ? `( ${or.join(' | ')} )` : '', kinds[q.kind], q.min ? `≥ ${q.min}` : '', orders[q.sort] || '']
       .filter(Boolean).join(' · ')
   }
 
@@ -3528,16 +3546,25 @@
     for (const [k, q] of Object.entries(KIND_QUERY)) {
       if (rest.includes(` ${q} `)) { kind = k; rest = rest.replace(` ${q} `, ' '); break }
     }
+    // The first ( a ~ b ) group left after the kind goes to the OR field.
+    let or = ''
+    rest = rest.replace(/ \( ([^()]+?) \) /, (m, inner) => {
+      if (!/ ~ /.test(` ${inner} `)) return m
+      or = orTags(inner).join(' ')
+      return ' '
+    })
     let sort = 'new'
     rest = rest.replace(/ sort:score(?::desc)? /i, () => { sort = 'score'; return ' ' })
     rest = rest.replace(/ sort:random /i, () => { sort = 'random'; return ' ' })
     let min = ''
     rest = rest.replace(/ score:>=?(\d+) /i, (m, n) => { min = n; return ' ' })
-    return { rest: rest.trim(), kind, sort, min }
+    return { rest: rest.trim(), kind, sort, min, or }
   }
 
-  function siteQuery({ rest, kind, sort, min }) {
-    return [rest, KIND_QUERY[kind] || '', min ? `score:>=${min}` : '', sort === 'score' ? 'sort:score' : sort === 'random' ? 'sort:random' : '']
+  function siteQuery({ rest, kind, sort, min, or }) {
+    const tags = orTags(or)
+    const either = tags.length > 1 ? `( ${tags.join(' ~ ')} )` : (tags[0] || '')
+    return [rest, either, KIND_QUERY[kind] || '', min ? `score:>=${min}` : '', sort === 'score' ? 'sort:score' : sort === 'random' ? 'sort:random' : '']
       .filter(Boolean).join(' ')
   }
 
@@ -3565,6 +3592,8 @@
     input.setAttribute('autocapitalize', 'off')
     input.setAttribute('autocomplete', 'off')
     input.value = now.rest === 'all' ? '' : now.rest
+    const or = orInput()
+    or.value = now.or
     const kind = kindSelect()
     kind.value = now.kind
     const sort = el('select', { class: 'sort' })
@@ -3573,12 +3602,12 @@
     const min = minScoreInput()
     min.value = now.min
     const go = el('button', { type: 'button', text: t('favGo') })
-    const read = () => ({ where: 'site', text: input.value, kind: kind.value, sort: sort.value, min: min.value })
+    const read = () => ({ where: 'site', text: input.value, or: or.value, kind: kind.value, sort: sort.value, min: min.value })
     const saved = savedControls('site', read, q => {
-      input.value = q.text; kind.value = q.kind; sort.value = q.sort; min.value = q.min || ''
+      input.value = q.text; or.value = q.or || ''; kind.value = q.kind; sort.value = q.sort; min.value = q.min || ''
       submit()
     })
-    const box = el('div', { id: 'ibh-sitesearch', class: 'ibh-search' }, [input, kind, sort, min, go, saved.star, saved.pick, saved.recentPick])
+    const box = el('div', { id: 'ibh-sitesearch', class: 'ibh-search' }, [input, or, kind, sort, min, go, saved.star, saved.pick, saved.recentPick])
     if (home) {
       // In place of the home page's plain box, which hides.
       home.before(box)
@@ -3588,14 +3617,14 @@
     }
     recordSiteSearch(read()).then(saved.reload)
     input.addEventListener('input', saved.sync)
+    or.addEventListener('input', saved.sync)
     min.addEventListener('input', saved.sync)
     const submit = () => {
-      const q = siteQuery({ rest: input.value, kind: kind.value, sort: sort.value, min: min.value })
+      const q = siteQuery({ rest: input.value, or: or.value, kind: kind.value, sort: sort.value, min: min.value })
       info(`site search: ${q || 'all'}`)
       location.href = `index.php?page=post&s=list&tags=${encodeURIComponent(q || 'all').replace(/%20/g, '+')}`
     }
-    input.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); submit() } })
-    min.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); submit() } })
+    for (const field of [input, or, min]) field.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); submit() } })
     go.addEventListener('click', submit)
     kind.addEventListener('change', submit)
     sort.addEventListener('change', submit)
