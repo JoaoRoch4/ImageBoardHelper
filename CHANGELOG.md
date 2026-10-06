@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.60.2
+
+- The « » page buttons moved to the top-left corner, across from 🕒 and ♥
+
 ## 0.60.1
 
 - Comments: ▲ upvotes a comment (the site's own call; the answer is the new

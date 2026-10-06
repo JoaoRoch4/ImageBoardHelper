@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.60.1
+// @version      0.60.2
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.60.1'
+  const VERSION = '0.60.2'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -5398,13 +5398,14 @@
     .laterfab:active { background: #16211f; }
     .laterfab svg { width: 22px; height: 22px; fill: currentColor; }
     .laterfab.bulkfab { right: 64px; }
+    .feednav.pagenav { top: 72px; bottom: auto; right: auto; left: 12px; }
     .laterfab.on { background: #5eead4; color: #0f1417; border-color: #5eead4; }
     .pagetoast {
       position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); z-index: 2147483000; max-width: 86vw;
       padding: 8px 14px; border-radius: 18px; background: rgba(15, 20, 23, .92); color: #d7dee0;
       font-size: 13px; text-align: center; pointer-events: none; transition: opacity .2s;
     }
-    .panel:not([hidden]) ~ .laterfab, .panel:not([hidden]) ~ .bulkfab { display: none; }
+    .panel:not([hidden]) ~ .laterfab, .panel:not([hidden]) ~ .bulkfab, .panel:not([hidden]) ~ .pagenav { display: none; }
     .feednav button:disabled { opacity: .35; }
     .feednav.raised { bottom: 76px; }
 
@@ -5764,7 +5765,7 @@
     const feed = wantsFeedButtons()
     const free = !!CFG.freeButton
     const want = `${feed ? 'f' : ''}${free ? 'c' : ''}`
-    let nav = shadow.querySelector('.feednav')
+    let nav = shadow.querySelector('.feednav:not(.pagenav)')
     if (nav && nav.dataset.set !== want) { nav.remove(); nav = null }
     if (!nav && want) {
       nav = buildFeedNav(feed, free)
@@ -5791,12 +5792,14 @@
     }
     // Masonry's refresh button sits in the same corner; stay above it.
     if (nav) nav.classList.toggle('raised', !!document.querySelector('.v-application'))
+    let pages = shadow.querySelector('.pagenav')
+    if (pages && !feed) { pages.remove(); pages = null }
+    if (!pages && feed) { pages = buildPageNav(); shadow.appendChild(pages) }
     // The paginator comes after the post list in the page, so its state is
     // refreshed as the page fills in rather than fixed when the buttons appear.
-    const pp = nav && nav.querySelector('.pp')
-    if (pp) {
-      pp.disabled = !pageTarget(-1)
-      nav.querySelector('.np').disabled = !pageTarget(1)
+    if (pages) {
+      pages.querySelector('.pp').disabled = !pageTarget(-1)
+      pages.querySelector('.np').disabled = !pageTarget(1)
     }
   }
 
@@ -5917,15 +5920,17 @@
     }
     const second = []
     if (free) second.push(trashButton())
-    if (feed) {
-      const prevPage = el('button', { class: 'pp', text: '«', title: t('navPrevPage') })
-      const nextPage = el('button', { class: 'np', text: '»', title: t('navNextPage') })
-      prevPage.addEventListener('click', () => goPage(-1))
-      nextPage.addEventListener('click', () => goPage(1))
-      second.push(prevPage, nextPage)
-    }
     if (second.length) rows.push(el('div', { class: 'row' }, second))
     return el('div', { class: 'feednav' }, rows)
+  }
+
+  // « » page buttons: top left, across from 🕒 and ♥ on the right.
+  function buildPageNav() {
+    const prevPage = el('button', { class: 'pp', text: '«', title: t('navPrevPage') })
+    const nextPage = el('button', { class: 'np', text: '»', title: t('navNextPage') })
+    prevPage.addEventListener('click', () => goPage(-1))
+    nextPage.addEventListener('click', () => goPage(1))
+    return el('div', { class: 'feednav pagenav' }, [el('div', { class: 'row' }, [prevPage, nextPage])])
   }
 
   /** Labels are baked when the panel is built, so switching language rebuilds it. */
