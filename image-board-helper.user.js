@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.63.0
+// @version      0.63.1
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.63.0'
+  const VERSION = '0.63.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -3451,7 +3451,8 @@
 
   function searchLabel(q) {
     const kinds = { image: t('favKindImage'), video: t('favKindVideo'), gif: t('favKindGif'), animated: t('favKindAnimated') }
-    return [q.text.trim() || t('savedAll'), kinds[q.kind], q.min ? `≥ ${q.min}` : '', q.sort === 'score' ? t('favSortScore') : '']
+    const orders = { score: t('favSortScore'), random: t('favSortRandom'), old: t('favSortOld') }
+    return [q.text.trim() || t('savedAll'), kinds[q.kind], q.min ? `≥ ${q.min}` : '', orders[q.sort] || '']
       .filter(Boolean).join(' · ')
   }
 
@@ -3529,13 +3530,14 @@
     }
     let sort = 'new'
     rest = rest.replace(/ sort:score(?::desc)? /i, () => { sort = 'score'; return ' ' })
+    rest = rest.replace(/ sort:random /i, () => { sort = 'random'; return ' ' })
     let min = ''
     rest = rest.replace(/ score:>=?(\d+) /i, (m, n) => { min = n; return ' ' })
     return { rest: rest.trim(), kind, sort, min }
   }
 
   function siteQuery({ rest, kind, sort, min }) {
-    return [rest, KIND_QUERY[kind] || '', min ? `score:>=${min}` : '', sort === 'score' ? 'sort:score' : '']
+    return [rest, KIND_QUERY[kind] || '', min ? `score:>=${min}` : '', sort === 'score' ? 'sort:score' : sort === 'random' ? 'sort:random' : '']
       .filter(Boolean).join(' ')
   }
 
@@ -3566,7 +3568,7 @@
     const kind = kindSelect()
     kind.value = now.kind
     const sort = el('select', { class: 'sort' })
-    for (const [value, label] of [['new', t('favSortNew')], ['score', t('favSortScore')]]) sort.appendChild(el('option', { value, text: label }))
+    for (const [value, label] of [['new', t('favSortNew')], ['score', t('favSortScore')], ['random', t('favSortRandom')]]) sort.appendChild(el('option', { value, text: label }))
     sort.value = now.sort
     const min = minScoreInput()
     min.value = now.min

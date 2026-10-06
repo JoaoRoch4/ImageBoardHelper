@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.63.1
+
+- The site search bar orders at random too (`sort:random`)
+
 ## 0.63.0
 
 - The search bar (tags, kind, order, minimum score, saved searches) also on
