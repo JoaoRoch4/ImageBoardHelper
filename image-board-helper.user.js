@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.0.0
+// @version      1.0.1
 // @description  For the phone, on Gelbooru 0.2 boards (rule34.xxx and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -10,9 +10,7 @@
 // @license      MIT
 // @match        https://rule34.xxx/*
 // @match        https://safebooru.org/*
-// @match        https://tbib.org/*
 // @match        https://xbooru.com/*
-// @match        https://realbooru.com/*
 // @run-at       document-start
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -25,7 +23,7 @@
 
 /*
  * Image Board Helper: a standalone layer over the pages of Gelbooru 0.2
- * boards (rule34.xxx, safebooru, tbib, xbooru, realbooru), aimed at phones.
+ * boards (rule34.xxx, safebooru, xbooru), aimed at phones.
  * It works on the site's own markup (.image-list > span.thumb > a > img) and
  * calls only the site's own endpoints.
  *
@@ -64,7 +62,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.0.0'
+  const VERSION = '1.0.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -4916,7 +4914,7 @@
     tabChannel.onmessage = ev => {
       const msg = ev.data || {}
       if (msg.type === 'free-memory') {
-        freeMemory(true).then(n => tabChannel.postMessage({ type: 'freed', n, page: location.pathname }))
+        freeMemory('tab').then(n => tabChannel.postMessage({ type: 'freed', n, page: location.pathname }))
       } else if (msg.type === 'freed') {
         const { n } = msg
         info(`another tab (${msg.page}) freed ${n.covers} covers, ${n.gifs} GIFs, ${n.images} upgraded images`)
@@ -4927,11 +4925,13 @@
   /**
    * Give back the memory this script holds on the page and drop its caches.
    * The browser's HTTP cache is out of reach for any page script; settings
-   * (IBH_CFG) and the site login are left alone.
+   * (IBH_CFG) and the site login are left alone. `reason`: 'button' (this
+   * tab and every other tab of the site), 'tab' (asked by another tab),
+   * 'redo' (this tab only, before Redo thumbnails).
    */
-  async function freeMemory(fromOtherTab = false) {
+  async function freeMemory(reason = 'button') {
     // The button frees every tab of this site running the script, not only this one.
-    if (!fromOtherTab && tabChannel) tabChannel.postMessage({ type: 'free-memory' })
+    if (reason === 'button' && tabChannel) tabChannel.postMessage({ type: 'free-memory' })
     const n = { covers: 0, gifs: 0, images: 0, caches: 0 }
     // A preview in progress holds one or two videos; the shared one is dropped.
     if (scrub) endScrub()
@@ -4976,7 +4976,7 @@
       warn(`could not clear Cache Storage — ${describeError(e)}`)
     }
     imageBase()
-    info(`freed ${n.covers} covers, ${n.gifs} GIFs, ${n.images} upgraded images${fromOtherTab ? ' (asked by another tab)' : ''}; host cache, ` +
+    info(`freed ${n.covers} covers, ${n.gifs} GIFs, ${n.images} upgraded images${reason === 'tab' ? ' (asked by another tab)' : reason === 'redo' ? ' (before redoing the thumbnails)' : ''}; host cache, ` +
       `${urls} cached URLs and ${n.caches} Cache Storage entries cleared (browser HTTP cache untouched)`)
     touch()
     return n
@@ -5549,7 +5549,7 @@
     btn.addEventListener('click', () => {
       btn.classList.add('on')
       btn.disabled = true
-      freeMemory(true).then(() => redoThumbs()).finally(() => {
+      freeMemory('redo').then(() => redoThumbs()).finally(() => {
         setTimeout(() => { btn.classList.remove('on'); btn.disabled = false }, 400)
         renderStatus()
       })

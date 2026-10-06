@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.1
+
+- tbib and realbooru are out of `@match` for now: their listing pages do not
+  use `.image-list`, so the search bar never showed up and the feed and the
+  autopager did nothing there (found with the smoke test)
+- The ↻ button's log line no longer says "(asked by another tab)": it reads
+  "(before redoing the thumbnails)"
+
 ## 1.0.0
 
 - Standalone: the script now works on its own, on the pages of Gelbooru 0.2

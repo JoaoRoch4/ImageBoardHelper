@@ -2,7 +2,7 @@
 
 **Português** · [English](README.md)
 
-Userscript para celular nos boorus Gelbooru 0.2 — rule34.xxx, safebooru, tbib, xbooru e realbooru: visualizador de post dentro da página, feed nítido com colunas, capa real de vídeo e prévia de cenas, GIF animado na listagem, barras de busca com buscas salvas, busca nos seus favoritos, autopager, Ver depois e downloads, tudo de olho na memória do celular.
+Userscript para celular nos boorus Gelbooru 0.2 — rule34.xxx, safebooru e xbooru: visualizador de post dentro da página, feed nítido com colunas, capa real de vídeo e prévia de cenas, GIF animado na listagem, barras de busca com buscas salvas, busca nos seus favoritos, autopager, Ver depois e downloads, tudo de olho na memória do celular.
 
 Funciona nas páginas do próprio site e só chama os endpoints do próprio site. Até a 0.64 era um complemento do [Yande.re Masonry](https://github.com/asadahimeka/yandere-masonry); essa versão continua na branch [`masonry-companion`](https://github.com/JoaoRoch4/ImageBoardHelper/tree/masonry-companion).
 

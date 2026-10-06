@@ -2,7 +2,7 @@
 
 [Português](README.pt-BR.md) · **English**
 
-A userscript for phones on Gelbooru 0.2 boards — rule34.xxx, safebooru, tbib, xbooru and realbooru: an in-page post viewer, a sharp feed with columns, real video covers and scene previews, inline GIFs, search bars with saved searches, a search across your favorites, an autopager, Watch later and downloads, all with an eye on the phone's memory.
+A userscript for phones on Gelbooru 0.2 boards — rule34.xxx, safebooru and xbooru: an in-page post viewer, a sharp feed with columns, real video covers and scene previews, inline GIFs, search bars with saved searches, a search across your favorites, an autopager, Watch later and downloads, all with an eye on the phone's memory.
 
 It works on the site's own pages and calls only the site's own endpoints. Up to 0.64 it was a companion to [Yande.re Masonry](https://github.com/asadahimeka/yandere-masonry); that version lives on in the [`masonry-companion`](https://github.com/JoaoRoch4/ImageBoardHelper/tree/masonry-companion) branch.
 

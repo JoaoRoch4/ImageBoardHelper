@@ -1,6 +1,6 @@
 # Image Board Helper
 
-Userscript autônomo para celular nos boorus Gelbooru 0.2: rule34.xxx, safebooru, tbib, xbooru e realbooru.
+Userscript autônomo para celular nos boorus Gelbooru 0.2: rule34.xxx, safebooru e xbooru.
 
 **A regra que define o projeto:** o script trabalha só com a página do próprio site — a marcação dela (`.image-list > span.thumb > a > img`) e os endpoints do site, chamados com o login do usuário. Não depende de outro userscript nem de serviço externo. Até a 0.64 era um complemento do [Yande.re Masonry](https://github.com/asadahimeka/yandere-masonry); essa versão está congelada na branch `masonry-companion` (com o CLAUDE.md dela) e não recebe recursos novos.
 
@@ -170,8 +170,7 @@ O servidor MCP `phone` (`tools/phone-mcp.js`, sem dependências, registrado no `
 
 ## Tarefas abertas
 
-- **Log do ↻:** o botão de refazer chama `freeMemory(true)` (só esta aba) e a linha sai como "(asked by another tab)". Separar o motivo (botão, outra aba, refazer) no parâmetro e no log. Vai na próxima versão.
 - **Primeiro `deploy` de verdade pelo MCP `phone`:** até agora só rodou em `dry_run`.
-- `HOSTS` só tem o rule34 mapeado. safebooru, xbooru e realbooru podem ter mirrors próprios; descobrir com **Testar URLs** e preencher.
-- tbib e realbooru estão no `@match` mas não usam `.image-list`: o tbib põe os `span.thumb` em `#post-list .content > div`, o realbooru usa `div.items > div.col.thumb`. O script carrega e monta o painel, mas a barra de busca não aparece, e o feed e o autopager são escritos para `.image-list` (visto com `npm run smoke`; o modal não foi conferido lá). Hoje o `@description`, os READMEs e o CHANGELOG os dão como suportados. Decidir: tirar os dois do `@match` e da documentação (uma 1.0.1 rápida) ou generalizar o seletor da lista por site (trabalho maior; testar cada um com `node tools/smoke.js '<URL>'`).
+- `HOSTS` só tem o rule34 mapeado. safebooru e xbooru podem ter mirrors próprios; descobrir com **Testar URLs** e preencher.
+- **Voltar com tbib e realbooru** (tirados do `@match` na 1.0.1): as listagens deles não usam `.image-list` — o tbib põe os `span.thumb` em `#post-list .content > div`, o realbooru usa `div.items > div.col.thumb` —, então a barra de busca não aparecia e o feed e o autopager não agiam. Generalizar o seletor da lista por site e testar cada um com `node tools/smoke.js '<URL>'`.
 - safebooru e xbooru passam no `npm run smoke`; no aparelho (toque, vídeo, endpoints logados) só o rule34 foi testado de verdade. Favoritar em massa, 🔖 e a busca nos favoritos são só do rule34.
