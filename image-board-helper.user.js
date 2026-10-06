@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.56.0
+// @version      0.57.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.56.0'
+  const VERSION = '0.57.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -740,7 +740,7 @@
   }
 
   function mountCover(card) {
-    if (card.dataset.ibhCover) return
+    if (card.dataset.ibhCover || card.dataset.ibhBigVideo) return
     const pic = cardPicture(card)
     if (!pic) { whenPictured(card, mountCover); return }
     // Masonry's rule34 scraper labels posts as video by tag, so some GIFs carry
@@ -777,6 +777,7 @@
     let i = 0
     let networkError = false
     const tryNext = () => {
+      if (card.dataset.ibhBigVideo) return   // dropped on purpose (past the decoder), not a failure
       // A decode error means the file was there but no decoder was free; other
       // hosts would fail the same way. The next time the card scrolls in retries.
       if (v.error && v.error.code === 3) {
@@ -814,6 +815,18 @@
     }
     v.addEventListener('loadedmetadata', () => {
       if (parts) cacheSet('video', parts.hash, urls[i - 1], vcached)
+      // Past a mid-range hardware decoder (this phone's stops at 1920×1088):
+      // decoding a frame falls to the CPU, for a still the poster already
+      // gives. Drop the cover and leave the picture (the feed upgrades it to
+      // the full-size poster frame).
+      if (Math.max(v.videoWidth, v.videoHeight) > 1920 || Math.min(v.videoWidth, v.videoHeight) > 1088) {
+        card.dataset.ibhBigVideo = `${v.videoWidth}x${v.videoHeight}`
+        dbg(`cover: ${v.videoWidth}x${v.videoHeight} is past the hardware decoder, poster kept instead`)
+        v.removeAttribute('src')
+        v.load()
+        giveUp()
+        return
+      }
       if (Number.isFinite(v.duration) && v.duration > 0) {
         seekingCover = true
         v.currentTime = v.duration * COVER_POINT
@@ -1369,13 +1382,14 @@
       .map(b => `${b.replace(/\/images$/, '/samples')}/${p.dir}/sample_${p.hash}.jpg`)
   }
 
-  function upgradeCandidates(el, src) {
-    // Video posts have no sample, but the site keeps a full-size poster frame
-    // at images/DIR/HASH.jpg: sharp, small (tens of KB), and no video decoder.
-    if (thumbKind(el) === 'video') return fileCandidates(src, ['jpg'])
+  // Candidates in stages for raceImage: samples are tried before
+  // originals, so a big original never loads beside a sample that exists.
+  function upgradeStages(el, src) {
+    if (thumbKind(el) === 'video') return [fileCandidates(src, ['jpg'])]
     const originals = fileCandidates(src, ORIGINAL_EXTS)
-    return !CFG.originalThumbs && inFeed(el) ? [...sampleCandidates(src), ...originals] : originals
+    return !CFG.originalThumbs && inFeed(el) ? [sampleCandidates(src), originals] : [originals]
   }
+
   // Downloads already run on the browser's network threads; the slots shared
   // with GIFs (IMAGE_MAX_INFLIGHT, see B) cap how many the script starts at once.
   // Targets are Masonry cards (either layout) or <img> on the site's own pages.
@@ -1421,42 +1435,65 @@
   const upgradeKind = el => thumbKind(el) === 'video' ? 'poster'
     : !CFG.originalThumbs && inFeed(el) ? 'sample' : 'orig'
 
+  // The queued image nearest the screen goes next. One scrolled two screens
+  // away goes back to waiting (the observer queues it again when it comes
+  // near), so a fast scroll does not spend the download slots on what it
+  // passed by.
+  function nextQueued() {
+    const h = window.innerHeight
+    const near = []
+    for (const el of originalQueue) {
+      if (!el.isConnected) continue
+      const r = el.getBoundingClientRect()
+      const d = r.bottom < 0 ? -r.bottom : r.top > h ? r.top - h : 0
+      if (d > h * 2) {
+        delete el.dataset.ibhOrig
+        if (originalViewport) originalViewport.observe(el)
+        continue
+      }
+      near.push([d, el])
+    }
+    originalQueue.length = 0
+    if (!near.length) return null
+    near.sort((a, b) => a[0] - b[0])
+    originalQueue.push(...near.slice(1).map(pair => pair[1]))
+    return near[0][1]
+  }
+
   function pumpOriginals() {
     while (imagesInflight < IMAGE_MAX_INFLIGHT && originalQueue.length) {
-      const el = originalQueue.shift()
-      const pic = el.isConnected && pictureOf(el)
+      const el = nextQueued()
+      if (!el) break
+      const pic = pictureOf(el)
       if (!pic) continue
       const ck = { kind: upgradeKind(el), hash: (thumbParts(pic.src) || {}).hash }
       ck.cached = cacheGet(ck.kind, ck.hash)
       if (ck.cached === null) { el.dataset.ibhOrig = 'failed'; continue }   // known: nothing loads
       imagesInflight++
-      probeOriginal(el, pic.src, cachedFirst(upgradeCandidates(el, pic.src), ck.cached), giveImageSlot, ck)
+      probeOriginal(el, pic.src, upgradeStages(el, pic.src), giveImageSlot, ck)
     }
   }
 
-  function probeOriginal(el, from, urls, done, ck) {
-    const probe = new Image()
-    probe.decoding = 'async'
+  // The candidates race (raceImage): a wrong extension costs nothing, where
+  // trying them in turn held a download slot ~0.5 s per miss.
+  function probeOriginal(el, from, stages, done, ck) {
     const gen = upgradeGen
-    let i = 0
-    const tryNext = () => {
+    let probe = null
+    raceImage(stages, ck ? ck.cached : undefined, winner => {
+      probe = winner
       if (gen !== upgradeGen) { done(); return }   // memory freed meanwhile: start over later
-      if (i >= urls.length) {
-        el.dataset.ibhOrig = 'failed'
-        if (ck) cacheSet(ck.kind, ck.hash, null)
-        dbg(`original: nothing loaded for ${from}`)
-        done()
-        return
-      }
-      probe.src = urls[i++]
-    }
-    // Decode off the main thread before swapping, so the new image appears in
-    // one go instead of stalling the scroll while a large file is decoded.
-    probe.onload = () => {
       if (ck) cacheSet(ck.kind, ck.hash, probe.src, ck.cached)   // the URL works, whatever happens to the swap
+      // Decode off the main thread before swapping, so the new image appears in
+      // one go instead of stalling the scroll while a large file is decoded.
       const decoded = typeof probe.decode === 'function' ? probe.decode().catch(() => {}) : Promise.resolve()
       decoded.then(swap)
-    }
+    }, () => {
+      if (gen !== upgradeGen) { done(); return }
+      el.dataset.ibhOrig = 'failed'
+      if (ck) cacheSet(ck.kind, ck.hash, null)
+      dbg(`original: nothing loaded for ${from}`)
+      done()
+    })
     const swap = () => {
       if (gen !== upgradeGen) { done(); return }   // memory freed meanwhile: the element was reset
       // The modal unloads the page while it is open: drop this upgrade and let
@@ -1484,8 +1521,6 @@
       dbg(`original: ${probe.src}`)
       done()
     }
-    probe.onerror = tryNext
-    tryNext()
   }
 
   const originalViewport = 'IntersectionObserver' in window
@@ -1721,7 +1756,9 @@
     const h = document.createElement('video')
     h.muted = true
     h.playsInline = true
-    h.preload = 'auto'
+    // Only the ranges it seeks to: the first video already downloads the whole
+    // file, and a second full download of the same file halves the speed of both.
+    h.preload = 'metadata'
     h.style.cssText =
       'position:absolute;inset:0;width:100%;height:100%;object-fit:cover;' +
       'border-radius:4px;pointer-events:none;opacity:0'
@@ -2426,7 +2463,10 @@
     }).filter(st => st.text)
     // The sidebar's "Original image" link: the exact file, no guessing.
     const orig = [...doc.querySelectorAll('a[href*="/images/"]')].find(a => /original/i.test(a.textContent))
-    return { fav: heart ? heart[1] === 'heart-added' : null, tags, stats, original: orig ? orig.getAttribute('href').replace(/([^:])\/\/+/g, '$1/') : null }
+    // The page links videos on api-cdn-mp4, the slow origin (0.4–0.6 MB/s
+    // measured, against 6–7 MB/s for the same file on api-cdn, Cloudflare).
+    const original = orig ? orig.getAttribute('href').replace(/([^:])\/\/+/g, '$1/').replace('//api-cdn-mp4.', '//api-cdn.') : null
+    return { fav: heart ? heart[1] === 'heart-added' : null, tags, stats, original }
   }
 
   const favLookups = new Map()   // id -> Promise<true | false | null>
@@ -4207,7 +4247,9 @@
   // Stages run in order (samples, then originals), so a big original is not
   // fetched beside a sample that exists. A known winner goes alone first.
   // Returns a cancel function.
-  function raceImage(stages, cached, onWin, onFail) {
+  // priority: 'high' for what is on screen now (the modal), the browser's
+  // default otherwise.
+  function raceImage(stages, cached, onWin, onFail, priority) {
     let done = false
     const probes = []
     const drop = keep => probes.forEach(pr => { if (pr !== keep) { pr.onload = pr.onerror = null; pr.removeAttribute('src') } })
@@ -4215,6 +4257,7 @@
     const probe = (url, onError) => {
       const pr = new Image()
       pr.decoding = 'async'
+      if (priority) pr.fetchPriority = priority
       probes.push(pr)
       pr.onload = () => win(pr)
       pr.onerror = onError
@@ -4271,7 +4314,7 @@
         if (kind === 'gif') watchModalGif(img, probe.src, seq)
         preloadAhead(seq)
       })
-    }, () => cacheSet(kind, hash, null))
+    }, () => cacheSet(kind, hash, null), 'high')
   }
 
   // Zoomed into a sample: fetch the original and swap it in, the zoom kept
@@ -4298,7 +4341,7 @@
         modal.isSample = false
         info(`modal: original loaded on zoom (${probe.src.split('/').pop()})`)
       })
-    }, () => cacheSet('orig', parts.hash, null))
+    }, () => cacheSet('orig', parts.hash, null), 'high')
   }
 
   // Whether a tap falls on the picture itself, not on the bars object-fit

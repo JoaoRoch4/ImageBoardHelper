@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.57.0
+
+- Feed upgrades race their candidates too (samples first, then originals):
+  trying them in turn held one of the three download slots ~0.5 s per wrong
+  extension, ~1.5 s per post without a sample
+- The upgrade queue serves the image nearest the screen first, and puts back
+  what a fast scroll left two screens behind, instead of downloading in the
+  order the images came near
+- The modal's image downloads ask for high priority
+- The slideshow's second video fetches only the ranges it seeks to: both
+  videos downloaded the whole file, halving each one's speed
+- Video covers past a mid-range hardware decoder (over 1920×1088) give way
+  to the poster frame: decoding even one frame of them fell to the CPU
+- Download of an image shown as a sample takes the original from the fast
+  host: the post page links videos on api-cdn-mp4, measured at 0.4–0.6 MB/s
+  against 6–7 MB/s for the same file on api-cdn (Cloudflare)
+
 ## 0.56.0
 
 - Images open much faster in the modal. Measured on rule34: the modal fetched
