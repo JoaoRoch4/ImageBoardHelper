@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.1
+
+- Only ▶ VLC stays (`vlcButton`, replacing `externalPlayers`): mpv opened and
+  closed at once, since rule34's fast host refuses it without the site as
+  Referer, which mpv only sends with a line in its own config
+
 ## 1.5.0
 
 - ▶ mpv and ▶ VLC in a video post's ☰ menu (`externalPlayers`, on): the video
