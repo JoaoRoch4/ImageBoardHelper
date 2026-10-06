@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.59.2
+// @version      0.60.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.59.2'
+  const VERSION = '0.60.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -225,7 +225,7 @@
       mClose: 'Close', mOpen: 'Open the post', mPrev: 'Previous post', mNext: 'Next post',
       mLoading: 'Loading…', mFail: 'Could not load it',
       mFav: 'Add to favorites', mUp: 'Upvote', mFull: 'Fullscreen', mFullExit: 'Exit fullscreen', mMenu: 'Tags and post page',
-      tabTags: 'Tags', tabInfo: 'Info', infoKind: 'Kind', infoRes: 'Resolution', infoFormat: 'Format', infoDuration: 'Duration',
+      tabTags: 'Tags', tabInfo: 'Info', tabComments: 'Comments', commentsMore: 'More comments', commentsNone: 'No comments', commentsHidden: 'hidden by your comment threshold', infoKind: 'Kind', infoRes: 'Resolution', infoFormat: 'Format', infoDuration: 'Duration',
       infoDrops: 'Dropped frames', infoDropsOf: 'of', infoAbove: 'above 1080p: mid-range phones decode it in software', infoLoading: 'loading…',
       kindVideo: 'Video', kindGif: 'GIF', kindImage: 'Image',
       tagsCopyAll: 'Copy all', tagOpened: 'Opened in a new tab', tagCopied: 'Copied', tagCopyFail: 'Could not copy', tagsNone: 'No tags', mTurn: 'Rotate the screen',
@@ -296,7 +296,7 @@
       mClose: 'Fechar', mOpen: 'Abrir o post', mPrev: 'Post anterior', mNext: 'Próximo post',
       mLoading: 'Carregando…', mFail: 'Não foi possível carregar',
       mFav: 'Favoritar', mUp: 'Votar positivo', mFull: 'Tela cheia', mFullExit: 'Sair da tela cheia', mMenu: 'Tags e página do post',
-      tabTags: 'Tags', tabInfo: 'Info', infoKind: 'Tipo', infoRes: 'Resolução', infoFormat: 'Formato', infoDuration: 'Duração',
+      tabTags: 'Tags', tabInfo: 'Info', tabComments: 'Comentários', commentsMore: 'Mais comentários', commentsNone: 'Sem comentários', commentsHidden: 'ocultos pelo seu limite de score de comentários', infoKind: 'Tipo', infoRes: 'Resolução', infoFormat: 'Formato', infoDuration: 'Duração',
       infoDrops: 'Quadros perdidos', infoDropsOf: 'de', infoAbove: 'acima de 1080p: celulares intermediários decodificam em software', infoLoading: 'carregando…',
       kindVideo: 'Vídeo', kindGif: 'GIF', kindImage: 'Imagem',
       tagsCopyAll: 'Copiar todas', tagOpened: 'Aberto em outra aba', tagCopied: 'Copiado', tagCopyFail: 'Não foi possível copiar', tagsNone: 'Sem tags', mTurn: 'Girar a tela',
@@ -2277,7 +2277,12 @@
     button.tab { width: auto; height: 32px; border-radius: 16px; padding: 0 16px; font-size: 13px; }
     button.tab.on { background: #5eead4; color: #0f1417; border-color: #5eead4; }
     .infolist { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 13px; color: #d7dee0; }
-    .infolist[hidden] { display: none; }
+    .infolist[hidden], .commentlist[hidden] { display: none; }
+    .commentlist { display: flex; flex-direction: column; gap: 12px; font-size: 13px; color: #d7dee0; }
+    .commentlist .h { color: #7f9aa0; font-size: 12px; margin-bottom: 3px; }
+    .commentlist .h b { color: #5eead4; font-weight: 600; }
+    .commentlist .b { white-space: pre-wrap; word-break: break-word; line-height: 1.4; }
+    .commentlist .none { color: #7f9aa0; }
     .infolist .k { color: #7f9aa0; white-space: nowrap; }
     .infolist .v { word-break: break-word; }
     .infolist .v.warn { color: #f2ac08; }
@@ -2342,10 +2347,13 @@
     const dlBtn = el('button', { class: 'pill', text: t('dlBtn') })
     const tabTags = el('button', { class: 'tab on', text: t('tabTags') })
     const tabInfo = el('button', { class: 'tab', text: t('tabInfo') })
+    const tabComments = el('button', { class: 'tab', text: t('tabComments') })
     const infoList = el('div', { class: 'infolist' })
     infoList.hidden = true
+    const commentList = el('div', { class: 'commentlist' })
+    commentList.hidden = true
     const sheet = el('div', { class: 'sheet' }, [el('div', { class: 'sheethead' }, [post, laterBtn, dlBtn, tagAll]),
-      el('div', { class: 'tabs' }, [tabTags, tabInfo]), tagList, infoList])
+      el('div', { class: 'tabs' }, [tabTags, tabInfo, tabComments]), tagList, infoList, commentList])
     // Sample or raw, for an image that has a sample: tap to switch.
     const quality = el('button', { class: 'quality' })
     quality.hidden = true
@@ -2374,6 +2382,7 @@
     menu.addEventListener('click', () => toggleMenu())
     tabTags.addEventListener('click', () => showTab('tags'))
     tabInfo.addEventListener('click', () => showTab('info'))
+    tabComments.addEventListener('click', () => showTab('comments'))
     // A tap outside the open menu only closes it: no step, no close, no pause.
     let swallowClick = 0
     box.addEventListener('pointerdown', ev => {
@@ -2411,7 +2420,7 @@
     installImageHold(stage, image, box)
     installVideoGestures(layer, video)
     root.append(style, box)
-    modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, score, toast, badge, turn, fsBtn, menu, sheet, tagList, tagAll, laterBtn, dlBtn, quality, tabTags, tabInfo, infoList, sheetTab: 'tags', laterView, laterHead, laterGrid, laterNote, listLinks: null, turned: null, open: false, link: null, seq: 0 }
+    modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, score, toast, badge, turn, fsBtn, menu, sheet, tagList, tagAll, laterBtn, dlBtn, quality, tabTags, tabInfo, tabComments, infoList, commentList, sheetTab: 'tags', laterView, laterHead, laterGrid, laterNote, listLinks: null, turned: null, open: false, link: null, seq: 0 }
   }
 
   let toastTimer = 0
@@ -2474,6 +2483,27 @@
     return p
   }
 
+  // Comments of a post page: #comment-list > div#c<id>, author/date/score in
+  // .col1, text in .col2 (<br> for its line breaks). Ten a page; the next ten
+  // come from the "Next »" link of the comments' paginator (a cursor).
+  function readComments(doc, base = location.href) {
+    const list = [...doc.querySelectorAll('#comment-list > div[id]')].filter(d => /^c\d+$/.test(d.id)).map(d => {
+      const head = d.querySelector('.col1')
+      const body = d.querySelector('.col2')
+      if (body) body.querySelectorAll('br').forEach(br => br.replaceWith('\n'))
+      const headText = head ? head.textContent.replace(/\s+/g, ' ') : ''
+      return {
+        user: (head && head.querySelector('a') ? head.querySelector('a').textContent : '').trim(),
+        date: (headText.match(/Posted on (\S+ \S+)/) || [])[1] || '',
+        score: Number((head && head.querySelector('[id^="sc"]') || {}).textContent) || 0,
+        text: body ? body.textContent.replace(/\n{3,}/g, '\n\n').trim() : '',
+      }
+    }).filter(c => c.text)
+    const total = Number(((doc.querySelector('#comment-list') || {}).textContent || '').match(/(\d+) comments?/)?.[1]) || list.length
+    const more = [...doc.querySelectorAll('#post-comments #paginator a')].find(a => /next/i.test(a.textContent))
+    return { list, total, next: more ? new URL(more.getAttribute('href'), base).href : null }
+  }
+
   function readPostPage(html) {
     const heart = html.match(/id="heart-img"[^>]*src="[^"]*\/(heart(?:-added)?)\.svg"/)
     // An inert document: no scripts run, no images load.
@@ -2492,12 +2522,13 @@
       const link = li.querySelector('a[href^="http"]')
       return { text, href: link ? link.getAttribute('href') : null }
     }).filter(st => st.text)
+    const comments = readComments(doc)
     // The sidebar's "Original image" link: the exact file, no guessing.
     const orig = [...doc.querySelectorAll('a[href*="/images/"]')].find(a => /original/i.test(a.textContent))
     // The page links videos on api-cdn-mp4, the slow origin (0.4–0.6 MB/s
     // measured, against 6–7 MB/s for the same file on api-cdn, Cloudflare).
     const original = orig ? orig.getAttribute('href').replace(/([^:])\/\/+/g, '$1/').replace('//api-cdn-mp4.', '//api-cdn.') : null
-    return { fav: heart ? heart[1] === 'heart-added' : null, tags, stats, original }
+    return { fav: heart ? heart[1] === 'heart-added' : null, tags, stats, original, comments }
   }
 
   const favLookups = new Map()   // id -> Promise<true | false | null>
@@ -3675,6 +3706,7 @@
 
   function renderSheet(link, seq) {
     if (modal.sheetTab === 'info') renderInfo(link, seq)
+    else if (modal.sheetTab === 'comments') renderComments(link, seq)
     else renderTags(link, seq)
   }
 
@@ -3682,9 +3714,59 @@
     modal.sheetTab = tab
     modal.tabTags.classList.toggle('on', tab === 'tags')
     modal.tabInfo.classList.toggle('on', tab === 'info')
+    modal.tabComments.classList.toggle('on', tab === 'comments')
     modal.tagList.hidden = modal.tagAll.hidden = tab !== 'tags'
     modal.infoList.hidden = tab !== 'info'
+    modal.commentList.hidden = tab !== 'comments'
     renderSheet(modal.link, modal.seq)
+  }
+
+  // Comments tab: read from the post page (already fetched for the heart and
+  // Info), in the site's order, as text. Those under the account's comment
+  // threshold stay hidden, as on the site.
+  async function renderComments(link, seq) {
+    modal.commentList.replaceChildren(el('div', { class: 'none', text: t('infoLoading') }))
+    const info = await postInfo(postId(link))
+    if (modal.seq !== seq || modal.sheetTab !== 'comments') return
+    const page = (info && info.comments) || { list: [], total: 0, next: null }
+    modal.tabComments.textContent = `${t('tabComments')} (${page.total})`
+    modal.commentList.replaceChildren()
+    if (!page.total) { modal.commentList.append(el('div', { class: 'none', text: t('commentsNone') })); return }
+    appendComments(page, seq)
+    dbg(`modal: ${page.total} comments for post ${postId(link)}`)
+  }
+
+  // Adds a page of comments, and a button for the next one while there is.
+  function appendComments(page, seq) {
+    const cookie = readCookie('comment_threshold')
+    const threshold = cookie === null ? NaN : Number(cookie)
+    const shown = Number.isFinite(threshold) ? page.list.filter(c => c.score >= threshold) : page.list
+    modal.commentList.append(...shown.map(c => el('div', { class: 'cm' }, [
+      el('div', { class: 'h' }, [el('b', { text: c.user || '?' }), ` · ${c.date} · ▲ ${c.score}`]),
+      el('div', { class: 'b', text: c.text }),
+    ])))
+    if (shown.length < page.list.length) {
+      modal.commentList.append(el('div', { class: 'none', text: `${page.list.length - shown.length} ${t('commentsHidden')}` }))
+    }
+    if (!page.next) return
+    const more = el('button', { class: 'pill', text: t('commentsMore') })
+    more.addEventListener('click', async () => {
+      more.disabled = true
+      more.textContent = t('infoLoading')
+      try {
+        const res = await fetch(page.next, { credentials: 'same-origin' })
+        if (!res.ok) throw new Error(`HTTP ${res.status}`)
+        const next = readComments(new DOMParser().parseFromString(await res.text(), 'text/html'), page.next)
+        if (modal.seq !== seq || modal.sheetTab !== 'comments') return
+        more.remove()
+        appendComments(next, seq)
+      } catch (e) {
+        more.disabled = false
+        more.textContent = t('commentsMore')
+        warn(`modal: more comments failed — ${describeError(e)}`)
+      }
+    })
+    modal.commentList.append(more)
   }
 
   // Info tab: what the file says (kind, size, format, length), how playback
@@ -4727,6 +4809,7 @@
     modal.post.href = link.href
     modal.box.classList.remove('later-mode')
     applyMarks(link, seq)
+    modal.tabComments.textContent = t('tabComments')   // its count is per post
     if (!modal.sheet.hidden) renderSheet(link, seq)   // the menu follows the post
     modal.score.textContent = ''
     const list = modalLinks()

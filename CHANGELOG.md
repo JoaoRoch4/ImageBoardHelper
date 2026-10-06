@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.60.0
+
+- Comments tab in the modal's ☰ menu, next to Tags and Info: the post's
+  comments (author, date, score, text) read from the post page the script
+  already fetches, with their count on the tab; the site gives ten a page,
+  and More comments follows its cursor for the next ten. Comments under your
+  account's comment threshold stay hidden, as on the site
+
 ## 0.59.2
 
 - Holding a modal image half a second opens the ☰ menu (tags and info, on
