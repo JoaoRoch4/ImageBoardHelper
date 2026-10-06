@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.59.1
+// @version      0.59.2
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.59.1'
+  const VERSION = '0.59.2'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -2408,6 +2408,7 @@
     })
     installModalSwipe(stage, video)
     installImageZoom(stage, image)
+    installImageHold(stage, image, box)
     installVideoGestures(layer, video)
     root.append(style, box)
     modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, score, toast, badge, turn, fsBtn, menu, sheet, tagList, tagAll, laterBtn, dlBtn, quality, tabTags, tabInfo, infoList, sheetTab: 'tags', laterView, laterHead, laterGrid, laterNote, listLinks: null, turned: null, open: false, link: null, seq: 0 }
@@ -3982,6 +3983,46 @@
     zoom.scale = 1
     zoom.x = zoom.y = 0
     if (modal) applyZoom()
+  }
+
+  // Holding the image half a second opens the ☰ menu (tags, info). Measured
+  // on touch events: Firefox for Android cancels the pointer during a long
+  // press (see chipGestures). The click the release may send is swallowed,
+  // or a hold on the bars around the picture would close the modal.
+  const MODAL_HOLD_MS = 500
+
+  function installImageHold(stage, img, box) {
+    let hold = null
+    let swallowUntil = 0
+    const cancel = () => { if (hold) clearTimeout(hold.timer); hold = null }
+    stage.addEventListener('touchstart', ev => {
+      cancel()
+      if (img.hidden || ev.touches.length !== 1 || !modal.sheet.hidden) return
+      const touch = ev.touches[0]
+      hold = { x: touch.clientX, y: touch.clientY, scale: zoom.scale }
+      hold.timer = setTimeout(() => {
+        if (!hold || zoom.scale !== hold.scale) { hold = null; return }   // it became a pinch
+        hold = null
+        swallowUntil = Date.now() + 800
+        if (navigator.vibrate) navigator.vibrate(15)
+        toggleMenu()
+        dbg('modal: image held, menu opened')
+      }, MODAL_HOLD_MS)
+    }, { passive: true })
+    stage.addEventListener('touchmove', ev => {
+      if (!hold) return
+      const touch = ev.touches[0]
+      if (ev.touches.length > 1 || Math.hypot(touch.clientX - hold.x, touch.clientY - hold.y) > 12) cancel()
+    }, { passive: true })
+    stage.addEventListener('touchend', cancel)
+    stage.addEventListener('touchcancel', cancel)
+    img.addEventListener('contextmenu', ev => ev.preventDefault())   // the hold is ours
+    box.addEventListener('click', ev => {
+      if (Date.now() > swallowUntil) return
+      swallowUntil = 0
+      ev.stopPropagation()
+      ev.preventDefault()
+    }, true)
   }
 
   function installImageZoom(stage, img) {

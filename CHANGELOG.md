@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.59.2
+
+- Holding a modal image half a second opens the ☰ menu (tags and info, on
+  the last tab used); moving or pinching cancels. Videos keep their hold
+  for 2× speed
+
 ## 0.59.1
 
 - Double tap on a modal image toggles fullscreen, as on videos; zoomed in,
