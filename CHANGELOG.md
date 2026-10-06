@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.0
+
+- Hold slideshow from keyframes (`slideReel`, on): for MP4s the script reads
+  the file's index, fetches only the keyframe at or before each scene with
+  Range requests, and packs them into a small MP4 played from memory in one
+  video. Every scene is then a local seek to a single frame, with one decoder
+  instead of two; the frames come out identical to the file's. The last four
+  reels are kept for another hold (Free memory drops them). WebM, clips with
+  too few keyframes and any failure fall back to seeking as before
+- Each hold logs what it cost: the wait for the first scene, the time between
+  scenes against the dwell, how many came late, and how the frames were read
+
 ## 1.1.0
 
 - 👁 button bottom left, beside ◐ (`eyeButton`): one tap hides every other

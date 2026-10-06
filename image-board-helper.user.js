@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.1.0
+// @version      1.2.0
 // @description  For the phone, on Gelbooru 0.2 boards (rule34.xxx and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -62,7 +62,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.1.0'
+  const VERSION = '1.2.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -82,6 +82,7 @@
     scrubMode:      'drag', // 'drag': finger position picks the scene; 'hold': hold for a slideshow
     slideStep:      10,     // hold slideshow: jump between scenes, in % of the video
     slideDwell:     0.2,    // hold slideshow: seconds each scene stays once painted
+    slideReel:      true,   // hold slideshow from keyframes only (MP4): one small read per scene, no seeking the file
     memorySaver:    true,   // release far off-screen images and removed videos (needs reload)
     urlCache:       true,   // remember which candidate URL worked for each file
     feedNav:        true,   // ⤒ ‹ › buttons: top of page, previous and next post in the feed (needs reload)
@@ -162,7 +163,7 @@
       tCovers: 'Video covers', tGif: 'Animated GIFs in the grid', tGifMax: 'GIFs animating at once',
       tScrub: 'Scene preview on video thumbnails',
       tScrubMode: 'scene preview gesture', modeDrag: 'Drag sideways', modeHold: 'Hold (slideshow)',
-      tSlideStep: 'slideshow jump', tSlideDwell: 'time per scene', scenes: 'scenes',
+      tSlideStep: 'slideshow jump', tSlideDwell: 'time per scene', scenes: 'scenes', tSlideReel: 'Keyframes only (faster, MP4)',
       tMemory: 'Release off-screen memory',
       tUrlCache: 'Remember working file URLs',
       tNav: 'Top / previous / next buttons',
@@ -231,7 +232,7 @@
       tCovers: 'Capa de vídeo', tGif: 'GIF animado na grade', tGifMax: 'GIFs animando ao mesmo tempo',
       tScrub: 'Prévia de cenas nas miniaturas de vídeo',
       tScrubMode: 'gesto da prévia de cenas', modeDrag: 'Arrastar de lado', modeHold: 'Segurar (slideshow)',
-      tSlideStep: 'pulo do slideshow', tSlideDwell: 'tempo por cena', scenes: 'cenas',
+      tSlideStep: 'pulo do slideshow', tSlideDwell: 'tempo por cena', scenes: 'cenas', tSlideReel: 'Só keyframes (mais rápido, MP4)',
       tMemory: 'Liberar memória fora da tela',
       tUrlCache: 'Lembrar endereços que funcionaram',
       tNav: 'Botões topo / anterior / próximo',
@@ -1367,8 +1368,15 @@
 
   function startSlideshow() {
     if (!scrub || scrub.on) return
+    scrub.stats = { t0: performance.now(), method: null, first: null, last: 0, shown: 0, gaps: [] }
+    if (CFG.slideReel && startReelShow(scrub)) return
     if (!startScrub()) { scrub = null; return }
-    const s = scrub
+    seekShow(scrub)
+  }
+
+  // The slideshow by seeking the file itself, two videos taking turns.
+  function seekShow(s) {
+    s.stats.method = 'seek'
     const base = s.video
     // Read here, so a change in the panel applies to the next hold.
     s.steps = slideSteps()
@@ -1453,6 +1461,32 @@
     const d = view.v.duration
     s.bar.style.width = `${view.f * 100}%`
     s.label.textContent = `${mmss(view.f * d)} / ${mmss(d)}`
+    noteScene(s)
+  }
+
+  // What a hold costs, for the log: the wait for the first scene, then
+  // between scenes (the dwell is the floor).
+  function noteScene(s) {
+    const st = s.stats
+    if (!st) return
+    const now = performance.now()
+    if (st.first === null) st.first = now - st.t0
+    else st.gaps.push(now - st.last)
+    st.last = now
+    st.shown++
+  }
+
+  function logSlideStats(s) {
+    const st = s.stats
+    if (!st || !st.method) return
+    const dwell = (Number(CFG.slideDwell) || 0.2) * 1000
+    const avg = st.gaps.length ? Math.round(st.gaps.reduce((a, b) => a + b, 0) / st.gaps.length) : 0
+    const late = st.gaps.filter(g => g > dwell + 300).length
+    const shown = st.first === null ? `no scene in ${Math.round(performance.now() - st.t0)} ms`
+      : `${st.shown} scenes, first after ${Math.round(st.first)} ms${avg ? `, then every ${avg} ms` : ''} (dwell ${dwell}), ${late} late`
+    const v = s.video
+    const what = st.detail || (v ? `${v.videoWidth}x${v.videoHeight}, ${mmss(v.duration)}, ${s.shared ? 'own video' : 'its cover'}` : '')
+    info(`slideshow (${st.method}): ${shown}${what ? `; ${what}` : ''}${st.reelError ? `; reel failed: ${st.reelError}` : ''}`)
   }
 
   function tickSlide(s) {
@@ -1499,14 +1533,382 @@
     returnDecoder()
   }
 
+  // ── Keyframe reel ──
+  // The hold slideshow without seeking the file: read the MP4's index (its
+  // moov box), fetch only the keyframe at or before each scene, and pack
+  // those frames into a small MP4 in memory. Played from a blob in one
+  // <video>, every scene is a seek to one local keyframe: nothing more to
+  // download, one frame to decode, one decoder. GM_xmlhttpRequest does the
+  // Range reads (the hosts send no CORS headers). WebCodecs would decode the
+  // keyframes directly, but on Firefox for Android it has no decoders (tried:
+  // every codec unsupported). MP4 only: WebM, or anything unexpected, seeks.
+  const REEL_HEAD = 64 * 1024     // first read: ftyp, and the moov in files made for streaming
+  const REEL_MAX_MOOV = 8e6       // a bigger index is not worth reading for a preview
+  const REEL_MAX_BYTES = 12e6     // keyframes past this are thinned out (4K frames run to MBs)
+  const REEL_KEEP = 4             // reels kept for another hold on the same video
+  const reels = new Map()         // URL and scene count -> reel, oldest first
+
+  // A Range read; `total` is the file size from Content-Range.
+  function rangeRead(url, start, end, reqs) {
+    return new Promise((resolve, reject) => {
+      let req = null
+      req = GM_xmlhttpRequest({
+        method: 'GET',
+        url,
+        responseType: 'arraybuffer',
+        timeout: 20000,
+        headers: { Range: `bytes=${start}-${end}`, Referer: `${location.origin}/` },
+        // A host ignoring Range sends the whole file: stop at its headers.
+        onreadystatechange: r => {
+          if (r.readyState >= 2 && r.status === 200 && req) { req.abort(); reject(new Error('no Range support')) }
+        },
+        onload: r => {
+          if (r.status !== 206) { reject(Object.assign(new Error(`HTTP ${r.status}`), { status: r.status })); return }
+          const m = (r.responseHeaders || '').match(/content-range:\s*bytes\s+\d+-\d+\/(\d+)/i)
+          resolve({ buf: new Uint8Array(r.response), total: m ? Number(m[1]) : null })
+        },
+        onerror: () => reject(new Error('network error')),
+        ontimeout: () => reject(new Error('timeout')),
+        onabort: () => reject(new Error('aborted')),
+      })
+      if (req && reqs) reqs.add(req)
+    })
+  }
+
+  // MP4 boxes between start and end: [size u32][type], a size of 1 puts a
+  // 64-bit size after the type, 0 runs to the end.
+  function* mp4Boxes(b, start, end) {
+    const dv = new DataView(b.buffer, b.byteOffset, b.byteLength)
+    let p = start
+    while (p + 8 <= end) {
+      let size = dv.getUint32(p)
+      let head = 8
+      if (size === 1) { size = Number(dv.getBigUint64(p + 8)); head = 16 } else if (size === 0) size = end - p
+      if (size < head) return
+      yield { type: String.fromCharCode(b[p + 4], b[p + 5], b[p + 6], b[p + 7]), start: p, body: p + head, end: p + size }
+      p += size
+    }
+  }
+
+  const mp4Child = (b, box, type) => {
+    for (const c of mp4Boxes(b, box.body, box.end)) if (c.type === type) return c
+    return null
+  }
+
+  // The video track of a moov box (b holds the box, moov its bounds): its
+  // timing, its sample description, and where each sample sits in the file.
+  function mp4VideoTrack(b, moov) {
+    const dv = new DataView(b.buffer, b.byteOffset, b.byteLength)
+    const u32 = p => dv.getUint32(p)
+    const u64 = p => Number(dv.getBigUint64(p))
+    for (const trak of mp4Boxes(b, moov.body, moov.end)) {
+      if (trak.type !== 'trak') continue
+      const mdia = mp4Child(b, trak, 'mdia')
+      const hdlr = mdia && mp4Child(b, mdia, 'hdlr')
+      if (!hdlr || String.fromCharCode(...b.subarray(hdlr.body + 8, hdlr.body + 12)) !== 'vide') continue
+      const tkhd = mp4Child(b, trak, 'tkhd')
+      const mdhd = mp4Child(b, mdia, 'mdhd')
+      const minf = mp4Child(b, mdia, 'minf')
+      const stbl = minf && mp4Child(b, minf, 'stbl')
+      if (!tkhd || !mdhd || !stbl) return null
+      const [stsd, stts, stss, stsz, stsc, stco, co64] = ['stsd', 'stts', 'stss', 'stsz', 'stsc', 'stco', 'co64'].map(t => mp4Child(b, stbl, t))
+      const offsets = stco || co64
+      if (!stsd || !stts || !stsz || !stsc || !offsets) return null
+      const runs = []   // time to sample: [count, delta]
+      for (let i = 0, n = u32(stts.body + 4); i < n; i++) runs.push([u32(stts.body + 8 + i * 8), u32(stts.body + 12 + i * 8)])
+      const sync = []   // keyframes, 0-based; no table means every sample is one
+      if (stss) for (let i = 0, n = u32(stss.body + 4); i < n; i++) sync.push(u32(stss.body + 8 + i * 4) - 1)
+      const fixed = u32(stsz.body + 4)
+      const count = u32(stsz.body + 8)
+      const size = k => fixed || u32(stsz.body + 12 + k * 4)
+      const chunks = u32(offsets.body + 4)
+      const chunkAt = c => (stco ? u32(stco.body + 8 + c * 4) : u64(co64.body + 8 + c * 8))
+      const perChunk = []   // [first chunk (0-based), samples per chunk]
+      for (let i = 0, n = u32(stsc.body + 4); i < n; i++) perChunk.push([u32(stsc.body + 8 + i * 12) - 1, u32(stsc.body + 12 + i * 12)])
+      const v1 = b[mdhd.body] === 1
+      const tv1 = b[tkhd.body] === 1
+      return {
+        timescale: u32(mdhd.body + (v1 ? 20 : 12)),
+        duration: v1 ? u64(mdhd.body + 24) : u32(mdhd.body + 16),
+        width: u32(tkhd.body + (tv1 ? 88 : 76)) >>> 16,
+        height: u32(tkhd.body + (tv1 ? 92 : 80)) >>> 16,
+        stsd: b.slice(stsd.start, stsd.end),
+        // The sample showing at time t (timescale units).
+        sampleAt(t) {
+          let k = 0
+          let at = 0
+          for (const [n, delta] of runs) {
+            if (t < at + n * delta) return k + Math.floor((t - at) / delta)
+            k += n
+            at += n * delta
+          }
+          return Math.max(0, count - 1)
+        },
+        timeOf(k) {
+          let at = 0
+          for (const [n, delta] of runs) {
+            if (k < n) return at + k * delta
+            k -= n
+            at += n * delta
+          }
+          return at
+        },
+        keyAtOrBefore(k) {
+          if (!sync.length) return k
+          let lo = 0
+          let hi = sync.length - 1
+          let best = sync[0]
+          while (lo <= hi) {
+            const mid = (lo + hi) >> 1
+            if (sync[mid] <= k) { best = sync[mid]; lo = mid + 1 } else hi = mid - 1
+          }
+          return best
+        },
+        // [offset, size] of sample k in the file: its chunk, plus the samples before it in there.
+        place(k) {
+          let first = 0
+          for (let i = 0; i < perChunk.length; i++) {
+            const [chunk0, per] = perChunk[i]
+            const inRun = ((i + 1 < perChunk.length ? perChunk[i + 1][0] : chunks) - chunk0) * per
+            if (k < first + inRun) {
+              const c = chunk0 + Math.floor((k - first) / per)
+              let off = chunkAt(c)
+              for (let j = first + (c - chunk0) * per; j < k; j++) off += size(j)
+              return [off, size(k)]
+            }
+            first += inRun
+          }
+          return null
+        },
+      }
+    }
+    return null
+  }
+
+  // A minimal MP4 around the keyframes: one video track, each sample a
+  // second long and a keyframe, the source's sample description as it is.
+  function reelBlob(track, frames) {
+    const n = frames.length
+    const ascii = str => Uint8Array.from(str, c => c.charCodeAt(0))
+    const words = (...v) => {
+      const out = new Uint8Array(v.length * 4)
+      const dv = new DataView(out.buffer)
+      v.forEach((x, i) => dv.setUint32(i * 4, x >>> 0))
+      return out
+    }
+    const box = (type, ...parts) => {
+      const out = new Uint8Array(8 + parts.reduce((sum, part) => sum + part.length, 0))
+      new DataView(out.buffer).setUint32(0, out.length)
+      out.set(ascii(type), 4)
+      let at = 8
+      for (const part of parts) { out.set(part, at); at += part.length }
+      return out
+    }
+    const matrix = [0x10000, 0, 0, 0, 0x10000, 0, 0, 0, 0x40000000]
+    const ms = n * 1000
+    const ftyp = box('ftyp', ascii('isom'), words(0x200), ascii('isomiso2avc1mp41'))
+    const moovWith = offsets => box('moov',
+      box('mvhd', words(0, 0, 0, 1000, ms, 0x10000, 0x1000000, 0, 0, ...matrix, 0, 0, 0, 0, 0, 0, 2)),
+      box('trak',
+        box('tkhd', words(3, 0, 0, 1, 0, ms, 0, 0, 0, 0, ...matrix, track.width * 0x10000, track.height * 0x10000)),
+        box('mdia',
+          box('mdhd', words(0, 0, 0, 1000, ms, 0x55c40000)),
+          box('hdlr', words(0, 0), ascii('vide'), words(0, 0, 0), ascii('VideoHandler\0')),
+          box('minf',
+            box('vmhd', words(1, 0, 0)),
+            box('dinf', box('dref', words(0, 1), box('url ', words(1)))),
+            box('stbl', track.stsd,
+              box('stts', words(0, 1, n, 1000)),
+              box('stsc', words(0, 1, 1, 1, 1)),
+              box('stsz', words(0, 0, n, ...frames.map(f => f.length))),
+              box('stco', words(0, n, ...offsets)))))))
+    // The offsets point past the moov, whose size does not depend on them.
+    let at = ftyp.length + moovWith(frames.map(() => 0)).length + 8
+    const offsets = frames.map(f => { const o = at; at += f.length; return o })
+    const data = frames.reduce((sum, f) => sum + f.length, 0)
+    return new Blob([ftyp, moovWith(offsets), words(8 + data), ascii('mdat'), ...frames], { type: 'video/mp4' })
+  }
+
+  // Reads the index and the keyframes for these scene fractions.
+  async function buildReel(url, steps, reqs) {
+    const t0 = performance.now()
+    const head = await rangeRead(url, 0, REEL_HEAD - 1, reqs)
+    const total = head.total || head.buf.length
+    // The top-level boxes up to the moov: in the head, or after the media data.
+    const boxAt = async p => {
+      let b = head.buf
+      let o = p
+      if (p + 16 > b.length) { b = (await rangeRead(url, p, Math.min(total, p + 16) - 1, reqs)).buf; o = 0 }
+      const dv = new DataView(b.buffer, b.byteOffset, b.byteLength)
+      let size = dv.getUint32(o)
+      if (size === 1) size = Number(dv.getBigUint64(o + 8))
+      else if (size === 0) size = total - p
+      return { type: String.fromCharCode(b[o + 4], b[o + 5], b[o + 6], b[o + 7]), size }
+    }
+    let p = 0
+    let moov = null
+    for (let i = 0; p < total && i < 32 && !moov; i++) {
+      const box = await boxAt(p)
+      if (box.size < 8) break
+      if (box.type === 'moov') moov = { at: p, size: box.size }
+      p += box.size
+    }
+    if (!moov) throw new Error('no moov box')
+    if (moov.size > REEL_MAX_MOOV) throw new Error(`index of ${Math.round(moov.size / 1e6)} MB`)
+    const mb = moov.at + moov.size <= head.buf.length ? head.buf.subarray(moov.at, moov.at + moov.size)
+      : (await rangeRead(url, moov.at, moov.at + moov.size - 1, reqs)).buf
+    const track = mp4VideoTrack(mb, { body: new DataView(mb.buffer, mb.byteOffset).getUint32(0) === 1 ? 16 : 8, end: mb.length })
+    if (!track) throw new Error('no video track')
+    let keys = []
+    for (const f of steps) {
+      const k = track.keyAtOrBefore(track.sampleAt(Math.floor(f * track.duration)))
+      if (!keys.includes(k)) keys.push(k)
+    }
+    // Short clips can have one keyframe in the whole file: the reel would
+    // repeat it, while seeking decodes up to each scene.
+    const need = Math.min(steps.length, Math.max(3, Math.ceil(steps.length / 2)))
+    if (keys.length < need) throw new Error(`only ${keys.length} keyframes for ${steps.length} scenes`)
+    let places = keys.map(k => track.place(k))
+    if (places.some(pl => !pl)) throw new Error('a keyframe outside the chunk table')
+    // Heavy frames (4K): every other one until they fit.
+    while (keys.length > 2 && places.reduce((sum, pl) => sum + pl[1], 0) > REEL_MAX_BYTES) {
+      keys = keys.filter((k, i) => i % 2 === 0)
+      places = places.filter((pl, i) => i % 2 === 0)
+    }
+    const frames = await Promise.all(places.map(([off, size]) => rangeRead(url, off, off + size - 1, reqs).then(r => r.buf)))
+    const secs = track.duration / track.timescale
+    return {
+      url: URL.createObjectURL(reelBlob(track, frames)),
+      scenes: keys.map(k => {
+        const t = track.timeOf(k) / track.timescale
+        return { t, f: secs ? t / secs : 0 }
+      }),
+      bytes: mb.length + frames.reduce((sum, f) => sum + f.length, 0),
+      ms: Math.round(performance.now() - t0),
+      width: track.width,
+      height: track.height,
+      duration: secs,
+    }
+  }
+
+  // A reel for one of these URLs (the first the host has), kept for the next hold.
+  async function reelFor(urls, steps, reqs, hash) {
+    for (const url of urls) {
+      const key = `${url}|${steps.length}`
+      const kept = reels.get(key)
+      if (kept) {
+        reels.delete(key)
+        reels.set(key, kept)
+        return { ...kept, ms: 0, kept: true }
+      }
+      try {
+        const reel = await buildReel(url, steps, reqs)
+        if (hash) cacheSet('video', hash, url)
+        reels.set(key, reel)
+        for (const [old, r] of reels) {
+          if (reels.size <= REEL_KEEP) break
+          URL.revokeObjectURL(r.url)
+          reels.delete(old)
+        }
+        return reel
+      } catch (e) {
+        if (!e.status || urls.indexOf(url) === urls.length - 1) throw e   // HTTP error: try the next host
+      }
+    }
+    throw new Error('no host has the file')
+  }
+
+  function startReelShow(s) {
+    if (typeof GM_xmlhttpRequest !== 'function') return false
+    const pic = cardPicture(s.card)
+    if (!pic) return false
+    const hash = (thumbParts(pic.src) || {}).hash
+    const cover = s.card.querySelector('video[data-ibh]')
+    const known = (cover && cover.currentSrc) || (hash && cacheGet('video', hash))
+    if (known && !/\.mp4(?:[?#]|$)/i.test(known)) return false   // WebM: seek
+    const urls = known ? [known] : fileCandidates(pic.src, ['mp4'])
+    if (!urls.length) return false
+    freeForPreview(s.card)
+    scrubUi(s)
+    s.label.textContent = '…'
+    s.dwell = (Number(CFG.slideDwell) || 0.2) * 1000
+    s.stats.method = 'reel'
+    s.reel = { reqs: new Set(), timer: 0, video: null, holder: null, borrowed: false }
+    reelFor(urls, slideSteps(), s.reel.reqs, known ? null : hash).then(
+      reel => { if (scrub === s) showReel(s, reel) },
+      e => { if (scrub === s) reelFailed(s, e) })
+    return true
+  }
+
+  // One keyframe per scene, looping, over the thumbnail (and its cover).
+  function showReel(s, reel) {
+    const r = s.reel
+    r.info = reel
+    s.stats.detail = `${reel.width}x${reel.height}, ${mmss(reel.duration)}, ${reel.scenes.length} keyframes, ` +
+      `${Math.round(reel.bytes / 1024)} KB, ${reel.kept ? 'kept from before' : `read in ${reel.ms} ms`}`
+    borrowDecoder(s.card)
+    r.borrowed = true
+    r.holder = document.createElement('div')
+    r.holder.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:2'
+    const v = document.createElement('video')
+    v.muted = true
+    v.playsInline = true
+    v.preload = 'auto'
+    v.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:4px;background:#000'
+    r.video = v
+    r.holder.appendChild(v)
+    placeOverPicture(s.card, r.holder)
+    let i = 0
+    const show = () => { if (scrub === s) v.currentTime = i + 0.5 }   // inside sample i: that keyframe
+    v.addEventListener('seeked', () => {
+      if (scrub !== s) return
+      const scene = reel.scenes[i]
+      s.bar.style.width = `${scene.f * 100}%`
+      s.label.textContent = `${mmss(scene.t)} / ${mmss(reel.duration)}`
+      noteScene(s)
+      i = (i + 1) % reel.scenes.length
+      r.timer = setTimeout(show, s.dwell)
+    })
+    v.addEventListener('loadedmetadata', show, { once: true })
+    v.onerror = () => { if (scrub === s) reelFailed(s, new Error('the reel would not play')) }
+    v.src = reel.url
+  }
+
+  function endReel(s) {
+    const r = s.reel
+    if (!r) return
+    s.reel = null
+    clearTimeout(r.timer)
+    for (const req of r.reqs) { try { req.abort() } catch (e) { /* done already */ } }
+    if (r.video) { r.video.onerror = null; r.video.removeAttribute('src'); r.video.load() }   // the blob stays kept
+    if (r.holder) r.holder.remove()
+    if (r.borrowed) returnDecoder()
+  }
+
+  // Anything off (WebM behind an .mp4 name, an odd file, a host failing):
+  // the slideshow seeks the file as before.
+  function reelFailed(s, e) {
+    s.stats.reelError = e.message
+    endReel(s)
+    if (!scrubSource(s)) { endScrub(); return }
+    seekShow(s)
+  }
+
   function startScrub() {
-    const { card } = scrub
+    if (!scrubSource(scrub)) return false
+    scrubUi(scrub)
+    return true
+  }
+
+  // The video a scrub seeks: the card's cover when loaded, else the shared preview.
+  function scrubSource(s) {
+    const { card } = s
     const pic = cardPicture(card)
     if (!pic) return false
     freeForPreview(card)
     const cover = card.querySelector('video[data-ibh]')
     if (cover && cover.readyState >= 1) {
-      scrub.video = cover   // already loaded: instant, and no extra decoder
+      s.video = cover   // already loaded: instant, and no extra decoder
       // Download the whole file from now on: these are a few MB, and every
       // part already downloaded answers a seek at once.
       cover.preload = 'auto'
@@ -1518,26 +1920,32 @@
       const holder = document.createElement('div')
       holder.style.cssText = 'position:absolute;inset:0;pointer-events:none'
       placeOverPicture(card, holder)
-      scrub.holder = holder
-      scrub.video = previewLoad(holder, urls, hash)
-      scrub.shared = true
+      s.holder = holder
+      s.video = previewLoad(holder, urls, hash)
+      s.shared = true
     }
+    return true
+  }
+
+  // The progress bar and the time label over the card.
+  function scrubUi(s) {
+    if (s.bar) return
+    const { card } = s
     // z-index: the card's cover video comes later in the DOM and would paint
     // over them otherwise (it did on site pages, where every video has one).
-    scrub.bar = document.createElement('div')
-    scrub.bar.style.cssText =
+    s.bar = document.createElement('div')
+    s.bar.style.cssText =
       'position:absolute;left:0;bottom:0;height:4px;width:0;background:#5eead4;pointer-events:none;z-index:3'
-    scrub.label = document.createElement('div')
-    scrub.label.style.cssText =
+    s.label = document.createElement('div')
+    s.label.style.cssText =
       'position:absolute;left:4px;bottom:8px;padding:1px 6px;border-radius:3px;font:12px/1.4 ' +
       'ui-monospace,monospace;color:#fff;background:rgba(0,0,0,.6);pointer-events:none;z-index:3'
     // Painted by us: the site theme leaves them alone.
-    scrub.bar.dataset.ibhUi = scrub.label.dataset.ibhUi = '1'
+    s.bar.dataset.ibhUi = s.label.dataset.ibhUi = '1'
     if (getComputedStyle(card).position === 'static') card.style.position = 'relative'
-    card.appendChild(scrub.bar)
-    card.appendChild(scrub.label)
-    scrub.on = true
-    return true
+    card.appendChild(s.bar)
+    card.appendChild(s.label)
+    s.on = true
   }
 
   function moveScrub(x) {
@@ -1555,6 +1963,8 @@
     clearTimeout(s.holdTimer)
     if (!s.on) return
     if (s.tick) endSlideshow(s)
+    if (s.stats) logSlideStats(s)
+    endReel(s)
     s.bar.remove()
     s.label.remove()
     if (s.shared) { previewStop(); s.holder.remove(); returnDecoder() }
@@ -4936,6 +5346,8 @@
   async function freeMemory(reason = 'button') {
     // The button frees every tab of this site running the script, not only this one.
     if (reason === 'button' && tabChannel) tabChannel.postMessage({ type: 'free-memory' })
+    for (const r of reels.values()) URL.revokeObjectURL(r.url)   // kept keyframe reels
+    reels.clear()
     const n = { covers: 0, gifs: 0, images: 0, caches: 0 }
     // A preview in progress holds one or two videos; the shared one is dropped.
     if (scrub) endScrub()
@@ -5271,6 +5683,7 @@
       [5, 10, 20, 25].map(p => [p, `${num(p)}% · ${Math.round(100 / p)} ${t('scenes')}`])))
     body.appendChild(choiceSelect('slideDwell', t('tSlideDwell'),
       [0.1, 0.2, 0.3, 0.5, 1].map(sec => [sec, `${num(sec)} s`])))
+    body.appendChild(toggle('slideReel', t('tSlideReel')))
   }
 
   function languageSelect() {
