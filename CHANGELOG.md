@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.62.0
+
+- 🔖 button top right, beside ♥ and 🕒 (`favsButton`, on): opens your
+  favorites page. rule34, logged in
+
 ## 0.61.0
 
 - ↻ button beside the trash can (`redoButton`, on): frees memory first

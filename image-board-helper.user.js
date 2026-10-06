@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.61.0
+// @version      0.62.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.61.0'
+  const VERSION = '0.62.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -116,6 +116,7 @@
     urlCache:       true,   // remember which candidate URL worked for each file
     feedNav:        true,   // ⤒ ‹ › buttons: top of page, previous and next post in the feed (needs reload)
     holdRaw:        true,   // hold an image on site pages to load its original (raw) file in place
+    favsButton:     true,   // 🔖 button next to ♥ and 🕒 on rule34: your favorites page
     bulkFavButton:  true,   // ♥ button next to 🕒 on site pages: a mode where each tapped post is favorited and upvoted
     freeButton:     true,   // trash-can button next to them: Free memory & cache in one tap
     redoButton:     true,   // ↻ button beside it: free memory, then redo every thumbnail
@@ -202,6 +203,7 @@
       navPrev: 'Previous post', navNext: 'Next post', navTop: 'Top of the page', navBottom: 'Bottom of the page',
       navPrevPage: 'Previous page', navNextPage: 'Next page',
       tHoldRaw: 'Hold an image for its raw file', rawFailed: 'No original file found', rawAlready: 'This image already is the original (the post has no sample)',
+      tFavsBtn: 'Your-favorites shortcut button', navFavs: 'Your favorites',
       tBulkBtn: 'Mass-favorite button', navBulk: 'Mass favorite: each tapped post gets ♥ and ▲',
       bulkOn: 'Mass favorite on: tap posts to favorite and upvote them', bulkOff: 'Mass favorite off',
       tRedoBtn: 'Redo-thumbnails shortcut button', navRedo: 'Free memory, then redo thumbnails',
@@ -274,6 +276,7 @@
       navPrev: 'Post anterior', navNext: 'Próximo post', navTop: 'Topo da página', navBottom: 'Fim da página',
       navPrevPage: 'Página anterior', navNextPage: 'Próxima página',
       tHoldRaw: 'Segurar a imagem para carregar a original (raw)', rawFailed: 'Arquivo original não encontrado', rawAlready: 'Esta imagem já é o original (o post não tem sample)',
+      tFavsBtn: 'Botão de atalho para os seus favoritos', navFavs: 'Seus favoritos',
       tBulkBtn: 'Botão de favoritar em massa', navBulk: 'Favoritar em massa: cada post tocado ganha ♥ e ▲',
       bulkOn: 'Favoritar em massa ligado: toque nos posts para favoritar e votar', bulkOff: 'Favoritar em massa desligado',
       tRedoBtn: 'Botão de atalho para refazer as miniaturas', navRedo: 'Limpar a memória e refazer as miniaturas',
@@ -5401,6 +5404,7 @@
     .laterfab:active { background: #16211f; }
     .laterfab svg { width: 22px; height: 22px; fill: currentColor; }
     .laterfab.bulkfab { right: 64px; }
+    .laterfab.favsfab { right: 116px; }
     .feednav.pagenav { top: 72px; bottom: auto; right: auto; left: 12px; }
     .laterfab.on { background: #5eead4; color: #0f1417; border-color: #5eead4; }
     .pagetoast {
@@ -5408,7 +5412,7 @@
       padding: 8px 14px; border-radius: 18px; background: rgba(15, 20, 23, .92); color: #d7dee0;
       font-size: 13px; text-align: center; pointer-events: none; transition: opacity .2s;
     }
-    .panel:not([hidden]) ~ .laterfab, .panel:not([hidden]) ~ .bulkfab, .panel:not([hidden]) ~ .pagenav { display: none; }
+    .panel:not([hidden]) ~ .laterfab, .panel:not([hidden]) ~ .bulkfab, .panel:not([hidden]) ~ .favsfab, .panel:not([hidden]) ~ .pagenav { display: none; }
     .feednav button:disabled { opacity: .35; }
     .feednav.raised { bottom: 76px; }
 
@@ -5652,6 +5656,7 @@
     }
     body.appendChild(toggle('feedNav', t('tNav'), t('noteReload')))
     body.appendChild(toggle('bulkFavButton', t('tBulkBtn'), null, ensureFeedNav))
+    body.appendChild(toggle('favsButton', t('tFavsBtn'), null, ensureFeedNav))
     body.appendChild(toggle('holdRaw', t('tHoldRaw')))
     body.appendChild(toggle('freeButton', t('tFreeBtn'), null, ensureFeedNav))
     body.appendChild(toggle('redoButton', t('tRedoBtn'), null, ensureFeedNav))
@@ -5729,7 +5734,7 @@
   }
 
   function mountPanel() {
-    const nav = wantsFeedButtons() || CFG.freeButton || CFG.redoButton || CFG.laterButton || CFG.bulkFavButton
+    const nav = wantsFeedButtons() || CFG.freeButton || CFG.redoButton || CFG.laterButton || CFG.bulkFavButton || CFG.favsButton
     if (!CFG.panel && !nav) return
     if (panelHost && panelHost.isConnected) return
     if (!document.body) return
@@ -5777,6 +5782,18 @@
       nav.dataset.set = want
       shadow.appendChild(nav)
       dbg(`buttons added: ${feed ? 'feed ' : ''}${free ? 'free' : ''}`.trim())
+    }
+    // Your favorites: top right, beside ♥ and 🕒.
+    let favs = shadow.querySelector('.favsfab')
+    const wantFavs = !!CFG.favsButton && SITE === 'rule34.xxx' && !!userId() && !document.querySelector('.v-application')
+    if (favs && !wantFavs) { favs.remove(); favs = null }
+    if (!favs && wantFavs) {
+      favs = iconButton('laterfab favsfab', t('navFavs'), BOOKMARK_ICON)
+      favs.addEventListener('click', () => {
+        info('going to your favorites')
+        location.href = `index.php?page=favorites&s=view&id=${userId()}`
+      })
+      shadow.appendChild(favs)
     }
     // Mass favorite: next to Watch later, top right.
     let heart = shadow.querySelector('.bulkfab')
@@ -5867,6 +5884,9 @@
 
   // Material Design's "delete" icon (a trash can), as path data.
   const TRASH_ICON = 'M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z'
+
+  // Material Design's "bookmark" icon, as path data.
+  const BOOKMARK_ICON = 'M17 3H7c-1.1 0-2 .9-2 2v16l7-3 7 3V5c0-1.1-.9-2-2-2z'
 
   // Material Design's "refresh" icon, as path data.
   const REDO_ICON = 'M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z'
