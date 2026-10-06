@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.63.0
+
+- The search bar (tags, kind, order, minimum score, saved searches) also on
+  the site's home page, in place of its plain search box
+- The top-right buttons pack against the right edge, whichever show: on the
+  home page 🔖 alone floated over the logo
+
 ## 0.62.1
 
 - The top buttons (« » on the left, 🔖 ♥ 🕒 on the right) sit against the

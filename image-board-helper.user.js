@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.62.1
+// @version      0.63.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.62.1'
+  const VERSION = '0.63.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -3540,11 +3540,23 @@
   }
 
   // Idempotent: the observer calls it on every change of the page.
+  // The home page's own search form (Gelbooru 0.2: a form with a tags field).
+  const homeSearchForm = () => {
+    if (new URLSearchParams(location.search).get('page')) return null   // not the home page
+    const field = document.querySelector('form input[name="tags"]')
+    return field ? field.closest('form') : null
+  }
+
   function ensureSiteSearch() {
     const bar = document.getElementById('ibh-sitesearch')
-    const want = CFG.siteSearch && !onFavoritesPage() && !document.querySelector('.v-application') &&
-      new URLSearchParams(location.search).get('page') === 'post' && !!document.querySelector('.image-list')
-    if (!want) { if (bar) bar.remove(); return }
+    const home = homeSearchForm()
+    const listing = new URLSearchParams(location.search).get('page') === 'post' && !!document.querySelector('.image-list')
+    const want = CFG.siteSearch && !onFavoritesPage() && !document.querySelector('.v-application') && (listing || !!home)
+    if (!want) {
+      if (bar) bar.remove()
+      if (home) home.style.display = ''   // the site's own box comes back
+      return
+    }
     if (bar) return
     const now = readSiteQuery(new URLSearchParams(location.search).get('tags') || '')
     const input = el('input', { type: 'search', placeholder: t('sitePlaceholder'), enterkeyhint: 'search' })
@@ -3565,7 +3577,13 @@
       submit()
     })
     const box = el('div', { id: 'ibh-sitesearch', class: 'ibh-search' }, [input, kind, sort, min, go, saved.star, saved.pick, saved.recentPick])
-    document.querySelector('.image-list').before(box)
+    if (home) {
+      // In place of the home page's plain box, which hides.
+      home.before(box)
+      home.style.display = 'none'
+    } else {
+      document.querySelector('.image-list').before(box)
+    }
     recordSiteSearch(read()).then(saved.reload)
     input.addEventListener('input', saved.sync)
     min.addEventListener('input', saved.sync)
@@ -5796,6 +5814,11 @@
       })
       shadow.appendChild(favs)
     }
+    // Top right, packed from the edge in this order (🕒, ♥, 🔖), whichever show.
+    const packRight = () => {
+      ['.clockfab', '.bulkfab', '.favsfab'].map(sel => shadow.querySelector(sel)).filter(Boolean)
+        .forEach((btn, i) => { btn.style.right = `${12 + i * 52}px` })
+    }
     // Mass favorite: next to Watch later, top right.
     let heart = shadow.querySelector('.bulkfab')
     if (heart && !wantsBulkButton()) { heart.remove(); heart = null; if (bulkMode) setBulkMode(false) }
@@ -5813,6 +5836,7 @@
       clock.addEventListener('click', () => showLater())
       shadow.appendChild(clock)
     }
+    packRight()
     // Masonry's refresh button sits in the same corner; stay above it.
     if (nav) nav.classList.toggle('raised', !!document.querySelector('.v-application'))
     let pages = shadow.querySelector('.pagenav')
