@@ -6,7 +6,7 @@
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
 // @supportURL   https://github.com/JoaoRoch4/ImageBoardHelper/issues
-// @downloadURL  https://raw.githubusercontent.com/JoaoRoch4/ImageBoardHelper/main/image-board-helper.user.js
+// @downloadURL  https://raw.githubusercontent.com/JoaoRoch4/ImageBoardHelper/masonry-companion/image-board-helper.user.js
 // @license      MIT
 // @match        https://yande.re/*
 // @match        https://konachan.com/*
@@ -2567,7 +2567,7 @@
   // @grant this one cannot have. They talk through events on window, as JSON
   // strings. Without the bridge, the site's own localStorage holds them.
   const STORE_TIMEOUT_MS = 700
-  const BRIDGE_URL = 'https://raw.githubusercontent.com/JoaoRoch4/ImageBoardHelper/main/ibh-storage-bridge.user.js'
+  const BRIDGE_URL = 'https://raw.githubusercontent.com/JoaoRoch4/ImageBoardHelper/masonry-companion/ibh-storage-bridge.user.js'
   let storeBridge = null   // unknown until it answers, or stays silent once
   const storeWaiters = new Map()
   let storeSeq = 0

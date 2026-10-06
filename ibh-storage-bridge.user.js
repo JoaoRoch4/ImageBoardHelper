@@ -5,7 +5,7 @@
 // @description  Keeps Image Board Helper's lists (Watch later, the favorites index) and a copy of its settings in Violentmonkey's own storage, on the device, and saves files for its Download button
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
-// @downloadURL  https://raw.githubusercontent.com/JoaoRoch4/ImageBoardHelper/main/ibh-storage-bridge.user.js
+// @downloadURL  https://raw.githubusercontent.com/JoaoRoch4/ImageBoardHelper/masonry-companion/ibh-storage-bridge.user.js
 // @license      MIT
 // @match        https://rule34.xxx/*
 // @match        https://safebooru.org/*
