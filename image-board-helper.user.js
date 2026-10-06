@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.62.0
+// @version      0.62.1
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.62.0'
+  const VERSION = '0.62.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -5394,9 +5394,10 @@
     .feednav button.on { background: #5eead4; color: #0f1417; border-color: #5eead4; }
     .feednav button.trash { display: grid; place-items: center; padding: 0; }
     .feednav button.trash svg { width: 20px; height: 20px; fill: currentColor; }
-    /* Top right, below the site's own header icons (gear, menu). */
+    /* Top right, against the top edge (lower, they covered the site's
+       search field). */
     .laterfab {
-      position: fixed; top: 72px; right: 12px; z-index: 2147483000;
+      position: fixed; top: 6px; right: 12px; z-index: 2147483000;
       width: 44px; height: 44px; border-radius: 50%; padding: 0; display: grid; place-items: center;
       border: 1px solid #2a3a3f; background: rgba(15, 20, 23, .8); color: #5eead4;
       box-shadow: 0 4px 14px rgba(0,0,0,.5);
@@ -5405,7 +5406,7 @@
     .laterfab svg { width: 22px; height: 22px; fill: currentColor; }
     .laterfab.bulkfab { right: 64px; }
     .laterfab.favsfab { right: 116px; }
-    .feednav.pagenav { top: 72px; bottom: auto; right: auto; left: 12px; }
+    .feednav.pagenav { top: 6px; bottom: auto; right: auto; left: 12px; }
     .laterfab.on { background: #5eead4; color: #0f1417; border-color: #5eead4; }
     .pagetoast {
       position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); z-index: 2147483000; max-width: 86vw;

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.62.1
+
+- The top buttons (« » on the left, 🔖 ♥ 🕒 on the right) sit against the
+  top edge: lower down they covered the site's search field
+
 ## 0.62.0
 
 - 🔖 button top right, beside ♥ and 🕒 (`favsButton`, on): opens your
