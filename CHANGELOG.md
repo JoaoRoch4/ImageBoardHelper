@@ -19,7 +19,8 @@
 - Grants: `GM_getValue`, `GM_setValue`, `GM_xmlhttpRequest` (`@connect *`;
   files still come only from the site's own hosts) and `unsafeWindow`
   (`window.__ibh` stays on the page's window). Still `@inject-into page`
-- `__ibh.stored()` gives the size of each stored list and the move-in state
+- `__ibh.stored()` gives the size of each stored list and the move-in state;
+  `__ibh.moveAgain()` merges the bridge's lists in once more
 
 ## 0.64.0
 

@@ -5872,5 +5872,13 @@
     set: setCfg,
     // Size of each stored key (JSON characters) and the move-in state.
     stored: () => (GM_STORE ? Object.fromEntries([...STORE_KEYS.map(k => [k, JSON.stringify(GM_getValue(k, null)).length]), ['movedIn', GM_getValue('movedIn', 0)]]) : null),
+    // Merges the storage bridge's lists in once more (a tab on an old
+    // version wrote to it after the move): the bridge only, never site data.
+    moveAgain: () => {
+      if (!GM_STORE) return
+      GM_setValue('movedIn', 1)
+      movedIn = null
+      storeReady()
+    },
   }
 })()
