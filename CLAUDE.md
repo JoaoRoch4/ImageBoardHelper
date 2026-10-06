@@ -28,7 +28,7 @@ Cada uma tem um motivo concreto. Não mude sem entender o custo.
 
 **Armazenamento.** As listas (Ver depois, índice de favoritos, buscas salvas) ficam no armazenamento GM do script. As configurações ficam no `localStorage` (`IBH_CFG`), com cópia no GM e no IndexedDB do site, que voltam se outro script limpar o `localStorage` (o "Rule34 Favorites Search" fazia `localStorage.clear()`). Leia e grave sempre por `storeGet`/`storeSet`: os dois esperam `storeReady()`, a migração única da antiga ponte (`moveIn`), para nada gravado no carregamento (busca recente, índice de favoritos) passar por cima das listas trazidas dela. `STORE_KEYS` é a lista do que a ponte guardava; chave nova não entra lá, senão a migração espera por ela até o fim do prazo. Sem GM (outro gerenciador), tudo cai para o IndexedDB do site.
 
-**Sem build, sem dependências.** Arquivo único, ES2020, nenhum import. O Greasy Fork rejeita código ofuscado ou minificado, e o repositório existe para ser auditável.
+**Sem build, sem dependências.** Arquivo único, ES2020, nenhum import. O Greasy Fork rejeita código ofuscado ou minificado, e o repositório existe para ser auditável. O `package.json` só tem ferramentas de desenvolvimento (ESLint, TypeScript como verificador, Playwright); o script nunca importa nada delas.
 
 ---
 
@@ -122,24 +122,19 @@ Não sugira estas de novo sem um motivo novo.
 
 ## Testar
 
-Não existe harness de DOM local; o DOM real é inspecionado no aparelho via `tools/ffrdp.js` (abaixo). O que dá para verificar sem o celular:
+O que dá para verificar sem o celular:
 
 ```bash
-node --check image-board-helper.user.js
+npm install                      # uma vez: ESLint, TypeScript, Playwright
+npx playwright install firefox   # uma vez: o Firefox do Playwright (build arm64)
+npm run check                    # sintaxe, ESLint e tipos (tsc --checkJs, nada é gerado)
+npm run smoke                    # Firefox headless no safebooru, com o script injetado
 ```
 
-E a paridade das tabelas de idioma, que quebra em silêncio:
+- `npm run check` pega variável ou função que não existe mais, chave duplicada no `I18N`, as duas tabelas de idioma com chaves diferentes (`tools/check-i18n.js`, quebra em silêncio), código morto e erro de tipo. `types/userscript.d.ts` declara os `GM_*` e afrouxa o retorno do `querySelector` para `any`, em vez de casts pelo código; erro novo ali é sinal, não ruído.
+- `npm run smoke` (`tools/smoke.js`, ~1 min no aparelho) confere arranque, painel, barra de busca, feed, modal abrindo e fechando, autopager e ausência de erros. O rule34 responde CAPTCHA a navegador headless; o safebooru tem a mesma marcação. Outro site: `node tools/smoke.js '<URL da listagem>'`. É o mesmo motor do celular (Gecko), não o mesmo navegador: toque, decodificação de vídeo e o próprio Violentmonkey continuam sendo teste no aparelho.
 
-```bash
-node -e '
-const src=require("fs").readFileSync("image-board-helper.user.js","utf8");
-const I18N=new Function(src.match(/const I18N = \{[\s\S]*?\n  \}\n/)[0]+"return I18N")();
-const en=Object.keys(I18N.en), pt=Object.keys(I18N["pt-BR"]);
-console.log(en.filter(k=>!pt.includes(k)), pt.filter(k=>!en.includes(k)));
-'
-```
-
-Funções puras (`thumbParts`, `fileCandidates`, `orTags`) podem ser extraídas com regex e rodadas num `new Function` com stubs — veja o padrão usado no histórico do projeto. Vale a pena quando mexer na derivação de URL ou na montagem da busca.
+Funções puras (`thumbParts`, `fileCandidates`, `orTags`) também podem ser extraídas com regex e rodadas num `new Function` com stubs — veja o padrão usado no histórico do projeto. Vale a pena quando mexer na derivação de URL ou na montagem da busca.
 
 O resto é testado no aparelho, pelo painel: **Testar URLs** lista cada candidata com OK ou FALHA, e **Copiar log** monta um relatório com versão, `userAgent`, host resolvido e histórico. Com o painel desligado, o console tem `window.__ibh` (`version`, `cfg`, `state`, `log()`, `probe()`, `clearHostCache()`, `set(chave, valor)`, `stored()` — tamanho de cada lista guardada e o estado da migração; `moveAgain()` — junta de novo as listas da ponte, se uma aba antiga gravou nela depois da migração).
 
@@ -176,4 +171,5 @@ O servidor MCP `phone` (`tools/phone-mcp.js`, sem dependências, registrado no `
 ## Tarefas abertas
 
 - `HOSTS` só tem o rule34 mapeado. safebooru, xbooru e realbooru podem ter mirrors próprios; descobrir com **Testar URLs** e preencher.
-- Os outros sites do `@match` (safebooru, tbib, xbooru, realbooru) quase não foram testados no aparelho: conferir modal, feed, autopager e barra de busca neles. Favoritar em massa, 🔖 e a busca nos favoritos são só do rule34.
+- tbib e realbooru estão no `@match` mas não usam `.image-list`: o tbib põe os `span.thumb` em `#post-list .content > div`, o realbooru usa `div.items > div.col.thumb`. O script carrega e monta o painel, mas a barra de busca não aparece, e o feed e o autopager são escritos para `.image-list` (visto com `npm run smoke`; o modal não foi conferido lá). Generalizar o seletor da lista ou tirar os dois do `@match`.
+- safebooru e xbooru passam no `npm run smoke`; no aparelho (toque, vídeo, endpoints logados) só o rule34 foi testado de verdade. Favoritar em massa, 🔖 e a busca nos favoritos são só do rule34.

@@ -4238,7 +4238,6 @@
   function onFullscreenChange() {
     if (!modal || !modal.open) return
     const v = modal.video
-    const orientation = screen.orientation
     // Inside our Shadow DOM the document sees the host; the root sees which
     // element inside it is fullscreen.
     const inside = modal.root.fullscreenElement

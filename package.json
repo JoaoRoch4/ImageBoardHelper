@@ -1,0 +1,18 @@
+{
+  "name": "image-board-helper",
+  "private": true,
+  "description": "Development tools only: the userscript itself has no dependencies and no build",
+  "scripts": {
+    "check": "node --check image-board-helper.user.js && node tools/check-i18n.js && eslint && tsc -p .",
+    "lint": "eslint",
+    "typecheck": "tsc -p .",
+    "smoke": "node tools/smoke.js"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.12.0",
+    "globals": "^17.13.0",
+    "playwright": "^1.63.0",
+    "typescript": "^7.0.2"
+  }
+}
