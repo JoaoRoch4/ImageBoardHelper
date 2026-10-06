@@ -172,6 +172,7 @@ O servidor MCP `phone` (`tools/phone-mcp.js`, sem dependências, registrado no `
 
 ## Tarefas abertas
 
+- **Conferir o slideshow da 1.3.1 no log** (`script_log` com filtro `slideshow`): o clipe de 11 s em 1440×1708 deve virar fita de 2 quadros (antes não mostrava cena nenhuma), clipes curtos com poucos keyframes devem aparecer como `slideshow (play)`, e a primeira cena das fitas deve chegar antes dos 1,2 a 2,4 s medidos na 1.2.0.
 - `HOSTS` só tem o rule34 mapeado. safebooru e xbooru podem ter mirrors próprios; descobrir com **Testar URLs** e preencher.
 - **Voltar com tbib e realbooru** (tirados do `@match` na 1.0.1): as listagens deles não usam `.image-list` — o tbib põe os `span.thumb` em `#post-list .content > div`, o realbooru usa `div.items > div.col.thumb` —, então a barra de busca não aparecia e o feed e o autopager não agiam. Generalizar o seletor da lista por site e testar cada um com `node tools/smoke.js '<URL>'`.
 - safebooru e xbooru passam no `npm run smoke`; no aparelho (toque, vídeo, endpoints logados) só o rule34 foi testado de verdade. Favoritar em massa, 🔖 e a busca nos favoritos são só do rule34.
