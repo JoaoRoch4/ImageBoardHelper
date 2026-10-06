@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.4.1
+// @version      1.5.0
 // @description  For the phone, on Gelbooru 0.2 boards (rule34.xxx and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -66,7 +66,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.4.1'
+  const VERSION = '1.5.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -106,6 +106,7 @@
     videoModal:     true,   // open posts from site pages in an overlay: video, GIF, image (needs reload)
     rotateLandscape: true,  // in the modal player's fullscreen, lock wide videos to landscape
     modalPreload:   true,   // in the modal, have the next post loaded before the swipe
+    externalPlayers: true,  // ▶ mpv and ▶ VLC in a video post's ☰ menu: the video in that Android app
     modalOriginal:  'zoom', // images in the modal: 'zoom' shows the sample and fetches the original on zoom; 'always'
     siteTheme:      true,   // the modal's dark theme on the site's pages
     originalThumbs: false,  // the original where a thumbnail's box is wider than the sample (a desktop screen; needs reload)
@@ -179,6 +180,7 @@
       tFavsBtn: 'Your-favorites shortcut button', navFavs: 'Your favorites',
       tBulkBtn: 'Mass-favorite button', navBulk: 'Mass favorite: each tapped post gets ♥ and ▲',
       bulkOn: 'Mass favorite on: tap posts to favorite and upvote them', bulkOff: 'Mass favorite off',
+      tPlayers: 'mpv and VLC buttons in the post menu', bigVideo: 'Past this phone’s hardware decoder: ☰ → ▶ mpv',
       tRedoBtn: 'Redo-thumbnails shortcut button', navRedo: 'Free memory, then redo thumbnails', tDoubleTap: 'Double tap a thumbnail: favorite + upvote',
       tEyeBtn: '👁 button: hides the other buttons', eyeHide: 'Hide the buttons', eyeShow: 'Show the buttons',
       tFreeBtn: 'Free-memory shortcut button', navFree: 'Free memory & cache',
@@ -248,6 +250,7 @@
       tFavsBtn: 'Botão de atalho para os seus favoritos', navFavs: 'Seus favoritos',
       tBulkBtn: 'Botão de favoritar em massa', navBulk: 'Favoritar em massa: cada post tocado ganha ♥ e ▲',
       bulkOn: 'Favoritar em massa ligado: toque nos posts para favoritar e votar', bulkOff: 'Favoritar em massa desligado',
+      tPlayers: 'Botões do mpv e do VLC no menu do post', bigVideo: 'Grande demais para o decodificador do celular: ☰ → ▶ mpv',
       tRedoBtn: 'Botão de atalho para refazer as miniaturas', navRedo: 'Limpar a memória e refazer as miniaturas', tDoubleTap: 'Toque duplo na miniatura: favoritar + votar',
       tEyeBtn: 'Botão 👁: oculta os outros botões', eyeHide: 'Ocultar os botões', eyeShow: 'Mostrar os botões',
       tFreeBtn: 'Botão de atalho para limpar a memória', navFree: 'Limpar memória e cache',
@@ -2599,6 +2602,9 @@
     const tagList = el('div', { class: 'taglist' })
     const laterBtn = el('button', { class: 'pill', text: t('laterAdd') })
     const dlBtn = el('button', { class: 'pill', text: t('dlBtn') })
+    const mpvBtn = el('button', { class: 'pill', text: '▶ mpv' })
+    const vlcBtn = el('button', { class: 'pill', text: '▶ VLC' })
+    mpvBtn.hidden = vlcBtn.hidden = true   // videos only (showVideo)
     const tabTags = el('button', { class: 'tab on', text: t('tabTags') })
     const tabInfo = el('button', { class: 'tab', text: t('tabInfo') })
     const tabComments = el('button', { class: 'tab', text: t('tabComments') })
@@ -2606,7 +2612,7 @@
     infoList.hidden = true
     const commentList = el('div', { class: 'commentlist' })
     commentList.hidden = true
-    const sheet = el('div', { class: 'sheet' }, [el('div', { class: 'sheethead' }, [post, laterBtn, dlBtn, tagAll]),
+    const sheet = el('div', { class: 'sheet' }, [el('div', { class: 'sheethead' }, [post, laterBtn, dlBtn, mpvBtn, vlcBtn, tagAll]),
       el('div', { class: 'tabs' }, [tabTags, tabInfo, tabComments]), tagList, infoList, commentList])
     // Sample or raw, for an image that has a sample: tap to switch.
     const quality = el('button', { class: 'quality' })
@@ -2656,6 +2662,8 @@
     }, true)
     laterBtn.addEventListener('click', () => toggleLaterHere())
     dlBtn.addEventListener('click', () => modalDownload())
+    mpvBtn.addEventListener('click', () => openExternal('mpv'))
+    vlcBtn.addEventListener('click', () => openExternal('vlc'))
     laterClose.addEventListener('click', () => closeModal(false))
     quality.addEventListener('click', () => toggleQuality())
     fsBtn.addEventListener('click', () => toggleModalFullscreen())
@@ -2674,7 +2682,7 @@
     installImageHold(stage, image, box)
     installVideoGestures(layer, video)
     root.append(style, box)
-    modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, score, toast, badge, turn, fsBtn, menu, sheet, tagList, tagAll, laterBtn, dlBtn, quality, tabTags, tabInfo, tabComments, infoList, commentList, sheetTab: 'tags', laterView, laterHead, laterGrid, laterNote, listLinks: null, turned: null, open: false, link: null, seq: 0 }
+    modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, score, toast, badge, turn, fsBtn, menu, sheet, tagList, tagAll, laterBtn, dlBtn, mpvBtn, vlcBtn, quality, tabTags, tabInfo, tabComments, infoList, commentList, sheetTab: 'tags', laterView, laterHead, laterGrid, laterNote, listLinks: null, turned: null, open: false, link: null, seq: 0 }
   }
 
   let toastTimer = 0
@@ -2948,6 +2956,32 @@
       dlPercent.set(post, Math.round((loaded / total) * 100))
       refreshDlButton()
     })
+  }
+
+  // ▶ mpv / ▶ VLC: the video in an Android player app, from where the modal
+  // was. Those decode natively on every core, where a video past the hardware
+  // decoder still plays. An intent link opens the app, and cannot carry the
+  // site as Referer, which rule34's fast host (api-cdn) wants: mpv sends it
+  // from its mpv.conf (referrer=, see the README); VLC for Android has no such
+  // setting, so it gets the origin host, slower but open to anyone.
+  const PLAYERS = { mpv: 'is.xyz.mpv', vlc: 'org.videolan.vlc' }
+
+  function openExternal(name) {
+    const playing = modal.fileUrl || modal.video.currentSrc
+    if (!playing) { flash(t('dlWait')); return }
+    const url = name === 'vlc' ? playing.replace('://api-cdn.rule34.xxx/', '://api-cdn-mp4.rule34.xxx/') : playing
+    const u = new URL(url)
+    const pkg = PLAYERS[name]
+    const ms = Math.round((modal.video.currentTime || 0) * 1000)
+    modal.video.pause()
+    const extras = [
+      `S.title=${encodeURIComponent(`${SITE.split('.')[0]} ${postId(modal.link)}`)}`,
+      name === 'mpv' ? `i.position=${ms}` : `l.position=${ms}`,   // mpv reads an int, VLC a long
+      `S.browser_fallback_url=${encodeURIComponent(`https://play.google.com/store/apps/details?id=${pkg}`)}`,
+    ]
+    const intent = `intent://${u.host}${u.pathname}${u.search}#Intent;scheme=${u.protocol.slice(0, -1)};type=video/*;package=${pkg};${extras.join(';')};end`
+    info(`external player: post ${postId(modal.link)} sent to ${name} at ${mmss(ms / 1000)}`)
+    el('a', { href: intent }).click()
   }
 
   // A copy of the settings in Violentmonkey and in the site's IndexedDB:
@@ -4832,6 +4866,7 @@
     v.onerror = v.oncanplay = v.onloadedmetadata = null
     v.playbackRate = 1
     modal.badge.hidden = true
+    modal.mpvBtn.hidden = modal.vlcBtn.hidden = true
     if (!modal.root.fullscreenElement) setCleanUi(false)
     v.removeAttribute('src')
     v.load()   // hand the decoder back
@@ -4971,6 +5006,11 @@
     v.onloadedmetadata = () => {
       cacheSet('video', hash, urls[i - 1], vcached)
       if (modal.seq === seq) modal.fileUrl = urls[i - 1]
+      if (modal.seq === seq && CFG.externalPlayers) {
+        modal.mpvBtn.hidden = modal.vlcBtn.hidden = false
+        // The phone would decode it on the CPU, slowly: say where it plays well.
+        if (pastDecoder(v.videoWidth, v.videoHeight)) flash(t('bigVideo'))
+      }
       if (modal.seq === seq && !modal.sheet.hidden && modal.sheetTab === 'info') renderInfo(modal.link, seq)
       fitFullscreenOrientation()   // swiped onto a wide video while fullscreen
       if (onFound) onFound()
@@ -6007,6 +6047,7 @@
     body.appendChild(toggle('siteTheme', t('tTheme'), null, applySiteTheme))
     body.appendChild(toggle('rotateLandscape', t('tRotate')))
     body.appendChild(toggle('modalPreload', t('tPreload')))
+    body.appendChild(toggle('externalPlayers', t('tPlayers')))
     body.appendChild(choiceSelect('modalOriginal', t('tModalOrig'), [['zoom', t('origZoom')], ['always', t('origAlways')]]))
     body.appendChild(toggle('videoCovers', t('tCovers')))
     body.appendChild(toggle('gifInline', t('tGif')))

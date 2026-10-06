@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.5.0
+
+- ▶ mpv and ▶ VLC in a video post's ☰ menu (`externalPlayers`, on): the video
+  opens in that Android app from where the modal was, through an intent
+  link. Native decoding on every core plays videos past the phone's hardware
+  decoder, and the modal points there when one opens. mpv needs
+  `referrer=https://rule34.xxx/` in its mpv.conf for rule34's fast host; VLC
+  for Android has no referrer setting and gets the slower origin host
+
 ## 1.4.1
 
 - The keyframe reel takes any video with three or more keyframes, even with
