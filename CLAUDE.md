@@ -169,6 +169,8 @@ node tools/ffrdp.js eval rule34 'window.__ibh.log()'   # aba por índice ou trec
 - `FFRDP_DEBUG=1` imprime cada pacote no stderr.
 - `eval` só lê expressões síncronas; uma `Promise` volta como `{}`.
 
+O servidor MCP `phone` (`tools/phone-mcp.js`, sem dependências, registrado no `.mcp.json`) junta tudo isso em ferramentas, e cada uma reconecta sozinha quando a depuração cai: `status`, `connect`, `tabs` (versão e visibilidade de cada aba), `eval` (com `await`), `script_log`, `reload_tabs` (só as escondidas, por padrão), `screenshot`, `latest_screenshot`, `open_url` e `deploy` (cópia em Downloads, link do commit, Violentmonkey acompanhado, abas conferidas; `dry_run` não toca no celular; `confirm` clica na confirmação de permissões novas). Numa aba escondida os timers param: `eval` com `await` que dependa de `setTimeout` não termina, `fetch` termina.
+
 ---
 
 ## Tarefas abertas
