@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.60.0
+// @version      0.60.1
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.60.0'
+  const VERSION = '0.60.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -2280,7 +2280,9 @@
     .infolist[hidden], .commentlist[hidden] { display: none; }
     .commentlist { display: flex; flex-direction: column; gap: 12px; font-size: 13px; color: #d7dee0; }
     .commentlist .h { color: #7f9aa0; font-size: 12px; margin-bottom: 3px; }
-    .commentlist .h b { color: #5eead4; font-weight: 600; }
+    .commentlist .h b, .commentlist .h a.who { color: #5eead4; font-weight: 600; text-decoration: none; }
+    .commentlist button.cvote { width: auto; height: 24px; padding: 0 9px; border-radius: 12px; font-size: 12px;
+      display: inline-flex; vertical-align: middle; margin-left: 4px; }
     .commentlist .b { white-space: pre-wrap; word-break: break-word; line-height: 1.4; }
     .commentlist .none { color: #7f9aa0; }
     .infolist .k { color: #7f9aa0; white-space: nowrap; }
@@ -2443,7 +2445,7 @@
   function loadMarks() {
     if (!marks) {
       const m = readJSON(MARKS_KEY, {})
-      marks = { f: new Set(m.f || []), v: new Set(m.v || []) }
+      marks = { f: new Set(m.f || []), v: new Set(m.v || []), c: new Set(m.c || []) }   // c: upvoted comments
     }
     return marks
   }
@@ -2454,7 +2456,7 @@
     if (on) set.add(id)
     else set.delete(id)
     while (set.size > MARKS_MAX) set.delete(set.values().next().value)
-    writeJSON(MARKS_KEY, { f: [...marks.f], v: [...marks.v] })
+    writeJSON(MARKS_KEY, { f: [...marks.f], v: [...marks.v], c: [...marks.c] })
   }
 
   const hasMark = (kind, id) => loadMarks()[kind].has(id)
@@ -2492,8 +2494,11 @@
       const body = d.querySelector('.col2')
       if (body) body.querySelectorAll('br').forEach(br => br.replaceWith('\n'))
       const headText = head ? head.textContent.replace(/\s+/g, ' ') : ''
+      const author = head && head.querySelector('a[href*="page=account"]')
       return {
-        user: (head && head.querySelector('a') ? head.querySelector('a').textContent : '').trim(),
+        id: d.id.slice(1),   // c22197352 -> 22197352, for the vote
+        user: (author ? author.textContent : '').trim(),
+        profile: author ? new URL(author.getAttribute('href'), base).href : null,
         date: (headText.match(/Posted on (\S+ \S+)/) || [])[1] || '',
         score: Number((head && head.querySelector('[id^="sc"]') || {}).textContent) || 0,
         text: body ? body.textContent.replace(/\n{3,}/g, '\n\n').trim() : '',
@@ -3736,15 +3741,48 @@
     dbg(`modal: ${page.total} comments for post ${postId(link)}`)
   }
 
+  // The site's own call (its vote() in application.js): the answer is the
+  // comment's new score. The site shows no trace of a past vote, so the
+  // comments voted here are remembered on the device, like post votes.
+  async function voteComment(c, btn) {
+    if (btn.disabled) return
+    btn.disabled = true
+    try {
+      const url = `/index.php?page=comment&id=${encodeURIComponent(postId(modal.link))}&s=vote&cid=${encodeURIComponent(c.id)}&vote=up`
+      const res = await fetch(url, { credentials: 'same-origin' })
+      const score = parseInt(await res.text(), 10)
+      if (!res.ok || !Number.isFinite(score)) throw new Error(`HTTP ${res.status}`)
+      c.score = score
+      btn.textContent = `▲ ${score}`
+      btn.classList.add('on')
+      setMark('c', c.id, true)
+      info(`modal: comment ${c.id} upvoted -> ${score}`)
+    } catch (e) {
+      flash(t('voteFail'))
+      warn(`modal: comment vote failed — ${describeError(e)}`)
+    } finally {
+      btn.disabled = false
+    }
+  }
+
   // Adds a page of comments, and a button for the next one while there is.
   function appendComments(page, seq) {
     const cookie = readCookie('comment_threshold')
     const threshold = cookie === null ? NaN : Number(cookie)
     const shown = Number.isFinite(threshold) ? page.list.filter(c => c.score >= threshold) : page.list
-    modal.commentList.append(...shown.map(c => el('div', { class: 'cm' }, [
-      el('div', { class: 'h' }, [el('b', { text: c.user || '?' }), ` · ${c.date} · ▲ ${c.score}`]),
-      el('div', { class: 'b', text: c.text }),
-    ])))
+    modal.commentList.append(...shown.map(c => {
+      // The author opens their profile in a new tab; ▲ votes the comment up.
+      const who = c.profile
+        ? el('a', { class: 'who', href: c.profile, target: '_blank', rel: 'noopener', text: c.user || '?' })
+        : el('b', { text: c.user || '?' })
+      const up = el('button', { class: 'cvote', text: `▲ ${c.score}` })
+      up.classList.toggle('on', hasMark('c', c.id))
+      up.addEventListener('click', () => voteComment(c, up))
+      return el('div', { class: 'cm' }, [
+        el('div', { class: 'h' }, [who, ` · ${c.date} `, up]),
+        el('div', { class: 'b', text: c.text }),
+      ])
+    }))
     if (shown.length < page.list.length) {
       modal.commentList.append(el('div', { class: 'none', text: `${page.list.length - shown.length} ${t('commentsHidden')}` }))
     }

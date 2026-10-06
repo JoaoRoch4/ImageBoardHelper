@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.60.1
+
+- Comments: ▲ upvotes a comment (the site's own call; the answer is the new
+  score, and votes are remembered on the device, lit on the next visit), and
+  the author's name opens their profile in a new tab
+
 ## 0.60.0
 
 - Comments tab in the modal's ☰ menu, next to Tags and Info: the post's
