@@ -42,7 +42,7 @@ A single tap keeps Masonry's original behaviour.
 3. Open the raw link so Violentmonkey offers to install:
 
 ```
-https://raw.githubusercontent.com/JoaoRoch4/ImageBoardHelper/main/image-board-helper.user.js
+https://raw.githubusercontent.com/JoaoRoch4/ImageBoardHelper/masonry-companion/image-board-helper.user.js
 ```
 
 4. Reload the page once. Masonry reads its settings at boot.
@@ -115,7 +115,7 @@ All of them live in the panel and are stored in `localStorage` under `IBH_CFG`.
 
 ### Storage bridge (optional)
 
-`ibh-storage-bridge.user.js` is a second, small userscript that keeps the Watch later list in Violentmonkey's own storage, on the device, so it survives clearing the site's data, and saves files for the modal's ⬇ Download button (`GM_xmlhttpRequest`, only from the site's own hosts; a page script cannot save files from the image hosts, which send no CORS headers; without the bridge the file opens in a new tab). It exists because the main script must keep `@grant none` (it patches the page's own objects) and GM storage needs a `@grant`; the two talk through events on `window`. Install it from <https://raw.githubusercontent.com/JoaoRoch4/ImageBoardHelper/main/ibh-storage-bridge.user.js>. Without it, the list, the favorites index and a copy of the settings stay in the site's IndexedDB (which a script clearing `localStorage` leaves alone); the first time the bridge answers, the lists move into it.
+`ibh-storage-bridge.user.js` is a second, small userscript that keeps the Watch later list in Violentmonkey's own storage, on the device, so it survives clearing the site's data, and saves files for the modal's ⬇ Download button (`GM_xmlhttpRequest`, only from the site's own hosts; a page script cannot save files from the image hosts, which send no CORS headers; without the bridge the file opens in a new tab). It exists because the main script must keep `@grant none` (it patches the page's own objects) and GM storage needs a `@grant`; the two talk through events on `window`. Install it from <https://raw.githubusercontent.com/JoaoRoch4/ImageBoardHelper/masonry-companion/ibh-storage-bridge.user.js>. Without it, the list, the favorites index and a copy of the settings stay in the site's IndexedDB (which a script clearing `localStorage` leaves alone); the first time the bridge answers, the lists move into it.
 
 ### About `forceRule34Api`
 

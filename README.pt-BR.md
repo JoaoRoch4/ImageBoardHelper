@@ -42,7 +42,7 @@ Toque simples continua com o comportamento original do Masonry.
 3. Abra o link bruto deste script para o Violentmonkey oferecer a instalação:
 
 ```
-https://raw.githubusercontent.com/JoaoRoch4/ImageBoardHelper/main/image-board-helper.user.js
+https://raw.githubusercontent.com/JoaoRoch4/ImageBoardHelper/masonry-companion/image-board-helper.user.js
 ```
 
 4. Recarregue a página uma vez. O Masonry lê as configurações no arranque.
@@ -115,7 +115,7 @@ Todas ficam no painel e são gravadas em `localStorage` sob a chave `IBH_CFG`.
 
 ### Ponte de armazenamento (opcional)
 
-`ibh-storage-bridge.user.js` é um segundo userscript, pequeno, que guarda a lista Ver depois no armazenamento do próprio Violentmonkey, no aparelho, e por isso sobrevive a limpar os dados do site, e salva os arquivos do botão ⬇ Baixar do modal (`GM_xmlhttpRequest`, só dos servidores do próprio site; um script de página não consegue salvar arquivos dos servidores de imagem, que não mandam CORS; sem a ponte, o arquivo abre em outra aba). Ele existe porque o script principal precisa continuar com `@grant none` (mexe nos objetos da própria página) e o armazenamento GM exige `@grant`; os dois conversam por eventos na `window`. Instale por <https://raw.githubusercontent.com/JoaoRoch4/ImageBoardHelper/main/ibh-storage-bridge.user.js>. Sem ele, a lista, o índice de favoritos e uma cópia das configurações ficam no IndexedDB do site (que um script que limpa o `localStorage` não apaga); na primeira vez que a ponte responde, as listas passam para ela.
+`ibh-storage-bridge.user.js` é um segundo userscript, pequeno, que guarda a lista Ver depois no armazenamento do próprio Violentmonkey, no aparelho, e por isso sobrevive a limpar os dados do site, e salva os arquivos do botão ⬇ Baixar do modal (`GM_xmlhttpRequest`, só dos servidores do próprio site; um script de página não consegue salvar arquivos dos servidores de imagem, que não mandam CORS; sem a ponte, o arquivo abre em outra aba). Ele existe porque o script principal precisa continuar com `@grant none` (mexe nos objetos da própria página) e o armazenamento GM exige `@grant`; os dois conversam por eventos na `window`. Instale por <https://raw.githubusercontent.com/JoaoRoch4/ImageBoardHelper/masonry-companion/ibh-storage-bridge.user.js>. Sem ele, a lista, o índice de favoritos e uma cópia das configurações ficam no IndexedDB do site (que um script que limpa o `localStorage` não apaga); na primeira vez que a ponte responde, as listas passam para ela.
 
 ### Sobre `forceRule34Api`
 
