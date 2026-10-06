@@ -170,7 +170,7 @@ O servidor MCP `phone` (`tools/phone-mcp.js`, sem dependências, registrado no `
 
 ## Tarefas abertas
 
-- **Conferir a 1.0.0 no aparelho:** baixar um vídeo pelo ⬇ (arquivo do api-cdn: primeiro uso real do `GM_xmlhttpRequest` dentro do script), abrir e fechar um post, tocar na lixeira; ler o resultado com `script_log`. Depois, desinstalar a ponte no Violentmonkey (a migração já foi conferida: Ver depois e índice de favoritos idênticos aos dela).
+- **Log do ↻:** o botão de refazer chama `freeMemory(true)` (só esta aba) e a linha sai como "(asked by another tab)". Separar o motivo (botão, outra aba, refazer) no parâmetro e no log. Vai na próxima versão.
 - **Primeiro `deploy` de verdade pelo MCP `phone`:** até agora só rodou em `dry_run`.
 - `HOSTS` só tem o rule34 mapeado. safebooru, xbooru e realbooru podem ter mirrors próprios; descobrir com **Testar URLs** e preencher.
 - tbib e realbooru estão no `@match` mas não usam `.image-list`: o tbib põe os `span.thumb` em `#post-list .content > div`, o realbooru usa `div.items > div.col.thumb`. O script carrega e monta o painel, mas a barra de busca não aparece, e o feed e o autopager são escritos para `.image-list` (visto com `npm run smoke`; o modal não foi conferido lá). Hoje o `@description`, os READMEs e o CHANGELOG os dão como suportados. Decidir: tirar os dois do `@match` e da documentação (uma 1.0.1 rápida) ou generalizar o seletor da lista por site (trabalho maior; testar cada um com `node tools/smoke.js '<URL>'`).
