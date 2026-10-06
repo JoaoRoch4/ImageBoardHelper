@@ -1,5 +1,13 @@
 # Changelog
 
+## 0.59.0
+
+- A SAMPLE / RAW button in the modal, bottom left, for images that have a
+  sample: it shows which is on screen, a tap on SAMPLE loads the original
+  without zooming (RAW… while it loads), a tap on RAW goes back to the
+  sample, and after that the zoom no longer swaps it on its own. Hidden for
+  videos, GIFs and posts without a sample
+
 ## 0.58.3
 
 - Holding an image that already shows its original (a post without a

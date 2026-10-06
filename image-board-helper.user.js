@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.58.3
+// @version      0.59.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.58.3'
+  const VERSION = '0.59.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -234,6 +234,7 @@
       tPreload: 'Next post loaded in the player',
       tModalOrig: 'original image in the player', origZoom: 'When zooming in (sample first, faster)', origAlways: 'Always (slower)',
       origLoading: 'Loading the original…', infoSample: 'sample',
+      qualSampleTip: 'Showing the sample: tap for the original (raw)', qualRawTip: 'Showing the original (raw): tap for the sample',
       favAdded: 'Added to favorites', favAlready: 'Already in your favorites', favRemoved: 'Removed from favorites',
       favLogin: 'You are not logged in', favFail: 'Could not favorite', mTurnNo: 'This browser cannot turn the screen',
       voted: 'Upvoted', voteFail: 'Could not vote',
@@ -304,6 +305,7 @@
       tPreload: 'Próximo post carregado no player',
       tModalOrig: 'imagem original no player', origZoom: 'Ao dar zoom (sample antes, mais rápido)', origAlways: 'Sempre (mais lento)',
       origLoading: 'Carregando o original…', infoSample: 'sample',
+      qualSampleTip: 'Mostrando o sample: toque para o original (raw)', qualRawTip: 'Mostrando o original (raw): toque para o sample',
       favAdded: 'Adicionado aos favoritos', favAlready: 'Já está nos favoritos', favRemoved: 'Removido dos favoritos',
       favLogin: 'Você não está logado', favFail: 'Não foi possível favoritar', mTurnNo: 'Este navegador não gira a tela',
       voted: 'Voto registrado', voteFail: 'Não foi possível votar',
@@ -2267,6 +2269,10 @@
     button.tag.held { background: #1d3b38; border-color: #5eead4; }
     button.tag { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
     .sheet .none { color: #4e6469; font-size: 13px; }
+    button.quality { position: absolute; left: 12px; bottom: 16px; width: auto; height: 32px; padding: 0 12px;
+      border-radius: 16px; font-size: 12px; font-weight: 700; letter-spacing: .5px; }
+    button.quality.raw { background: #2f7d72; color: #fff; border-color: #2f7d72; }
+    .m.clean button.quality { opacity: 0; pointer-events: none; }
     .tabs { display: flex; gap: 6px; margin-bottom: 10px; }
     button.tab { width: auto; height: 32px; border-radius: 16px; padding: 0 16px; font-size: 13px; }
     button.tab.on { background: #5eead4; color: #0f1417; border-color: #5eead4; }
@@ -2340,6 +2346,9 @@
     infoList.hidden = true
     const sheet = el('div', { class: 'sheet' }, [el('div', { class: 'sheethead' }, [post, laterBtn, dlBtn, tagAll]),
       el('div', { class: 'tabs' }, [tabTags, tabInfo]), tagList, infoList])
+    // Sample or raw, for an image that has a sample: tap to switch.
+    const quality = el('button', { class: 'quality' })
+    quality.hidden = true
     const laterClose = el('button', { text: '✕', title: t('mClose') })
     const laterHead = el('div', { class: 'laterhead' }, [el('span', { class: 'lt' }), laterClose])
     const laterGrid = el('div', { class: 'latergrid' })
@@ -2359,7 +2368,7 @@
     badge.hidden = true
     const prev = el('button', { class: 'side prev', text: '‹', title: t('mPrev') })
     const next = el('button', { class: 'side next', text: '›', title: t('mNext') })
-    const box = el('div', { class: 'm' }, [stage, status, el('div', { class: 'bar' }, [close, menu, full, turn, fav, up, count]), prev, next, sheet, laterView, toast, badge])
+    const box = el('div', { class: 'm' }, [stage, status, el('div', { class: 'bar' }, [close, menu, full, turn, fav, up, count]), prev, next, quality, sheet, laterView, toast, badge])
     close.addEventListener('click', () => closeModal(false))
     full.addEventListener('click', () => toggleModalFullscreen())
     menu.addEventListener('click', () => toggleMenu())
@@ -2385,6 +2394,7 @@
     laterBtn.addEventListener('click', () => toggleLaterHere())
     dlBtn.addEventListener('click', () => modalDownload())
     laterClose.addEventListener('click', () => closeModal(false))
+    quality.addEventListener('click', () => toggleQuality())
     fsBtn.addEventListener('click', () => toggleModalFullscreen())
     turn.addEventListener('click', () => turnScreen())
     fav.addEventListener('click', modalFavorite)
@@ -2400,7 +2410,7 @@
     installImageZoom(stage, image)
     installVideoGestures(layer, video)
     root.append(style, box)
-    modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, score, toast, badge, turn, fsBtn, menu, sheet, tagList, tagAll, laterBtn, dlBtn, tabTags, tabInfo, infoList, sheetTab: 'tags', laterView, laterHead, laterGrid, laterNote, listLinks: null, turned: null, open: false, link: null, seq: 0 }
+    modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, score, toast, badge, turn, fsBtn, menu, sheet, tagList, tagAll, laterBtn, dlBtn, quality, tabTags, tabInfo, infoList, sheetTab: 'tags', laterView, laterHead, laterGrid, laterNote, listLinks: null, turned: null, open: false, link: null, seq: 0 }
   }
 
   let toastTimer = 0
@@ -3964,7 +3974,7 @@
   function applyZoom() {
     const img = modal.image
     img.style.transform = zoom.scale === 1 ? '' : `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.scale})`
-    if (zoom.scale > 1 && modal.isSample) loadModalOriginal()
+    if (zoom.scale > 1 && modal.isSample && !modal.keepSample) loadModalOriginal()
     // Zoomed, every drag pans the image; at 1x a tall image scrolls natively.
     if (!img.hidden) modal.stage.style.touchAction = zoom.scale > 1 || !modal.stage.classList.contains('tall') ? 'none' : 'pan-y'
   }
@@ -4229,6 +4239,10 @@
     if (modal.cancelLoad) { modal.cancelLoad(); modal.cancelLoad = null }   // probes of the post left behind
     modal.isSample = false
     modal.origPending = false
+    modal.sampleUrl = null    // the sample on show, to come back to from raw
+    modal.rawUrl = null       // the original once fetched, to switch back instantly
+    modal.keepSample = false  // chose the sample: zooming does not fetch the original
+    setQuality(null)
     const v = modal.video
     v.pause()
     v.onerror = v.oncanplay = v.onloadedmetadata = null
@@ -4460,6 +4474,7 @@
       if (modal.seq !== seq) return   // the user moved on
       modal.fileUrl = probe.src
       modal.isSample = isSampleUrl(probe.src)   // the original comes on zoom (modalOriginal)
+      if (modal.isSample) { modal.sampleUrl = probe.src; setQuality('sample') }
       if (!modal.sheet.hidden && modal.sheetTab === 'info') setTimeout(() => renderInfo(modal.link, seq), 50)   // once swapped in
       const decoded = typeof probe.decode === 'function' ? probe.decode().catch(() => {}) : Promise.resolve()
       decoded.then(() => {
@@ -4473,8 +4488,41 @@
 
   // Zoomed into a sample: fetch the original and swap it in, the zoom kept
   // (same picture, same box, more pixels).
+  // The quality button: null hides it; 'sample', 'loading' or 'raw'.
+  function setQuality(state) {
+    const btn = modal && modal.quality
+    if (!btn) return
+    btn.hidden = !state
+    btn.textContent = state === 'raw' ? 'RAW' : state === 'loading' ? 'RAW…' : 'SAMPLE'
+    btn.classList.toggle('raw', state === 'raw')
+    btn.title = t(state === 'raw' ? 'qualRawTip' : 'qualSampleTip')
+  }
+
+  function toggleQuality() {
+    if (modal.isSample) {
+      modal.keepSample = false
+      loadModalOriginal()
+      return
+    }
+    if (!modal.sampleUrl) return
+    // Back to the sample, and the zoom no longer swaps it on its own.
+    modal.keepSample = true
+    modal.image.src = modal.sampleUrl
+    modal.fileUrl = modal.sampleUrl
+    modal.isSample = true
+    setQuality('sample')
+    dbg('modal: back to the sample')
+  }
+
   function loadModalOriginal() {
     if (!modal.isSample || modal.origPending) return
+    if (modal.rawUrl) {   // fetched before on this post: swap at once
+      modal.image.src = modal.rawUrl
+      modal.fileUrl = modal.rawUrl
+      modal.isSample = false
+      setQuality('raw')
+      return
+    }
     const link = modal.link
     const pic = link && cardPicture(link)
     const parts = pic && thumbParts(pic.src)
@@ -4484,6 +4532,7 @@
     const cached = knownOriginal(parts.hash)
     if (cached === null) return
     flash(t('origLoading'))
+    setQuality('loading')
     raceImage([fileCandidates(pic.src, ORIGINAL_EXTS)], cached, probe => {
       cacheSet('orig', parts.hash, probe.src, cached)
       if (modal.seq !== seq) return
@@ -4492,10 +4541,13 @@
         if (modal.seq !== seq) return
         modal.image.src = probe.src
         modal.fileUrl = probe.src
+        modal.rawUrl = probe.src
         modal.isSample = false
-        info(`modal: original loaded on zoom (${probe.src.split('/').pop()})`)
+        modal.origPending = false
+        setQuality('raw')
+        info(`modal: original loaded (${probe.src.split('/').pop()})`)
       })
-    }, () => cacheSet('orig', parts.hash, null), 'high')
+    }, () => { cacheSet('orig', parts.hash, null); modal.origPending = false; if (modal.seq === seq) setQuality('sample') }, 'high')
   }
 
   // Whether a tap falls on the picture itself, not on the bars object-fit
