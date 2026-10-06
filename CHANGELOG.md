@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.4.1
+
+- The keyframe reel takes any video with three or more keyframes, even with
+  fewer than the scenes asked: 40 s and 33 s clips with 8 keyframes for 20
+  scenes went to seeking, about a second a scene with half of them late,
+  while a reel shows each of its scenes at once. Clips with one or two still
+  play at 2×
+
 ## 1.4.0
 
 - The keyframe reel decodes its frames in WebAssembly (`wasmDecode`, on):

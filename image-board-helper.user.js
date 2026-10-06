@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.4.0
+// @version      1.4.1
 // @description  For the phone, on Gelbooru 0.2 boards (rule34.xxx and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -66,7 +66,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.4.0'
+  const VERSION = '1.4.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -1784,10 +1784,13 @@
       const k = track.keyAtOrBefore(track.sampleAt(Math.floor(f * track.duration)))
       if (!keys.includes(k)) keys.push(k)
     }
-    // Short clips can have one keyframe in the whole file: the reel would
-    // repeat it, and the clip plays instead (playShow). Past the hardware
-    // decoder a few keyframes still beat decoding up to every scene on the CPU.
-    const need = Math.min(steps.length, Math.max(3, Math.ceil(steps.length / 2)))
+    // Short clips can have one or two keyframes in the whole file: the reel
+    // would repeat them, and the clip plays instead (playShow). Three or more
+    // make a reel, even with fewer scenes than asked: each one shows at once,
+    // while seeking took over a second a scene (8 keyframes for 20 scenes
+    // went to seeking, half the scenes late). Past the hardware decoder any
+    // keyframes beat decoding up to every scene on the CPU.
+    const need = Math.min(steps.length, 3)
     if (keys.length < need && !pastDecoder(track.width, track.height)) {
       throw Object.assign(new Error(`only ${keys.length} keyframes for ${steps.length} scenes`), { sparse: true, duration: track.duration / track.timescale })
     }
