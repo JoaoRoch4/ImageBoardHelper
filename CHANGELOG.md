@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.56.0
+
+- Images open much faster in the modal. Measured on rule34: the modal fetched
+  the original (a PNG post: 39 MB against a 117 KB sample, over a minute on
+  the phone) and tried extensions one by one, each miss costing ~0.5 s
+  (.jpeg came after two). Now:
+  - the sample shows first and the original loads when you zoom in, the zoom
+    kept (`modalOriginal`: on zoom, or always); Download still saves the
+    original (from the cache or the post page's Original image link)
+  - candidate URLs load at once and the first to arrive wins, so wrong
+    extensions cost nothing; a big original never loads beside its sample
+  - what the page already found for a post (its sample, or its original
+    when there is no sample) is used directly
+  - the Info tab marks a sample on screen
+
 ## 0.55.0
 
 - The autopager covers search listings too, not only favorites: the next

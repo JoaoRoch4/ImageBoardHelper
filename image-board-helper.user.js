@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.55.0
+// @version      0.56.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.55.0'
+  const VERSION = '0.56.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -124,6 +124,7 @@
     videoModal:     true,   // open posts from site pages in an overlay: video, GIF, image (needs reload)
     rotateLandscape: true,  // in the modal player's fullscreen, lock wide videos to landscape
     modalPreload:   true,   // in the modal, have the next post loaded before the swipe
+    modalOriginal:  'zoom', // images in the modal: 'zoom' shows the sample and fetches the original on zoom; 'always'
     siteTheme:      true,   // the modal's dark theme on the site's own pages (not Masonry)
     fixFancybox:    true,   // fill empty src in the alternate viewer
     gestures:       true,   // swipe, double tap and pinch
@@ -229,6 +230,8 @@
       mPlay: 'Play / pause', mMute: 'Sound on / off',
       tRotate: 'Landscape in player fullscreen',
       tPreload: 'Next post loaded in the player',
+      tModalOrig: 'original image in the player', origZoom: 'When zooming in (sample first, faster)', origAlways: 'Always (slower)',
+      origLoading: 'Loading the original…', infoSample: 'sample',
       favAdded: 'Added to favorites', favAlready: 'Already in your favorites', favRemoved: 'Removed from favorites',
       favLogin: 'You are not logged in', favFail: 'Could not favorite', mTurnNo: 'This browser cannot turn the screen',
       voted: 'Upvoted', voteFail: 'Could not vote',
@@ -296,6 +299,8 @@
       mPlay: 'Tocar / pausar', mMute: 'Som liga / desliga',
       tRotate: 'Paisagem na tela cheia do player',
       tPreload: 'Próximo post carregado no player',
+      tModalOrig: 'imagem original no player', origZoom: 'Ao dar zoom (sample antes, mais rápido)', origAlways: 'Sempre (mais lento)',
+      origLoading: 'Carregando o original…', infoSample: 'sample',
       favAdded: 'Adicionado aos favoritos', favAlready: 'Já está nos favoritos', favRemoved: 'Removido dos favoritos',
       favLogin: 'Você não está logado', favFail: 'Não foi possível favoritar', mTurnNo: 'Este navegador não gira a tela',
       voted: 'Voto registrado', voteFail: 'Não foi possível votar',
@@ -2419,7 +2424,9 @@
       const link = li.querySelector('a[href^="http"]')
       return { text, href: link ? link.getAttribute('href') : null }
     }).filter(st => st.text)
-    return { fav: heart ? heart[1] === 'heart-added' : null, tags, stats }
+    // The sidebar's "Original image" link: the exact file, no guessing.
+    const orig = [...doc.querySelectorAll('a[href*="/images/"]')].find(a => /original/i.test(a.textContent))
+    return { fav: heart ? heart[1] === 'heart-added' : null, tags, stats, original: orig ? orig.getAttribute('href').replace(/([^:])\/\/+/g, '$1/') : null }
   }
 
   const favLookups = new Map()   // id -> Promise<true | false | null>
@@ -2536,8 +2543,17 @@
   })
 
   async function modalDownload() {
-    const url = modal.fileUrl
+    let url = modal.fileUrl
     if (!url) { flash(t('dlWait')); return }
+    // The sample is on screen: save the original. Known from the cache or
+    // the post page's Original image link; the sample only as a last resort.
+    if (modal.isSample) {
+      const pic = cardPicture(modal.link)
+      const hash = pic && (thumbParts(pic.src) || {}).hash
+      const known = hash && knownOriginal(hash)
+      const info = typeof known === 'string' ? null : await postInfo(postId(modal.link))
+      url = (typeof known === 'string' && known) || (info && info.original) || url
+    }
     const post = postId(modal.link)
     if (downloading.has(post)) { flash(t('dlBusy')); return }
     const ext = (url.split(/[?#]/)[0].match(/\.(\w+)$/) || [])[1] || 'bin'
@@ -3484,7 +3500,7 @@
     rows.push([t('infoRes'), w && h ? `${w} × ${h}` : t('infoLoading')])
     // A typical mid-range hardware decoder stops at 1920×1088 (this phone's does).
     if (video && w && h && (Math.max(w, h) > 1920 || Math.min(w, h) > 1088)) rows.push(['', t('infoAbove'), true])
-    rows.push([t('infoFormat'), url ? ((url.split(/[?#]/)[0].match(/\.(\w+)$/) || [])[1] || '?').toUpperCase() : t('infoLoading')])
+    rows.push([t('infoFormat'), url ? `${((url.split(/[?#]/)[0].match(/\.(\w+)$/) || [])[1] || '?').toUpperCase()}${modal.isSample ? ` (${t('infoSample')})` : ''}` : t('infoLoading')])
     if (video) rows.push([t('infoDuration'), Number.isFinite(v.duration) ? mmss(v.duration) : t('infoLoading')])
     if (video && typeof v.getVideoPlaybackQuality === 'function') {
       const q = v.getVideoPlaybackQuality()
@@ -3754,6 +3770,7 @@
   function applyZoom() {
     const img = modal.image
     img.style.transform = zoom.scale === 1 ? '' : `translate(${zoom.x}px, ${zoom.y}px) scale(${zoom.scale})`
+    if (zoom.scale > 1 && modal.isSample) loadModalOriginal()
     // Zoomed, every drag pans the image; at 1x a tall image scrolls natively.
     if (!img.hidden) modal.stage.style.touchAction = zoom.scale > 1 || !modal.stage.classList.contains('tall') ? 'none' : 'pan-y'
   }
@@ -4015,6 +4032,9 @@
   function resetMedia() {
     modal.seq++
     modal.fileUrl = null   // the post's own file, once it loaded (Download)
+    if (modal.cancelLoad) { modal.cancelLoad(); modal.cancelLoad = null }   // probes of the post left behind
+    modal.isSample = false
+    modal.origPending = false
     const v = modal.video
     v.pause()
     v.onerror = v.oncanplay = v.onloadedmetadata = null
@@ -4181,9 +4201,53 @@
   }
 
   // Show what the page already has at once, then the better file when it loads.
+  // Loads candidate URLs at once and keeps the first that loads, dropping the
+  // rest: a wrong extension (404) then costs nothing, where trying them in
+  // turn cost ~0.5 s each (measured on rule34: .jpeg came after two misses).
+  // Stages run in order (samples, then originals), so a big original is not
+  // fetched beside a sample that exists. A known winner goes alone first.
+  // Returns a cancel function.
+  function raceImage(stages, cached, onWin, onFail) {
+    let done = false
+    const probes = []
+    const drop = keep => probes.forEach(pr => { if (pr !== keep) { pr.onload = pr.onerror = null; pr.removeAttribute('src') } })
+    const win = pr => { if (done) return; done = true; drop(pr); onWin(pr) }
+    const probe = (url, onError) => {
+      const pr = new Image()
+      pr.decoding = 'async'
+      probes.push(pr)
+      pr.onload = () => win(pr)
+      pr.onerror = onError
+      pr.src = url
+    }
+    const runStage = i => {
+      if (done) return
+      const list = (stages[i] || []).filter(url => url !== cached)
+      if (i >= stages.length) { done = true; onFail(); return }
+      if (!list.length) { runStage(i + 1); return }
+      let failed = 0
+      list.forEach(url => probe(url, () => { if (++failed === list.length) runStage(i + 1) }))
+    }
+    if (typeof cached === 'string') probe(cached, () => runStage(0))
+    else runStage(0)
+    return () => { done = true; drop(null) }
+  }
+
+  // What the page already found for a post: its 'sample' winner is the
+  // original itself when the post has no sample (an /images/ URL).
+  function knownOriginal(hash) {
+    const orig = cacheGet('orig', hash)
+    if (orig !== undefined) return orig
+    const page = cacheGet('sample', hash)
+    return typeof page === 'string' && page.includes('/images/') ? page : undefined
+  }
+
+  const isSampleUrl = url => /\/samples\//.test(url || '')
+
+  // candidates: a list of URLs, or stages of them (see raceImage).
   function showImage(placeholder, candidates, kind, hash) {
-    const icached = cacheGet(kind, hash)
-    const urls = cachedFirst(candidates, icached)
+    const stages = Array.isArray(candidates[0]) ? candidates : [candidates]
+    const icached = kind === 'orig' ? knownOriginal(hash) : cacheGet(kind, hash)
     const seq = modal.seq
     modal.video.hidden = true
     modal.vwrap.hidden = true
@@ -4193,17 +4257,12 @@
     img.onload = fitImage
     img.src = placeholder
     modal.status.hidden = true
-    const probe = new Image()
-    probe.decoding = 'async'
-    let i = 0
-    probe.onerror = () => {
-      if (i < urls.length) probe.src = urls[i++]
-      else cacheSet(kind, hash, null)
-    }
-    probe.onload = () => {
+    if (icached === null) return   // known: nothing better than the placeholder
+    modal.cancelLoad = raceImage(stages, icached, probe => {
       cacheSet(kind, hash, probe.src, icached)
       if (modal.seq !== seq) return   // the user moved on
       modal.fileUrl = probe.src
+      modal.isSample = isSampleUrl(probe.src)   // the original comes on zoom (modalOriginal)
       if (!modal.sheet.hidden && modal.sheetTab === 'info') setTimeout(() => renderInfo(modal.link, seq), 50)   // once swapped in
       const decoded = typeof probe.decode === 'function' ? probe.decode().catch(() => {}) : Promise.resolve()
       decoded.then(() => {
@@ -4212,8 +4271,34 @@
         if (kind === 'gif') watchModalGif(img, probe.src, seq)
         preloadAhead(seq)
       })
-    }
-    if (urls.length) probe.src = urls[i++]
+    }, () => cacheSet(kind, hash, null))
+  }
+
+  // Zoomed into a sample: fetch the original and swap it in, the zoom kept
+  // (same picture, same box, more pixels).
+  function loadModalOriginal() {
+    if (!modal.isSample || modal.origPending) return
+    const link = modal.link
+    const pic = link && cardPicture(link)
+    const parts = pic && thumbParts(pic.src)
+    if (!parts) return
+    modal.origPending = true
+    const seq = modal.seq
+    const cached = knownOriginal(parts.hash)
+    if (cached === null) return
+    flash(t('origLoading'))
+    raceImage([fileCandidates(pic.src, ORIGINAL_EXTS)], cached, probe => {
+      cacheSet('orig', parts.hash, probe.src, cached)
+      if (modal.seq !== seq) return
+      const decoded = typeof probe.decode === 'function' ? probe.decode().catch(() => {}) : Promise.resolve()
+      decoded.then(() => {
+        if (modal.seq !== seq) return
+        modal.image.src = probe.src
+        modal.fileUrl = probe.src
+        modal.isSample = false
+        info(`modal: original loaded on zoom (${probe.src.split('/').pop()})`)
+      })
+    }, () => cacheSet('orig', parts.hash, null))
   }
 
   // Whether a tap falls on the picture itself, not on the bars object-fit
@@ -4382,7 +4467,10 @@
     } else if (kind === 'gif') {
       showImage(placeholder, fileCandidates(pic.src, ['gif']), 'gif', hash)
     } else {
-      showImage(placeholder, fileCandidates(pic.src, ORIGINAL_EXTS), 'orig', hash)
+      // The sample first (a few hundred KB, sharp at screen size), or the
+      // original straight away; a post without a sample gets its original.
+      if (CFG.modalOriginal === 'always') showImage(placeholder, fileCandidates(pic.src, ORIGINAL_EXTS), 'orig', hash)
+      else showImage(placeholder, [sampleCandidates(pic.src), fileCandidates(pic.src, ORIGINAL_EXTS)], 'sample', hash)
       sniffVideo(pic.src, link)
     }
     refreshLaterButton(link, seq)
@@ -4525,30 +4613,27 @@
   }
 
   function aheadImage(a, src, hash, kind) {
-    const cached = cacheGet(kind, hash)
+    const sampleFirst = kind === 'orig' && CFG.modalOriginal !== 'always'
+    if (sampleFirst) kind = 'sample'
+    const cached = kind === 'orig' ? knownOriginal(hash) : cacheGet(kind, hash)
     if (cached === null) return   // known: nothing loads
-    const urls = cachedFirst(fileCandidates(src, kind === 'gif' ? ['gif'] : ORIGINAL_EXTS), cached)
-    if (!urls.length) return
+    const stages = kind === 'gif' ? [fileCandidates(src, ['gif'])]
+      : sampleFirst ? [sampleCandidates(src), fileCandidates(src, ORIGINAL_EXTS)] : [fileCandidates(src, ORIGINAL_EXTS)]
     // Same three download slots as the page (B).
     takeImageSlot(() => {
       if (ahead !== a) { giveImageSlot(); return }   // the modal moved on while it waited
       let held = true
       a.release = () => { if (held) { held = false; giveImageSlot() } }
-      const img = a.img = new Image()
-      img.decoding = 'async'
-      let i = 0
-      img.onerror = () => {
-        if (i < urls.length) { img.src = urls[i++]; return }
+      a.cancel = raceImage(stages, cached, img => {
         a.release()
-        cacheSet(kind, hash, null)
-      }
-      img.onload = () => {
-        a.release()
+        a.img = img
         cacheSet(kind, hash, img.src, cached)
         const decoded = typeof img.decode === 'function' ? img.decode().catch(() => {}) : Promise.resolve()
         decoded.then(() => { if (ahead === a) a.decoded = true })
-      }
-      img.src = urls[i++]
+      }, () => {
+        a.release()
+        cacheSet(kind, hash, null)
+      })
     })
   }
 
@@ -4581,6 +4666,7 @@
     if (!ahead) return
     const a = ahead
     ahead = null
+    if (a.cancel) a.cancel()
     if (a.img) { a.img.onload = a.img.onerror = null; a.img.removeAttribute('src') }
     if (a.video) { a.video.onerror = a.video.onloadedmetadata = null; a.video.removeAttribute('src'); a.video.load() }
     if (a.release) a.release()
@@ -5159,6 +5245,7 @@
     body.appendChild(toggle('siteTheme', t('tTheme'), null, applySiteTheme))
     body.appendChild(toggle('rotateLandscape', t('tRotate')))
     body.appendChild(toggle('modalPreload', t('tPreload')))
+    body.appendChild(choiceSelect('modalOriginal', t('tModalOrig'), [['zoom', t('origZoom')], ['always', t('origAlways')]]))
     body.appendChild(toggle('videoCovers', t('tCovers')))
     body.appendChild(toggle('gifInline', t('tGif')))
     body.appendChild(choiceSelect('gifMaxLive', t('tGifMax'), [1, 2, 3, 4, 6, 10].map(n => [n, String(n)]), applyGifLimit))
