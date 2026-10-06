@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.3.1
+
+- Hold slideshow: a short clip (up to 30 s) with too few keyframes for a
+  reel now plays, muted, at 2× and looping, instead of seeking (an 11 s
+  1440×1708 clip showed no scene in 5 s); past the hardware decoder, a reel
+  is made even from a few keyframes
+- The reel's first read takes 256 KB, so most indexes come in one request,
+  and only the missing part of a bigger one is read after it
+- The slideshow log line names the post
+
 ## 1.3.0
 
 - Double tap a thumbnail on rule34 (logged in) to favorite and upvote the

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.3.0
+// @version      1.3.1
 // @description  For the phone, on Gelbooru 0.2 boards (rule34.xxx and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -62,7 +62,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.3.0'
+  const VERSION = '1.3.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -577,6 +577,10 @@
 
   window.addEventListener('pagehide', flushUrlCache)
 
+  // Past a mid-range hardware decoder (this phone's stops at 1920×1088, in
+  // either orientation): such a video decodes on the CPU, slowly.
+  const pastDecoder = (w, h) => Math.max(w, h) > 1920 || Math.min(w, h) > 1088
+
   // ═══════════════════════════════════════════════════════════
   // A. Real video covers
   // ═══════════════════════════════════════════════════════════
@@ -719,7 +723,7 @@
       // decoding a frame falls to the CPU, for a still the poster already
       // gives. Drop the cover and leave the picture (the feed upgrades it to
       // the full-size poster frame).
-      if (Math.max(v.videoWidth, v.videoHeight) > 1920 || Math.min(v.videoWidth, v.videoHeight) > 1088) {
+      if (pastDecoder(v.videoWidth, v.videoHeight)) {
         card.dataset.ibhBigVideo = `${v.videoWidth}x${v.videoHeight}`
         dbg(`cover: ${v.videoWidth}x${v.videoHeight} is past the hardware decoder, poster kept instead`)
         v.removeAttribute('src')
@@ -1372,7 +1376,8 @@
     scrub.stats = { t0: performance.now(), method: null, first: null, last: 0, shown: 0, gaps: [] }
     if (CFG.slideReel && startReelShow(scrub)) return
     if (!startScrub()) { scrub = null; return }
-    seekShow(scrub)
+    if (CFG.slideReel) chooseShow(scrub)   // WebM: no reel, but a short clip plays
+    else seekShow(scrub)
   }
 
   // The slideshow by seeking the file itself, two videos taking turns.
@@ -1484,10 +1489,11 @@
     const avg = st.gaps.length ? Math.round(st.gaps.reduce((a, b) => a + b, 0) / st.gaps.length) : 0
     const late = st.gaps.filter(g => g > dwell + 300).length
     const shown = st.first === null ? `no scene in ${Math.round(performance.now() - st.t0)} ms`
-      : `${st.shown} scenes, first after ${Math.round(st.first)} ms${avg ? `, then every ${avg} ms` : ''} (dwell ${dwell}), ${late} late`
+      : st.method === 'play' ? `playing after ${Math.round(st.first)} ms at ${PLAY_RATE}×`
+        : `${st.shown} scenes, first after ${Math.round(st.first)} ms${avg ? `, then every ${avg} ms` : ''} (dwell ${dwell}), ${late} late`
     const v = s.video
     const what = st.detail || (v ? `${v.videoWidth}x${v.videoHeight}, ${mmss(v.duration)}, ${s.shared ? 'own video' : 'its cover'}` : '')
-    info(`slideshow (${st.method}): ${shown}${what ? `; ${what}` : ''}${st.reelError ? `; reel failed: ${st.reelError}` : ''}`)
+    info(`slideshow (${st.method}) post ${postId(s.card)}: ${shown}${what ? `; ${what}` : ''}${st.reelError ? `; no reel: ${st.reelError}` : ''}`)
   }
 
   function tickSlide(s) {
@@ -1543,7 +1549,7 @@
   // Range reads (the hosts send no CORS headers). WebCodecs would decode the
   // keyframes directly, but on Firefox for Android it has no decoders (tried:
   // every codec unsupported). MP4 only: WebM, or anything unexpected, seeks.
-  const REEL_HEAD = 64 * 1024     // first read: ftyp, and the moov in files made for streaming
+  const REEL_HEAD = 256 * 1024    // first read: ftyp and, in most files made for streaming, the whole moov
   const REEL_MAX_MOOV = 8e6       // a bigger index is not worth reading for a preview
   const REEL_MAX_BYTES = 12e6     // keyframes past this are thinned out (4K frames run to MBs)
   const REEL_KEEP = 4             // reels kept for another hold on the same video
@@ -1756,8 +1762,15 @@
     }
     if (!moov) throw new Error('no moov box')
     if (moov.size > REEL_MAX_MOOV) throw new Error(`index of ${Math.round(moov.size / 1e6)} MB`)
-    const mb = moov.at + moov.size <= head.buf.length ? head.buf.subarray(moov.at, moov.at + moov.size)
-      : (await rangeRead(url, moov.at, moov.at + moov.size - 1, reqs)).buf
+    // Whatever part of the moov the head missed: only the rest is read.
+    let mb
+    if (moov.at + moov.size <= head.buf.length) mb = head.buf.subarray(moov.at, moov.at + moov.size)
+    else if (moov.at < head.buf.length) {
+      const rest = (await rangeRead(url, head.buf.length, moov.at + moov.size - 1, reqs)).buf
+      mb = new Uint8Array(moov.size)
+      mb.set(head.buf.subarray(moov.at))
+      mb.set(rest, head.buf.length - moov.at)
+    } else mb = (await rangeRead(url, moov.at, moov.at + moov.size - 1, reqs)).buf
     const track = mp4VideoTrack(mb, { body: new DataView(mb.buffer, mb.byteOffset).getUint32(0) === 1 ? 16 : 8, end: mb.length })
     if (!track) throw new Error('no video track')
     let keys = []
@@ -1766,9 +1779,12 @@
       if (!keys.includes(k)) keys.push(k)
     }
     // Short clips can have one keyframe in the whole file: the reel would
-    // repeat it, while seeking decodes up to each scene.
+    // repeat it, and the clip plays instead (playShow). Past the hardware
+    // decoder a few keyframes still beat decoding up to every scene on the CPU.
     const need = Math.min(steps.length, Math.max(3, Math.ceil(steps.length / 2)))
-    if (keys.length < need) throw new Error(`only ${keys.length} keyframes for ${steps.length} scenes`)
+    if (keys.length < need && !pastDecoder(track.width, track.height)) {
+      throw Object.assign(new Error(`only ${keys.length} keyframes for ${steps.length} scenes`), { sparse: true, duration: track.duration / track.timescale })
+    }
     let places = keys.map(k => track.place(k))
     if (places.some(pl => !pl)) throw new Error('a keyframe outside the chunk table')
     // Heavy frames (4K): every other one until they fit.
@@ -1887,12 +1903,59 @@
   }
 
   // Anything off (WebM behind an .mp4 name, an odd file, a host failing):
-  // the slideshow seeks the file as before.
+  // the slideshow seeks the file as before, or plays it when it is a short clip.
   function reelFailed(s, e) {
     s.stats.reelError = e.message
     endReel(s)
     if (!scrubSource(s)) { endScrub(); return }
-    seekShow(s)
+    if (e.sparse && e.duration <= PLAY_MAX_S) playShow(s)
+    else chooseShow(s)
+  }
+
+  // Short clips: few keyframes make poor scenes, and an exact seek decodes
+  // everything up to it (an 11 s 1440x1708 clip showed nothing in 5 s).
+  // Played muted and faster, the clip shows all of it in sequence, the way
+  // a decoder works best. Past the hardware decoder, seeking stays.
+  const PLAY_MAX_S = 30
+  const PLAY_RATE = 2
+
+  function chooseShow(s) {
+    const v = s.video
+    const decide = () => {
+      if (scrub !== s) return
+      if (v.duration <= PLAY_MAX_S && !pastDecoder(v.videoWidth, v.videoHeight)) playShow(s)
+      else seekShow(s)
+    }
+    if (v.readyState >= 1) decide()
+    else v.addEventListener('loadedmetadata', decide, { once: true })
+  }
+
+  function playShow(s) {
+    s.stats.method = 'play'
+    const v = s.video
+    s.played = { rate: v.playbackRate, loop: v.loop }
+    v.loop = true
+    v.playbackRate = PLAY_RATE
+    s.onPlayTime = () => {
+      if (scrub !== s || !v.duration) return
+      s.bar.style.width = `${(v.currentTime / v.duration) * 100}%`
+      s.label.textContent = `${mmss(v.currentTime)} / ${mmss(v.duration)} · ${PLAY_RATE}×`
+    }
+    v.addEventListener('timeupdate', s.onPlayTime)
+    v.addEventListener('playing', () => { if (scrub === s) noteScene(s) }, { once: true })
+    const go = () => { if (scrub === s) v.play().catch(e => dbg(`slideshow: play refused — ${describeError(e)}`)) }
+    if (v.readyState >= 2) go()
+    else v.addEventListener('canplay', go, { once: true })
+  }
+
+  // The cover keeps the frame where the finger lifted, as after a scrub.
+  function endPlayShow(s) {
+    const v = s.video
+    v.removeEventListener('timeupdate', s.onPlayTime)
+    s.onPlayTime = null
+    v.pause()
+    v.playbackRate = s.played.rate
+    v.loop = s.played.loop
   }
 
   function startScrub() {
@@ -1964,6 +2027,7 @@
     clearTimeout(s.holdTimer)
     if (!s.on) return
     if (s.tick) endSlideshow(s)
+    if (s.onPlayTime) endPlayShow(s)
     if (s.stats) logSlideStats(s)
     endReel(s)
     s.bar.remove()
@@ -4030,7 +4094,7 @@
     const h = video ? v.videoHeight : (url ? img.naturalHeight : 0)
     rows.push([t('infoRes'), w && h ? `${w} × ${h}` : t('infoLoading')])
     // A typical mid-range hardware decoder stops at 1920×1088 (this phone's does).
-    if (video && w && h && (Math.max(w, h) > 1920 || Math.min(w, h) > 1088)) rows.push(['', t('infoAbove'), true])
+    if (video && w && h && pastDecoder(w, h)) rows.push(['', t('infoAbove'), true])
     rows.push([t('infoFormat'), url ? `${((url.split(/[?#]/)[0].match(/\.(\w+)$/) || [])[1] || '?').toUpperCase()}${modal.isSample ? ` (${t('infoSample')})` : ''}` : t('infoLoading')])
     if (video) rows.push([t('infoDuration'), Number.isFinite(v.duration) ? mmss(v.duration) : t('infoLoading')])
     if (video && typeof v.getVideoPlaybackQuality === 'function') {
