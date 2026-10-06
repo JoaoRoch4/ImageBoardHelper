@@ -45,8 +45,11 @@ function withTimeout(promise, ms, what) {
 
 // ─── the phone: Shizuku (rish) first, the adb connection as a fallback ───
 
+// The last line rish prints (warnings may come before it).
+const rishLast = cmd => run(RISH, ['-c', cmd]).trim().split('\n').pop().trim()
+
 function shizukuUp() {
-  try { return run(RISH, ['-c', 'echo ok']).trim() === 'ok' } catch (e) { return false }
+  try { return rishLast('echo ok') === 'ok' } catch (e) { return false }
 }
 
 function adbSerial() {
@@ -66,10 +69,16 @@ function phoneShell(cmd) {
   return run('adb', ['-s', serial, 'shell', cmd]).trim()
 }
 
-// '1' on, '0' off, null when it cannot be read (Shizuku down). Read only:
-// turning it on with `settings put` restarts adbd and kills Shizuku.
+// true on, false off, null when it cannot be read (Shizuku down or
+// answering something else: then adb gets its try). Read only: turning it
+// on with `settings put` restarts adbd and kills Shizuku.
 function wirelessDebugging() {
-  try { return run(RISH, ['-c', 'settings get global adb_wifi_enabled']).trim() === '1' } catch (e) { return null }
+  try {
+    const v = rishLast('settings get global adb_wifi_enabled')
+    return v === '1' ? true : v === '0' ? false : null
+  } catch (e) {
+    return null
+  }
 }
 
 // ─── Firefox: the debugger forward, set up again when it is gone ───
@@ -276,12 +285,12 @@ async function deploy({ confirm = false, dry_run = false, wait_s = 60, match = '
   const repo = git('remote', 'get-url', 'origin').match(/github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?$/)
   if (!repo) throw new Error('origin is not a GitHub repository')
   const url = `https://raw.githubusercontent.com/${repo[1]}/${repo[2]}/${sha}/${SCRIPT}`
-  fs.writeFileSync(`/sdcard/Download/${SCRIPT}`, code)
-  steps.push(`copied v${version} (${sha.slice(0, 7)}) to /sdcard/Download/${SCRIPT}`)
   const served = (await httpsGet(url)).match(/@version\s+(\S+)/)
   if (!served || served[1] !== version) throw new Error(`the raw link serves ${served ? served[1] : 'no version'}, expected ${version}`)
-  steps.push(`raw link serves v${version}`)
-  if (dry_run) return steps.concat(`dry run: would open ${url}`).join('\n')
+  steps.push(`raw link serves v${version} (${sha.slice(0, 7)})`)
+  if (dry_run) return steps.concat(`dry run: would copy it to /sdcard/Download/${SCRIPT} and open ${url}`).join('\n')
+  fs.writeFileSync(`/sdcard/Download/${SCRIPT}`, code)
+  steps.push(`copied v${version} to /sdcard/Download/${SCRIPT}`)
 
   steps.push(await connectPhone(false))
   openUrl({ url })
