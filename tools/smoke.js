@@ -6,9 +6,9 @@
 // in memory) and checks that it boots, mounts the panel and the search bar,
 // lays out the feed, hides the buttons with 👁, opens and closes the modal
 // and runs the autopager, with no page errors. rule34 answers a headless
-// browser with a CAPTCHA; safebooru has the same Gelbooru 0.2 markup. Same engine as the phone
-// (Gecko), not the same browser: touch, video decoding and Violentmonkey
-// itself still need the device.
+// browser with a CAPTCHA; safebooru has the same Gelbooru 0.2 markup. Same
+// engine as the phone (Gecko), not the same browser: touch, video decoding
+// and Violentmonkey itself still need the device.
 //
 //   npm run smoke                 (or: node tools/smoke.js [listing URL])
 //
