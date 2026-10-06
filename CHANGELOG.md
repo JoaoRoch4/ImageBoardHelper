@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.61.0
+
+- ↻ button beside the trash can (`redoButton`, on): frees memory first
+  (everything this tab holds, the URL cache too), then redoes every
+  thumbnail, failures included; lit while it works. This tab only
+
 ## 0.60.2
 
 - The « » page buttons moved to the top-left corner, across from 🕒 and ♥

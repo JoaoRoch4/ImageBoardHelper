@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.60.2
+// @version      0.61.0
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.60.2'
+  const VERSION = '0.61.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -118,6 +118,7 @@
     holdRaw:        true,   // hold an image on site pages to load its original (raw) file in place
     bulkFavButton:  true,   // ♥ button next to 🕒 on site pages: a mode where each tapped post is favorited and upvoted
     freeButton:     true,   // trash-can button next to them: Free memory & cache in one tap
+    redoButton:     true,   // ↻ button beside it: free memory, then redo every thumbnail
     laterButton:    true,   // 🕒 button next to them on site pages: the Watch later list
     favSearch:      true,   // search bar on your own rule34 favorites page, results in the page's own list
     favAutopager:   true,   // search listings and favorites load the next page as you near the bottom
@@ -203,6 +204,7 @@
       tHoldRaw: 'Hold an image for its raw file', rawFailed: 'No original file found', rawAlready: 'This image already is the original (the post has no sample)',
       tBulkBtn: 'Mass-favorite button', navBulk: 'Mass favorite: each tapped post gets ♥ and ▲',
       bulkOn: 'Mass favorite on: tap posts to favorite and upvote them', bulkOff: 'Mass favorite off',
+      tRedoBtn: 'Redo-thumbnails shortcut button', navRedo: 'Free memory, then redo thumbnails',
       tFreeBtn: 'Free-memory shortcut button', navFree: 'Free memory & cache',
       tFavSearch: 'Search your favorites', tSiteSearch: 'Search bar on site pages',
       savedPick: 'Favorite searches…', recentPick: 'Recent searches…', saveSearch: '☆ Favorite', savedSearch: '★ Favorite', savedAll: '(everything)',
@@ -274,6 +276,7 @@
       tHoldRaw: 'Segurar a imagem para carregar a original (raw)', rawFailed: 'Arquivo original não encontrado', rawAlready: 'Esta imagem já é o original (o post não tem sample)',
       tBulkBtn: 'Botão de favoritar em massa', navBulk: 'Favoritar em massa: cada post tocado ganha ♥ e ▲',
       bulkOn: 'Favoritar em massa ligado: toque nos posts para favoritar e votar', bulkOff: 'Favoritar em massa desligado',
+      tRedoBtn: 'Botão de atalho para refazer as miniaturas', navRedo: 'Limpar a memória e refazer as miniaturas',
       tFreeBtn: 'Botão de atalho para limpar a memória', navFree: 'Limpar memória e cache',
       tFavSearch: 'Buscar nos seus favoritos', tSiteSearch: 'Barra de busca nas páginas do site',
       savedPick: 'Buscas favoritas…', recentPick: 'Buscas recentes…', saveSearch: '☆ Favoritar', savedSearch: '★ Favorita', savedAll: '(tudo)',
@@ -5651,6 +5654,7 @@
     body.appendChild(toggle('bulkFavButton', t('tBulkBtn'), null, ensureFeedNav))
     body.appendChild(toggle('holdRaw', t('tHoldRaw')))
     body.appendChild(toggle('freeButton', t('tFreeBtn'), null, ensureFeedNav))
+    body.appendChild(toggle('redoButton', t('tRedoBtn'), null, ensureFeedNav))
     body.appendChild(toggle('laterButton', t('tLaterBtn'), null, ensureFeedNav))
     body.appendChild(toggle('favSearch', t('tFavSearch'), null, ensureFavSearch))
     body.appendChild(toggle('favAutopager', t('tPager'), null, ensureFavPager))
@@ -5725,7 +5729,7 @@
   }
 
   function mountPanel() {
-    const nav = wantsFeedButtons() || CFG.freeButton || CFG.laterButton || CFG.bulkFavButton
+    const nav = wantsFeedButtons() || CFG.freeButton || CFG.redoButton || CFG.laterButton || CFG.bulkFavButton
     if (!CFG.panel && !nav) return
     if (panelHost && panelHost.isConnected) return
     if (!document.body) return
@@ -5764,11 +5768,12 @@
     if (!shadow) return
     const feed = wantsFeedButtons()
     const free = !!CFG.freeButton
-    const want = `${feed ? 'f' : ''}${free ? 'c' : ''}`
+    const redo = !!CFG.redoButton
+    const want = `${feed ? 'f' : ''}${free ? 'c' : ''}${redo ? 'r' : ''}`
     let nav = shadow.querySelector('.feednav:not(.pagenav)')
     if (nav && nav.dataset.set !== want) { nav.remove(); nav = null }
     if (!nav && want) {
-      nav = buildFeedNav(feed, free)
+      nav = buildFeedNav(feed, free, redo)
       nav.dataset.set = want
       shadow.appendChild(nav)
       dbg(`buttons added: ${feed ? 'feed ' : ''}${free ? 'free' : ''}`.trim())
@@ -5863,6 +5868,25 @@
   // Material Design's "delete" icon (a trash can), as path data.
   const TRASH_ICON = 'M6 19c0 1.1.9 2 2 2h8c1.1 0 2-.9 2-2V7H6v12zM19 4h-3.5l-1-1h-5l-1 1H5v2h14V4z'
 
+  // Material Design's "refresh" icon, as path data.
+  const REDO_ICON = 'M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z'
+
+  // ↻: Free memory first (everything let go, the URL cache too), then every
+  // thumbnail starts over, failures included. Only this tab: other tabs keep
+  // what they show.
+  function redoButton() {
+    const btn = iconButton('trash', t('navRedo'), REDO_ICON)   // the trash can's look
+    btn.addEventListener('click', () => {
+      btn.classList.add('on')
+      btn.disabled = true
+      freeMemory(true).then(() => redoThumbs()).finally(() => {
+        setTimeout(() => { btn.classList.remove('on'); btn.disabled = false }, 400)
+        renderStatus()
+      })
+    })
+    return btn
+  }
+
   function trashButton() {
     const btn = el('button', { class: 'trash', title: t('navFree') })
     const ns = 'http://www.w3.org/2000/svg'
@@ -5902,7 +5926,7 @@
   // The list opens in the post modal, which exists on the site's own pages.
   const wantsLaterButton = () => !!CFG.laterButton && !!CFG.videoModal && !!document.querySelector(SITE_LINK)
 
-  function buildFeedNav(feed, free) {
+  function buildFeedNav(feed, free, redo) {
     const rows = []
     if (feed) {
       const top = el('button', { text: '⤒', title: t('navTop') })
@@ -5920,6 +5944,7 @@
     }
     const second = []
     if (free) second.push(trashButton())
+    if (redo) second.push(redoButton())
     if (second.length) rows.push(el('div', { class: 'row' }, second))
     return el('div', { class: 'feednav' }, rows)
   }
