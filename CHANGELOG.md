@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.58.1
+
+- Holding a RAW image again undoes it: back to the sample (or the thumbnail),
+  or the download in flight called off
+
 ## 0.58.0
 
 - Hold an image on site pages for its raw file (`holdRaw`, on): half a

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.58.0
+// @version      0.58.1
 // @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -91,7 +91,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '0.58.0'
+  const VERSION = '0.58.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -3283,36 +3283,73 @@
     if (CFG.holdRaw && rawTarget(ev.target)) ev.preventDefault()   // the hold is ours
   }
 
+  // The download in flight per image, so a second hold can call it off.
+  const rawLoads = new WeakMap()
+
+  // A second hold undoes the first: back to what was on show (the sample, or
+  // the thumbnail), or the download in flight called off.
+  function undoRaw(img, link) {
+    const cancel = rawLoads.get(img)
+    if (cancel) { cancel(); rawLoads.delete(img) }
+    const before = img.dataset.ibhPreRaw || ''
+    if (img.dataset.ibhRaw === '1') {
+      if (before) img.srcset = before
+      else img.removeAttribute('srcset')
+      if (img.dataset.ibhRawMarked) {
+        // It had no upgrade of its own: let the feed give it the sample again.
+        delete img.dataset.ibhOrig
+        delete img.dataset.ibhThumb
+        if (originalViewport) originalViewport.observe(img)
+      }
+    }
+    delete img.dataset.ibhRaw
+    delete img.dataset.ibhPreRaw
+    delete img.dataset.ibhRawMarked
+    const badge = link.querySelector('.ibh-rawbadge')
+    if (badge) badge.remove()
+    if (navigator.vibrate) navigator.vibrate(15)
+    info(`raw: post ${postId(link)} back to the ${before ? 'sample' : 'thumbnail'}`)
+  }
+
   function loadRaw(img, link) {
-    if (img.dataset.ibhRaw) return   // loading or loaded
+    if (img.dataset.ibhRaw) { undoRaw(img, link); return }   // loading or loaded: a second hold undoes it
     const src = img.getAttribute('src')
     const parts = thumbParts(src)
     if (!parts) return
     const cached = knownOriginal(parts.hash)
     if (cached === null) { bulkBadge(link, '✕', '#b42318', 'ibh-rawbadge'); pageToast(t('rawFailed')); return }
     img.dataset.ibhRaw = 'loading'
+    img.dataset.ibhPreRaw = img.getAttribute('srcset') || ''   // what comes back on a second hold
     bulkBadge(link, 'RAW…', 'rgba(15, 20, 23, .85)', 'ibh-rawbadge')
     if (navigator.vibrate) navigator.vibrate(15)
-    raceImage([fileCandidates(src, ORIGINAL_EXTS)], cached, probe => {
+    rawLoads.set(img, raceImage([fileCandidates(src, ORIGINAL_EXTS)], cached, probe => {
       cacheSet('orig', parts.hash, probe.src, cached)
       const decoded = typeof probe.decode === 'function' ? probe.decode().catch(() => {}) : Promise.resolve()
       decoded.then(() => {
         if (!img.isConnected || img.dataset.ibhRaw !== 'loading') return
         const pic = pictureOf(img)
         if (!pic) return
+        rawLoads.delete(img)
         // Release goes back to the thumbnail like any upgrade (see G).
-        if (img.dataset.ibhOrig !== 'done') { img.dataset.ibhThumb = src; img.dataset.ibhOrig = 'done'; watchDistance(img) }
+        if (img.dataset.ibhOrig !== 'done') {
+          img.dataset.ibhThumb = src
+          img.dataset.ibhOrig = 'done'
+          img.dataset.ibhRawMarked = '1'
+          watchDistance(img)
+        }
         pic.set(probe.src)
         img.dataset.ibhRaw = '1'
         bulkBadge(link, 'RAW', '#2f7d72', 'ibh-rawbadge')
         info(`raw: post ${postId(link)} shows its original (${probe.src.split('/').pop()})`)
       })
     }, () => {
+      rawLoads.delete(img)
       delete img.dataset.ibhRaw
+      delete img.dataset.ibhPreRaw
       cacheSet('orig', parts.hash, null)
       bulkBadge(link, '✕', '#b42318', 'ibh-rawbadge')
       pageToast(t('rawFailed'))
-    }, 'high')
+    }, 'high'))
   }
 
   // Registered before the modal's click handler, so a tap favorites instead.
@@ -4975,6 +5012,8 @@
     delete el.dataset.ibhThumb
     if (el.dataset.ibhRaw) {
       delete el.dataset.ibhRaw
+      delete el.dataset.ibhPreRaw
+      delete el.dataset.ibhRawMarked
       const badge = el.closest('a') && el.closest('a').querySelector('.ibh-rawbadge')
       if (badge) badge.remove()
     }
