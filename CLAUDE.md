@@ -132,7 +132,7 @@ npm run smoke                    # Firefox headless no safebooru, com o script i
 ```
 
 - `npm run check` pega variável ou função que não existe mais, chave duplicada no `I18N`, as duas tabelas de idioma com chaves diferentes (`tools/check-i18n.js`, quebra em silêncio), código morto e erro de tipo. `types/userscript.d.ts` declara os `GM_*` e afrouxa o retorno do `querySelector` para `any`, em vez de casts pelo código; erro novo ali é sinal, não ruído.
-- `npm run smoke` (`tools/smoke.js`, ~1 min no aparelho) confere arranque, painel, barra de busca, feed, modal abrindo e fechando, autopager e ausência de erros. O rule34 responde CAPTCHA a navegador headless; o safebooru tem a mesma marcação. Outro site: `node tools/smoke.js '<URL da listagem>'`. É o mesmo motor do celular (Gecko), não o mesmo navegador: toque, decodificação de vídeo e o próprio Violentmonkey continuam sendo teste no aparelho.
+- `npm run smoke` (`tools/smoke.js`, ~1 min no aparelho) confere arranque, painel, barra de busca, feed, modal abrindo e fechando, autopager e ausência de erros. O rule34 responde CAPTCHA a navegador headless; o safebooru tem a mesma marcação. Outro site: `node tools/smoke.js '<URL da listagem>'`. É o mesmo motor do celular (Gecko), não o mesmo navegador: toque, decodificação de vídeo e o próprio Violentmonkey continuam sendo teste no aparelho. Pesa na memória do aparelho: enquanto ele rodava, o Shizuku caiu uma vez e o Firefox do celular ficou sem abas carregadas.
 
 Funções puras (`thumbParts`, `fileCandidates`, `orTags`) também podem ser extraídas com regex e rodadas num `new Function` com stubs — veja o padrão usado no histórico do projeto. Vale a pena quando mexer na derivação de URL ou na montagem da busca.
 
@@ -170,6 +170,8 @@ O servidor MCP `phone` (`tools/phone-mcp.js`, sem dependências, registrado no `
 
 ## Tarefas abertas
 
+- **Conferir a 1.0.0 no aparelho:** baixar um vídeo pelo ⬇ (arquivo do api-cdn: primeiro uso real do `GM_xmlhttpRequest` dentro do script), abrir e fechar um post, tocar na lixeira; ler o resultado com `script_log`. Depois, desinstalar a ponte no Violentmonkey (a migração já foi conferida: Ver depois e índice de favoritos idênticos aos dela).
+- **Primeiro `deploy` de verdade pelo MCP `phone`:** até agora só rodou em `dry_run`.
 - `HOSTS` só tem o rule34 mapeado. safebooru, xbooru e realbooru podem ter mirrors próprios; descobrir com **Testar URLs** e preencher.
-- tbib e realbooru estão no `@match` mas não usam `.image-list`: o tbib põe os `span.thumb` em `#post-list .content > div`, o realbooru usa `div.items > div.col.thumb`. O script carrega e monta o painel, mas a barra de busca não aparece, e o feed e o autopager são escritos para `.image-list` (visto com `npm run smoke`; o modal não foi conferido lá). Generalizar o seletor da lista ou tirar os dois do `@match`.
+- tbib e realbooru estão no `@match` mas não usam `.image-list`: o tbib põe os `span.thumb` em `#post-list .content > div`, o realbooru usa `div.items > div.col.thumb`. O script carrega e monta o painel, mas a barra de busca não aparece, e o feed e o autopager são escritos para `.image-list` (visto com `npm run smoke`; o modal não foi conferido lá). Hoje o `@description`, os READMEs e o CHANGELOG os dão como suportados. Decidir: tirar os dois do `@match` e da documentação (uma 1.0.1 rápida) ou generalizar o seletor da lista por site (trabalho maior; testar cada um com `node tools/smoke.js '<URL>'`).
 - safebooru e xbooru passam no `npm run smoke`; no aparelho (toque, vídeo, endpoints logados) só o rule34 foi testado de verdade. Favoritar em massa, 🔖 e a busca nos favoritos são só do rule34.
