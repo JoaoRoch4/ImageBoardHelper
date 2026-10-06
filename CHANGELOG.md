@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.4.0
+
+- The keyframe reel decodes its frames in WebAssembly (`wasmDecode`, on):
+  FFmpeg's H.264 decoder, built from source by `wasm/build.sh`, draws each
+  keyframe straight into a canvas scaled to the card. No video element and no
+  hardware decoder slot, and it decodes past the hardware's 1920×1088 too;
+  the next frame decodes while the current one is on screen. Streams it
+  cannot take (not H.264, odd pixel formats) play in a video as before
+- New grant `GM_getResourceURL` and one `@resource`, the decoder, pinned to a
+  commit: Violentmonkey asks to confirm the update once
+
 ## 1.3.1
 
 - Hold slideshow: a short clip (up to 30 s) with too few keyframes for a

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.3.1
+// @version      1.4.0
 // @description  For the phone, on Gelbooru 0.2 boards (rule34.xxx and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -16,6 +16,8 @@
 // @grant        GM_setValue
 // @grant        GM_xmlhttpRequest
 // @grant        unsafeWindow
+// @grant        GM_getResourceURL
+// @resource     h264dec https://raw.githubusercontent.com/JoaoRoch4/ImageBoardHelper/c1c4cc5cf7fbc409bd4db502dd5e186d76ac9fb4/wasm/h264dec.wasm
 // @connect      *
 // @inject-into  page
 // @noframes
@@ -52,7 +54,9 @@
  *
  * Grants: GM storage keeps the lists and a copy of the settings, and
  * GM_xmlhttpRequest saves files (the image hosts send no CORS headers, so a
- * page script cannot). With any grant, this script's window is a wrapper:
+ * page script cannot). The one dependency is an @resource: FFmpeg's H.264
+ * decoder built to WebAssembly (wasm/, built from source by wasm/build.sh),
+ * pinned to a commit and read through GM_getResourceURL. With any grant, this script's window is a wrapper:
  * window.__ibh goes on unsafeWindow. @inject-into page runs it in the page's
  * own context, where it has always been tested on these sites; its calls to
  * the site's endpoints carry the site's login. Nothing of the page's own
@@ -62,7 +66,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.3.1'
+  const VERSION = '1.4.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -83,6 +87,7 @@
     slideStep:      10,     // hold slideshow: jump between scenes, in % of the video
     slideDwell:     0.2,    // hold slideshow: seconds each scene stays once painted
     slideReel:      true,   // hold slideshow from keyframes only (MP4): one small read per scene, no seeking the file
+    wasmDecode:     true,   // with slideReel, decode the keyframes in WebAssembly (FFmpeg's H.264) into a canvas
     memorySaver:    true,   // release far off-screen images and removed videos (needs reload)
     urlCache:       true,   // remember which candidate URL worked for each file
     feedNav:        true,   // ⤒ ‹ › buttons: top of page, previous and next post in the feed (needs reload)
@@ -164,7 +169,7 @@
       tCovers: 'Video covers', tGif: 'Animated GIFs in the grid', tGifMax: 'GIFs animating at once',
       tScrub: 'Scene preview on video thumbnails',
       tScrubMode: 'scene preview gesture', modeDrag: 'Drag sideways', modeHold: 'Hold (slideshow)',
-      tSlideStep: 'slideshow jump', tSlideDwell: 'time per scene', scenes: 'scenes', tSlideReel: 'Keyframes only (faster, MP4)',
+      tSlideStep: 'slideshow jump', tSlideDwell: 'time per scene', scenes: 'scenes', tSlideReel: 'Keyframes only (faster, MP4)', tWasmDecode: 'Decode keyframes in WebAssembly',
       tMemory: 'Release off-screen memory',
       tUrlCache: 'Remember working file URLs',
       tNav: 'Top / previous / next buttons',
@@ -233,7 +238,7 @@
       tCovers: 'Capa de vídeo', tGif: 'GIF animado na grade', tGifMax: 'GIFs animando ao mesmo tempo',
       tScrub: 'Prévia de cenas nas miniaturas de vídeo',
       tScrubMode: 'gesto da prévia de cenas', modeDrag: 'Arrastar de lado', modeHold: 'Segurar (slideshow)',
-      tSlideStep: 'pulo do slideshow', tSlideDwell: 'tempo por cena', scenes: 'cenas', tSlideReel: 'Só keyframes (mais rápido, MP4)',
+      tSlideStep: 'pulo do slideshow', tSlideDwell: 'tempo por cena', scenes: 'cenas', tSlideReel: 'Só keyframes (mais rápido, MP4)', tWasmDecode: 'Decodificar keyframes em WebAssembly',
       tMemory: 'Liberar memória fora da tela',
       tUrlCache: 'Lembrar endereços que funcionaram',
       tNav: 'Botões topo / anterior / próximo',
@@ -1492,7 +1497,8 @@
       : st.method === 'play' ? `playing after ${Math.round(st.first)} ms at ${PLAY_RATE}×`
         : `${st.shown} scenes, first after ${Math.round(st.first)} ms${avg ? `, then every ${avg} ms` : ''} (dwell ${dwell}), ${late} late`
     const v = s.video
-    const what = st.detail || (v ? `${v.videoWidth}x${v.videoHeight}, ${mmss(v.duration)}, ${s.shared ? 'own video' : 'its cover'}` : '')
+    const what = (st.detail || (v ? `${v.videoWidth}x${v.videoHeight}, ${mmss(v.duration)}, ${s.shared ? 'own video' : 'its cover'}` : '')) +
+      (st.wasm ? `, ${st.wasm}` : '')
     info(`slideshow (${st.method}) post ${postId(s.card)}: ${shown}${what ? `; ${what}` : ''}${st.reelError ? `; no reel: ${st.reelError}` : ''}`)
   }
 
@@ -1795,7 +1801,10 @@
     const frames = await Promise.all(places.map(([off, size]) => rangeRead(url, off, off + size - 1, reqs).then(r => r.buf)))
     const secs = track.duration / track.timescale
     return {
-      url: URL.createObjectURL(reelBlob(track, frames)),
+      frames,
+      track: { stsd: track.stsd, width: track.width, height: track.height },
+      avcC: avcConfig(track.stsd),
+      url: null,   // the <video> reel's blob, made when first played (reelUrl)
       scenes: keys.map(k => {
         const t = track.timeOf(k) / track.timescale
         return { t, f: secs ? t / secs : 0 }
@@ -1824,7 +1833,7 @@
         reels.set(key, reel)
         for (const [old, r] of reels) {
           if (reels.size <= REEL_KEEP) break
-          URL.revokeObjectURL(r.url)
+          if (r.url) URL.revokeObjectURL(r.url)
           reels.delete(old)
         }
         return reel
@@ -1851,18 +1860,28 @@
     s.dwell = (Number(CFG.slideDwell) || 0.2) * 1000
     s.stats.method = 'reel'
     s.reel = { reqs: new Set(), timer: 0, video: null, holder: null, borrowed: false }
+    // Compiling the decoder takes about half a second: alongside the reads, not after them.
+    if (CFG.wasmDecode && !h264Broken) h264Decoder().catch(() => { /* logged there */ })
     reelFor(urls, slideSteps(), s.reel.reqs, known ? null : hash).then(
       reel => { if (scrub === s) showReel(s, reel) },
       e => { if (scrub === s) reelFailed(s, e) })
     return true
   }
 
-  // One keyframe per scene, looping, over the thumbnail (and its cover).
+  const reelUrl = reel => reel.url || (reel.url = URL.createObjectURL(reelBlob(reel.track, reel.frames)))
+
+  // One keyframe per scene, looping, over the thumbnail (and its cover):
+  // decoded in WebAssembly when it can, else played from a small MP4.
   function showReel(s, reel) {
-    const r = s.reel
-    r.info = reel
+    s.reel.info = reel
     s.stats.detail = `${reel.width}x${reel.height}, ${mmss(reel.duration)}, ${reel.scenes.length} keyframes, ` +
       `${Math.round(reel.bytes / 1024)} KB, ${reel.kept ? 'kept from before' : `read in ${reel.ms} ms`}`
+    if (CFG.wasmDecode && reel.avcC && !h264Broken) showReelWasm(s, reel).catch(e => { if (scrub === s) wasmFailed(s, reel, e) })
+    else showReelVideo(s, reel)
+  }
+
+  function showReelVideo(s, reel) {
+    const r = s.reel
     borrowDecoder(s.card)
     r.borrowed = true
     r.holder = document.createElement('div')
@@ -1888,7 +1907,144 @@
     })
     v.addEventListener('loadedmetadata', show, { once: true })
     v.onerror = () => { if (scrub === s) reelFailed(s, new Error('the reel would not play')) }
-    v.src = reel.url
+    v.src = reelUrl(reel)
+  }
+
+  // ── Keyframe decoder (WebAssembly) ──
+  // FFmpeg's H.264 decoder built to WebAssembly (wasm/h264dec.c, wasm/build.sh)
+  // and shipped as an @resource, which Violentmonkey downloads once with the
+  // script. Keyframes decode straight into a canvas, scaled down to the card:
+  // no <video>, no hardware decoder slot, any size. The decoder's imports are
+  // system calls it hardly uses (its logging is off), answered by stubs.
+  let h264 = null          // the decoder's exports, once loaded
+  let h264Loading = null
+  let h264Broken = ''      // why it cannot load, after a first try: the <video> reel from then on
+
+  function h264Decoder() {
+    if (h264) return Promise.resolve(h264)
+    if (!h264Loading) {
+      h264Loading = (async () => {
+        if (typeof GM_getResourceURL !== 'function') throw new Error('no GM_getResourceURL grant')
+        const t0 = performance.now()
+        const bytes = await (await fetch(GM_getResourceURL('h264dec'))).arrayBuffer()
+        const mod = await WebAssembly.compile(bytes)
+        let mem = null
+        const view = () => new DataView(mem.buffer)
+        const calls = {
+          fd_write: (fd, iov, count, written) => {   // nothing to show: count the bytes as written
+            let n = 0
+            for (let i = 0; i < count; i++) n += view().getUint32(iov + i * 8 + 4, true)
+            view().setUint32(written, n, true)
+            return 0
+          },
+          environ_sizes_get: (count, size) => { view().setUint32(count, 0, true); view().setUint32(size, 0, true); return 0 },
+          clock_time_get: (id, precision, out) => { view().setBigUint64(out, BigInt(Math.round(performance.now() * 1e6)), true); return 0 },
+          random_get: (buf, len) => { crypto.getRandomValues(new Uint8Array(mem.buffer, buf, len)); return 0 },
+          proc_exit: code => { throw new Error(`decoder exited (${code})`) },
+        }
+        const imports = {}
+        for (const imp of WebAssembly.Module.imports(mod)) {
+          (imports[imp.module] = imports[imp.module] || {})[imp.name] = calls[imp.name] || (() => 0)
+        }
+        const x = /** @type {any} */ ((await WebAssembly.instantiate(mod, imports)).exports)
+        mem = x.memory
+        if (x._initialize) x._initialize()   // the C library's own start-up
+        info(`keyframe decoder: WebAssembly ready (${Math.round(bytes.byteLength / 1024)} KB in ${Math.round(performance.now() - t0)} ms)`)
+        h264 = x
+        return x
+      })()
+      h264Loading.catch(e => {
+        h264Broken = describeError(e)
+        warn(`keyframe decoder: ${h264Broken}; reels play in a <video>`)
+      }).finally(() => { h264Loading = null })
+    }
+    return h264Loading
+  }
+
+  // Free memory lets go of it (its memory only grows): loaded again on the next hold.
+  function dropH264() {
+    if (h264) { try { h264.dec_close() } catch (e) { /* gone already */ } }
+    h264 = null
+  }
+
+  // One AVCC sample in, an ImageData of at least maxW pixels across out.
+  function decodeKeyframe(x, bytes, maxW) {
+    const ptr = x.buf_alloc(bytes.length)
+    new Uint8Array(x.memory.buffer, ptr, bytes.length).set(bytes)
+    const r = x.dec_frame(ptr, bytes.length, maxW)
+    x.buf_free(ptr)
+    if (r !== 0) throw new Error(`keyframe decode failed (${r})`)
+    const w = x.dec_width()
+    const h = x.dec_height()
+    const at = x.dec_rgba()
+    // A copy: the memory's buffer is replaced whenever it grows.
+    return new ImageData(new Uint8ClampedArray(x.memory.buffer.slice(at, at + w * h * 4)), w, h)
+  }
+
+  // The decoder configuration (avcC) of an H.264 track, from its sample description.
+  function avcConfig(stsd) {
+    for (const entry of mp4Boxes(stsd, 16, stsd.length)) {   // past the box header, version and entry count
+      if (entry.type !== 'avc1' && entry.type !== 'avc3') return null
+      // A visual sample entry has 78 bytes of fields before its own boxes.
+      for (const c of mp4Boxes(stsd, entry.body + 78, entry.end)) if (c.type === 'avcC') return stsd.slice(c.body, c.end)
+    }
+    return null
+  }
+
+  async function showReelWasm(s, reel) {
+    const x = await h264Decoder()
+    if (scrub !== s) return
+    const cfg = x.buf_alloc(reel.avcC.length)
+    new Uint8Array(x.memory.buffer, cfg, reel.avcC.length).set(reel.avcC)
+    const opened = x.dec_open(cfg, reel.avcC.length)
+    x.buf_free(cfg)
+    if (opened !== 0) throw new Error(`the decoder refused the stream (${opened})`)
+    s.stats.method = 'wasm reel'
+    const r = s.reel
+    const maxW = Math.round(s.card.getBoundingClientRect().width * (window.devicePixelRatio || 1))
+    const times = []
+    const decode = i => {
+      const t0 = performance.now()
+      const img = decodeKeyframe(x, reel.frames[i], maxW)
+      times.push(performance.now() - t0)
+      s.stats.wasm = `decoded in ${Math.round(times.reduce((a, b) => a + b, 0) / times.length)} ms (max ${Math.round(Math.max(...times))}) to ${img.width}x${img.height}`
+      return img
+    }
+    let next = decode(0)   // a failure here falls back before anything is shown
+    r.holder = document.createElement('div')
+    r.holder.style.cssText = 'position:absolute;inset:0;pointer-events:none;z-index:2'
+    const cv = document.createElement('canvas')
+    cv.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:4px;background:#000'
+    r.holder.appendChild(cv)
+    placeOverPicture(s.card, r.holder)
+    const ctx = cv.getContext('2d')
+    let i = 0
+    // Show this scene, then decode the next while it stays on screen.
+    const show = () => {
+      if (scrub !== s) return
+      if (cv.width !== next.width || cv.height !== next.height) { cv.width = next.width; cv.height = next.height }
+      ctx.putImageData(next, 0, 0)
+      const scene = reel.scenes[i]
+      s.bar.style.width = `${scene.f * 100}%`
+      s.label.textContent = `${mmss(scene.t)} / ${mmss(reel.duration)}`
+      noteScene(s)
+      i = (i + 1) % reel.scenes.length
+      const t0 = performance.now()
+      try { next = decode(i) } catch (e) { wasmFailed(s, reel, e); return }
+      r.timer = setTimeout(show, Math.max(0, s.dwell - (performance.now() - t0)))
+    }
+    show()
+  }
+
+  // The WebAssembly path failed on this video: the same reel in a <video>.
+  function wasmFailed(s, reel, e) {
+    const r = s.reel
+    if (!r) return
+    s.stats.wasm = `not decoded: ${describeError(e)}`
+    clearTimeout(r.timer)
+    if (r.holder) { r.holder.remove(); r.holder = null }
+    s.stats.method = 'reel'
+    showReelVideo(s, reel)
   }
 
   function endReel(s) {
@@ -5444,8 +5600,9 @@
   async function freeMemory(reason = 'button') {
     // The button frees every tab of this site running the script, not only this one.
     if (reason === 'button' && tabChannel) tabChannel.postMessage({ type: 'free-memory' })
-    for (const r of reels.values()) URL.revokeObjectURL(r.url)   // kept keyframe reels
+    for (const r of reels.values()) if (r.url) URL.revokeObjectURL(r.url)   // kept keyframe reels
     reels.clear()
+    dropH264()
     const n = { covers: 0, gifs: 0, images: 0, caches: 0 }
     // A preview in progress holds one or two videos; the shared one is dropped.
     if (scrub) endScrub()
@@ -5782,6 +5939,7 @@
     body.appendChild(choiceSelect('slideDwell', t('tSlideDwell'),
       [0.1, 0.2, 0.3, 0.5, 1].map(sec => [sec, `${num(sec)} s`])))
     body.appendChild(toggle('slideReel', t('tSlideReel')))
+    body.appendChild(toggle('wasmDecode', t('tWasmDecode')))
   }
 
   function languageSelect() {

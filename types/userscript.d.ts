@@ -24,6 +24,7 @@ declare function GM_xmlhttpRequest(details: {
   onabort?: () => void
   onprogress?: (e: { loaded: number; total: number }) => void
 }): { abort(): void }
+declare function GM_getResourceURL(name: string, isBlobUrl?: boolean): string
 declare const unsafeWindow: Window & typeof globalThis
 
 // What the DOM types call a plain Element is, here, the HTML element the

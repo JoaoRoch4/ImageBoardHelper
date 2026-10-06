@@ -18,6 +18,7 @@ module.exports = [
         GM_getValue: 'readonly',
         GM_setValue: 'readonly',
         GM_xmlhttpRequest: 'readonly',
+        GM_getResourceURL: 'readonly',
         unsafeWindow: 'readonly',
       },
     },
