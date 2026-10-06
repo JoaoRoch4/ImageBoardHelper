@@ -1,97 +1,70 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      0.64.0
-// @description  Touch gestures, sharp thumbnails, real video covers and a Fancybox repair for Booru Masonry, with a status panel and log
+// @version      1.0.0
+// @description  For the phone, on Gelbooru 0.2 boards (rule34.xxx and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
 // @supportURL   https://github.com/JoaoRoch4/ImageBoardHelper/issues
 // @downloadURL  https://raw.githubusercontent.com/JoaoRoch4/ImageBoardHelper/main/image-board-helper.user.js
 // @license      MIT
-// @match        https://yande.re/*
-// @match        https://konachan.com/*
-// @match        https://konachan.net/*
-// @match        https://danbooru.donmai.us/*
-// @match        https://gelbooru.com/*
 // @match        https://rule34.xxx/*
-// @match        https://lolibooru.moe/*
-// @match        https://www.sakugabooru.com/*
 // @match        https://safebooru.org/*
 // @match        https://tbib.org/*
 // @match        https://xbooru.com/*
 // @match        https://realbooru.com/*
-// @match        https://booru.allthefallen.moe/*
-// @match        https://aibooru.online/*
-// @match        https://rule34hentai.net/*
-// @match        https://rule34.paheal.net/*
 // @run-at       document-start
-// @grant        none
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_xmlhttpRequest
+// @grant        unsafeWindow
+// @connect      *
 // @inject-into  page
 // @noframes
 // ==/UserScript==
 
 /*
- * A companion layer for the "Yande.re Masonry" userscript, aimed at phones.
- * It never modifies that script: it talks to it through public surfaces only.
+ * Image Board Helper: a standalone layer over the pages of Gelbooru 0.2
+ * boards (rule34.xxx, safebooru, tbib, xbooru, realbooru), aimed at phones.
+ * It works on the site's own markup (.image-list > span.thumb > a > img) and
+ * calls only the site's own endpoints.
  *
- *   A. SHARP THUMBNAILS
- *      Masonry's getImgSrc only swaps previewUrl for sampleUrl when
- *      `isThumbSampleUrl || (columns != 0 && columns < 7)`. With columns set to
- *      "Automatic" the value is 0, the condition never passes, and you are left
- *      with the small thumbnail stretched — and automatic is the default. We
- *      enable isThumbSampleUrl before the app reads its settings, so the app
- *      itself picks the large URL, per site.
+ *   A. VIDEO COVERS AND GIFS
+ *      A <video muted preload="metadata"> over each video thumbnail shows a
+ *      real frame (the browser paints it and nothing is read back, so CORS
+ *      never enters the picture, unlike grabbing it through a <canvas>). GIF
+ *      thumbnails animate while on screen, a few at a time.
  *
- *   B. VIDEO COVERS
- *      Video posts are excluded from that swap, because a video's sampleUrl is
- *      the .mp4 itself and will not render inside an <img>. We overlay a
- *      <video muted preload="metadata"> on the card: the browser paints the
- *      real frame and nothing is read back, so CORS never enters the picture —
- *      unlike grabbing the frame through a <canvas>. GIF cards get the same
- *      treatment: the original .gif replaces the still while on screen.
+ *   B. FEED AND SHARP THUMBNAILS
+ *      An optional feed (columns, masonry or grid) where thumbnails become
+ *      the sample; the original only where the box needs more pixels.
  *
- *   C. FANCYBOX
- *      fancyboxShow builds items as `src: e.jpegUrl || e.fileUrl`, but several
- *      adapters return fileUrl:"" on purpose: the URL only exists after the
- *      detail fetch, which only the native viewer triggers. We intercept
- *      Fancybox.show and fill the empty src values.
+ *   C. SCENE PREVIEW
+ *      Drag across a video thumbnail, or hold it for a slideshow.
  *
- *   D. GESTURES
- *      Masonry listens for keyup on window (A/left, D/right, F). We dispatch
- *      synthetic key events and click toolbar buttons, located by the `d`
- *      attribute of the icon <path>.
+ *   D. MEMORY MANAGEMENT
+ *      What scrolls far away goes back to the thumbnail; hidden tabs park
+ *      their videos; Free memory lets go of everything.
  *
- *   E. ORIGINAL THUMBNAILS (optional, off by default)
- *      Swaps visible thumbnails, on Masonry cards and on the site's own pages,
- *      for the original file, probing jpg/png/jpeg off-screen first. Sharper
- *      than the sample, at several times the data and memory.
+ *   E. POST MODAL AND THE REST
+ *      Tapping a thumbnail opens the post in an overlay (video with sound,
+ *      GIF, image), with swipes, zoom, favorite and vote, tags, info and
+ *      comments, downloads, Watch later, mass favorite, search bars,
+ *      favorites search and an autopager.
  *
- *   G. MEMORY MANAGEMENT
- *      Images that scroll two screens away go back to the thumbnail and are
- *      upgraded again on return; videos removed by Masonry are unloaded; the
- *      page releases everything when it is left.
- *
- *   H. POST MODAL
- *      On the site's own pages, tapping a thumbnail opens the post in an
- *      overlay (video with sound, GIF, original image); swipe sideways for the
- *      next post, down or the back button to close.
- *
- * WHY @grant none: intercepting window.Fancybox and overriding
- * navigator.userAgent both require the page's own realm. Any @grant puts the
- * script in a sandbox where `window` is not the page's window, and both stop
- * working silently. That is why the options live in the panel instead of
- * GM_registerMenuCommand. @inject-into page makes the same choice explicit:
- * the default "auto" silently falls back to the sandbox when a site's CSP
- * blocks page scripts, which would break both features without a trace.
- *
- * REQUIRES: "Listen for keyboard events" enabled in Masonry's settings,
- * otherwise the navigation swipes do nothing.
+ * Grants: GM storage keeps the lists and a copy of the settings, and
+ * GM_xmlhttpRequest saves files (the image hosts send no CORS headers, so a
+ * page script cannot). With any grant, this script's window is a wrapper:
+ * window.__ibh goes on unsafeWindow. @inject-into page runs it in the page's
+ * own context, where it has always been tested on these sites; its calls to
+ * the site's endpoints carry the site's login. Nothing of the page's own
+ * (fetch, history, navigator) is patched.
  */
 
 ;(function () {
   'use strict'
 
-  const VERSION = '0.64.0'
+  const VERSION = '1.0.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -104,7 +77,6 @@
     lang:           null,   // null = follow the browser language
     debug:          false,  // mirror the log into the browser console
     panel:          true,   // floating button and status panel
-    sharpThumbs:    true,   // enable "thumbnail uses large image" (needs reload)
     videoCovers:    true,   // overlay the real video frame on the card
     gifInline:      true,   // animate GIF cards while they are on screen
     gifMaxLive:     3,      // at most this many of them animating at once
@@ -128,22 +100,19 @@
     rotateLandscape: true,  // in the modal player's fullscreen, lock wide videos to landscape
     modalPreload:   true,   // in the modal, have the next post loaded before the swipe
     modalOriginal:  'zoom', // images in the modal: 'zoom' shows the sample and fetches the original on zoom; 'always'
-    siteTheme:      true,   // the modal's dark theme on the site's own pages (not Masonry)
-    fixFancybox:    true,   // fill empty src in the alternate viewer
-    gestures:       true,   // swipe, double tap and pinch
-    originalThumbs: false,  // swap visible thumbnails for the original file (heavy, needs reload)
+    siteTheme:      true,   // the modal's dark theme on the site's pages
+    originalThumbs: false,  // the original where a thumbnail's box is wider than the sample (a desktop screen; needs reload)
     nativeFeed:     false,  // feed with sharp images on the site's own pages (applies at once)
     feedColumns:    1,      // its columns: 'auto' (by screen width) or 1-4
     feedLayout:     'masonry', // 'masonry': whole images in columns; 'grid': even square tiles
-    forceRule34Api: true,   // rule34 on Masonry: API path, account filters applied here; automatic, no panel entry (needs reload)
   }
 
-  // Options that only take effect when the app boots.
-  const NEEDS_RELOAD = new Set(['sharpThumbs', 'forceRule34Api', 'originalThumbs', 'memorySaver', 'feedNav', 'videoModal', 'videoScrub'])
+  // Options that only take effect when the page loads.
+  const NEEDS_RELOAD = new Set(['originalThumbs', 'memorySaver', 'feedNav', 'videoModal', 'videoScrub'])
 
   // Whether this page found the settings at all: a script that clears the
   // site's localStorage (one did, on its reset) takes them along, and the
-  // copy kept by the storage bridge brings them back (restoreCfg).
+  // copy in Violentmonkey's storage brings them back (restoreCfg).
   const CFG_FOUND = (() => { try { return localStorage.getItem(CFG_KEY) !== null } catch (e) { return true } })()
   const CFG = Object.assign({}, DEFAULTS, readJSON(CFG_KEY, {}))
 
@@ -184,16 +153,13 @@
   const I18N = {
     en: {
       fixes: 'fixes', log: 'log', language: 'language', auto: 'Automatic',
-      site: 'site', gallery: 'gallery', thumbnail: 'thumbnail',
-      columns: 'columns', host: 'host', covers: 'covers',
-      fancybox: 'fancybox', credential: 'credential', lastGesture: 'last gesture',
-      notDetected: 'not detected', active: 'active', waiting: 'waiting',
-      failed: 'failed', disabled: 'off',
-      largeImage: 'large image', smallThumb: 'small thumbnail',
+      site: 'site', thumbnail: 'thumbnail',
+      host: 'host', covers: 'covers',
+      
+      failed: 'failed', 
       notResolved: 'not resolved', cached: 'cached',
-      filled: 'filled', empty: 'empty',
       coversFmt: (ok, bad, all) => `${ok} ok · ${bad} failed · ${all} videos`,
-      tSharp: 'Large thumbnails', tCovers: 'Video covers', tGif: 'Animated GIFs in the grid', tGifMax: 'GIFs animating at once',
+      tCovers: 'Video covers', tGif: 'Animated GIFs in the grid', tGifMax: 'GIFs animating at once',
       tScrub: 'Scene preview on video thumbnails',
       tScrubMode: 'scene preview gesture', modeDrag: 'Drag sideways', modeHold: 'Hold (slideshow)',
       tSlideStep: 'slideshow jump', tSlideDwell: 'time per scene', scenes: 'scenes',
@@ -224,7 +190,7 @@
       dlFail: 'Download failed', dlOpened: 'Opened in a new tab: hold it to save',
       laterAdd: '🕒 Watch later', laterIn: '✓ In Watch later', laterAdded: 'Saved for later', laterRemoved: 'Removed from the list',
       laterEmpty: 'Nothing saved yet. Use 🕒 in a post’s ☰ menu.', laterOnDevice: 'kept by Violentmonkey, on this device',
-      laterOnSite: 'Kept in this site’s data (IndexedDB). Tap to install the storage bridge and keep it in Violentmonkey',
+      laterOnSite: 'kept in this site’s data (IndexedDB)',
       tModal: 'Open posts in a player over the page',
       tTheme: 'Dark theme on site pages',
       mClose: 'Close', mOpen: 'Open the post', mPrev: 'Previous post', mNext: 'Next post',
@@ -243,7 +209,6 @@
       favAdded: 'Added to favorites', favAlready: 'Already in your favorites', favRemoved: 'Removed from favorites',
       favLogin: 'You are not logged in', favFail: 'Could not favorite', mTurnNo: 'This browser cannot turn the screen',
       voted: 'Upvoted', voteFail: 'Could not vote',
-      tFancybox: 'Repair Fancybox', tGestures: 'Touch gestures',
       tOriginal: 'Original thumbnails (heavy)',
       tFeed: 'Feed on site pages',
       tFeedCols: 'feed columns', tFeedLayout: 'feed layout', colsAuto: 'Automatic (by screen width)',
@@ -252,22 +217,17 @@
       noteReload: 'reload',
       bTest: 'Test URLs', bClearHost: 'Clear host',
       bCopy: 'Copy log', bReload: 'Reload', bFree: 'Free memory & cache', bRedo: 'Redo thumbnails',
-      gNext: 'swipe left → next', gPrev: 'swipe right → previous',
-      gClose: 'swipe down → close', gFav: 'double tap → favorite',
-      gZoomIn: 'pinch out → zoom in', gZoomOut: 'pinch in → zoom out',
+      
     },
     'pt-BR': {
       fixes: 'correções', log: 'log', language: 'idioma', auto: 'Automático',
-      site: 'site', gallery: 'galeria', thumbnail: 'miniatura',
-      columns: 'colunas', host: 'host', covers: 'capas',
-      fancybox: 'fancybox', credential: 'credencial', lastGesture: 'último gesto',
-      notDetected: 'não detectado', active: 'ativo', waiting: 'aguardando',
-      failed: 'falhou', disabled: 'desligado',
-      largeImage: 'imagem grande', smallThumb: 'miniatura pequena',
+      site: 'site', thumbnail: 'miniatura',
+      host: 'host', covers: 'capas',
+      
+      failed: 'falhou', 
       notResolved: 'não resolvido', cached: 'cache',
-      filled: 'preenchida', empty: 'vazia',
       coversFmt: (ok, bad, all) => `${ok} ok · ${bad} falha · ${all} vídeos`,
-      tSharp: 'Miniatura grande', tCovers: 'Capa de vídeo', tGif: 'GIF animado na grade', tGifMax: 'GIFs animando ao mesmo tempo',
+      tCovers: 'Capa de vídeo', tGif: 'GIF animado na grade', tGifMax: 'GIFs animando ao mesmo tempo',
       tScrub: 'Prévia de cenas nas miniaturas de vídeo',
       tScrubMode: 'gesto da prévia de cenas', modeDrag: 'Arrastar de lado', modeHold: 'Segurar (slideshow)',
       tSlideStep: 'pulo do slideshow', tSlideDwell: 'tempo por cena', scenes: 'cenas',
@@ -298,7 +258,7 @@
       dlFail: 'Falha no download', dlOpened: 'Aberto em outra aba: segure para salvar',
       laterAdd: '🕒 Ver depois', laterIn: '✓ Na lista', laterAdded: 'Salvo para ver depois', laterRemoved: 'Tirado da lista',
       laterEmpty: 'Nada salvo ainda. Use o 🕒 no menu ☰ de um post.', laterOnDevice: 'guardado pelo Violentmonkey, neste aparelho',
-      laterOnSite: 'Guardado nos dados deste site (IndexedDB). Toque para instalar a ponte de armazenamento e guardar no Violentmonkey',
+      laterOnSite: 'guardado nos dados deste site (IndexedDB)',
       tModal: 'Abrir posts num player sobre a página',
       tTheme: 'Tema escuro nas páginas do site',
       mClose: 'Fechar', mOpen: 'Abrir o post', mPrev: 'Post anterior', mNext: 'Próximo post',
@@ -317,7 +277,6 @@
       favAdded: 'Adicionado aos favoritos', favAlready: 'Já está nos favoritos', favRemoved: 'Removido dos favoritos',
       favLogin: 'Você não está logado', favFail: 'Não foi possível favoritar', mTurnNo: 'Este navegador não gira a tela',
       voted: 'Voto registrado', voteFail: 'Não foi possível votar',
-      tFancybox: 'Consertar Fancybox', tGestures: 'Gestos de toque',
       tOriginal: 'Miniatura original (pesado)',
       tFeed: 'Feed nas páginas do site',
       tFeedCols: 'colunas do feed', tFeedLayout: 'layout do feed', colsAuto: 'Automático (pela largura da tela)',
@@ -326,9 +285,7 @@
       noteReload: 'recarregar',
       bTest: 'Testar URLs', bClearHost: 'Limpar host',
       bCopy: 'Copiar log', bReload: 'Recarregar', bFree: 'Limpar memória e cache', bRedo: 'Refazer miniaturas',
-      gNext: 'swipe ← → próxima', gPrev: 'swipe → → anterior',
-      gClose: 'swipe ↓ → fechar', gFav: 'toque duplo → favoritar',
-      gZoomIn: 'pinça abrir → zoom+', gZoomOut: 'pinça fechar → zoom−',
+      
     },
   }
 
@@ -380,55 +337,13 @@
   // ═══════════════════════════════════════════════════════════
 
   const STATE = {
-    masonry: false,        // flips once a card shows up
-    thumbMode: null,       // 'large' | 'small'
-    columns: null,
-    credential: false,
     imageBase: null,
     baseCached: false,
     covers: { tracked: 0, ok: 0, failed: 0 },
-    fancybox: 'waiting',   // waiting | active | failed | disabled
-    lastGesture: null,     // i18n key, so the label follows the language
-    gestureCount: 0,
   }
 
   let onStateChange = null
   const touch = () => { if (onStateChange) onStateChange() }
-
-  // ═══════════════════════════════════════════════════════════
-  // Reading Masonry's own settings
-  // ═══════════════════════════════════════════════════════════
-
-  const MASONRY_KEY = 'YM_APP_SETTINGS'
-  const masonrySettings = () => readJSON(MASONRY_KEY, {})
-
-  // notify=false when the panel itself is reading: touch() re-renders the
-  // panel, which would read again and loop until the stack overflows.
-  function readMasonryState(notify = true) {
-    const s = masonrySettings()
-    STATE.credential = !!s.credentialQuery
-    STATE.columns = s.selectedColumn == null ? '0' : s.selectedColumn
-    STATE.thumbMode = s.isThumbSampleUrl ? 'large' : 'small'
-    if (notify) touch()
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // A. Sharp thumbnails
-  // ═══════════════════════════════════════════════════════════
-
-  function applySharpThumbs() {
-    if (!CFG.sharpThumbs) { dbg('sharp thumbnails disabled'); return }
-    const s = masonrySettings()
-    if (s.isThumbSampleUrl === true) { dbg('large thumbnails already enabled'); return }
-
-    // Record why thumbnails were coming in small.
-    if (s.selectedColumn === '0' || s.selectedColumn == null) {
-      dbg('columns set to automatic: getImgSrc can never reach sampleUrl')
-    }
-    s.isThumbSampleUrl = true
-    if (writeJSON(MASONRY_KEY, s)) info('enabled "thumbnail uses large image"')
-    else warn('could not write Masonry settings')
-  }
 
   // ═══════════════════════════════════════════════════════════
   // Image server resolution
@@ -659,27 +574,16 @@
   window.addEventListener('pagehide', flushUrlCache)
 
   // ═══════════════════════════════════════════════════════════
-  // B. Real video covers
+  // A. Real video covers
   // ═══════════════════════════════════════════════════════════
 
-  const ICON = {
-    close:   'M19,6.41L17.59,5L12,10.59L6.41,5L5,6.41L10.59,12L5,17.59L6.41,19L12,13.41L17.59,19L19,17.59L13.41,12L19,6.41Z',
-    zoomIn:  'M15.5,14L20.5,19L19,20.5L14,15.5V14.71L13.73,14.43C12.59,15.41 11.11,16 9.5,16A6.5,6.5 0 0,1 3,9.5A6.5,6.5 0 0,1 9.5,3A6.5,6.5 0 0,1 16,9.5C16,11.11 15.41,12.59 14.43,13.73L14.71,14H15.5M9.5,14C12,14 14,12 14,9.5C14,7 12,5 9.5,5C7,5 5,7 5,9.5C5,12 7,14 9.5,14M12,10H10V12H9V10H7V9H9V7H10V9H12V10Z',
-    zoomOut: 'M15.5,14H14.71L14.43,13.73C15.41,12.59 16,11.11 16,9.5A6.5,6.5 0 0,0 9.5,3A6.5,6.5 0 0,0 3,9.5A6.5,6.5 0 0,0 9.5,16C11.11,16 12.59,15.41 13.73,14.43L14,14.71V15.5L19,20.5L20.5,19L15.5,14M9.5,14C7,14 5,12 5,9.5C5,7 7,5 9.5,5C12,5 14,7 14,9.5C14,12 12,14 9.5,14M7,9H12V10H7V9Z',
-    video:   'M17,10.5V7A1,1 0 0,0 16,6H4A1,1 0 0,0 3,7V17A1,1 0 0,0 4,18H16A1,1 0 0,0 17,17V13.5L21,17.5V6.5L17,10.5Z',
-    gif:     'M19 3H5C3.9 3 3 3.9 3 5V19C3 20.1 3.9 21 5 21H19C20.1 21 21 20.1 21 19V5C21 3.9 20.1 3 19 3M10 10.5H7.5V13.5H8.5V12H10V13.7C10 14.4 9.5 15 8.7 15H7.3C6.5 15 6 14.3 6 13.7V10.4C6 9.7 6.5 9 7.3 9H8.6C9.5 9 10 9.7 10 10.3V10.5M13 15H11.5V9H13V15M17.5 10.5H16V11.5H17.5V13H16V15H14.5V9H17.5V10.5Z',
-  }
 
   const tracked = new WeakSet()
 
-  // A card can carry several type icons (parent/children ones come first on
-  // yande.re and konachan), so look at all of them, not just the first.
-  const hasTypeIcon = (card, d) =>
-    [...card.querySelectorAll('.posts-image-type path')].some(p => p.getAttribute('d') === d)
-  // Site pages (Gelbooru 0.2 markup) have no icons; the tags sit in the
-  // thumbnail's title or alt. "animated" alone may be either kind: it counts as
-  // video, and the cover falls back to the GIF when no video host answers.
-  const isMasonryCard = card => card.classList.contains('posts-image-card')
+  // A card is the link around a thumbnail (Gelbooru 0.2 markup). The kind
+  // comes from the tags in the thumbnail's title or alt, or the site's own
+  // .webm-thumb mark. "animated" alone may be either kind: it counts as video,
+  // and the cover falls back to the GIF when no video host answers.
   const nativeTags = card => {
     const img = card.querySelector('img')
     return ` ${(img && (img.title || img.alt)) || ''} `
@@ -687,30 +591,17 @@
   const NATIVE_GIF = /\s(gif|animated_gif)\s/i
   const NATIVE_VIDEO = /\s(video|mp4|webm|animated)\s/i
   const NATIVE_REAL_VIDEO = /\s(video|mp4|webm)\s/i   // "animated" alone may be a GIF
-  const isVideoCard = card => isMasonryCard(card)
-    ? hasTypeIcon(card, ICON.video)
-    : !!card.querySelector('img.webm-thumb') ||   // the site's own video mark
-      (NATIVE_VIDEO.test(nativeTags(card)) && !NATIVE_GIF.test(nativeTags(card)))
-  const isGifCard = card => card.dataset.ibhKind === 'gif' || (isMasonryCard(card)
-    ? hasTypeIcon(card, ICON.gif)
-    : NATIVE_GIF.test(nativeTags(card)))
+  const isVideoCard = card => !!card.querySelector('img.webm-thumb') ||   // the site's own video mark
+    (NATIVE_VIDEO.test(nativeTags(card)) && !NATIVE_GIF.test(nativeTags(card)))
+  const isGifCard = card => card.dataset.ibhKind === 'gif' || NATIVE_GIF.test(nativeTags(card))
 
-  // Masonry's default layout draws cards with Vuetify's <v-img>: a div with a
-  // background-image and no <img> at all. Only the "virtual" and "justified"
-  // layouts use <img>. Read and replace the picture through either one.
-  function cardPicture(card) {
-    const img = card.querySelector('img')
-    if (img) return imgPicture(img)
-    const bg = card.querySelector('.v-image__image')
-    const m = bg && bg.style.backgroundImage.match(/url\(["']?(.*?)["']?\)/)
-    return m ? { src: m[1], set: url => { bg.style.backgroundImage = `url("${url}")` } } : null
-  }
+  const cardPicture = card => { const img = card.querySelector('img'); return img ? imgPicture(img) : null }
 
   // On an <img>, the better file goes in srcset and src is left alone: the
   // browser paints the srcset candidate, while src keeps the site's thumbnail
-  // URL for everything that reads it — Imagus and other hover-zoom tools match
-  // on the thumbnail_ pattern, and Masonry's Vue only ever rewrites src.
-  // Setting the thumbnail back (or nothing) clears srcset.
+  // URL for everything that reads it (Imagus and other hover-zoom tools match
+  // on the thumbnail_ pattern). Setting the thumbnail back (or nothing) clears
+  // srcset.
   function imgPicture(img) {
     if (!img.src) return null
     return {
@@ -722,14 +613,6 @@
     }
   }
 
-  // <v-img> only paints its background once the thumbnail has loaded, so a
-  // card can be on screen with no picture yet. Look again a few times.
-  function whenPictured(card, fn, tries = 0) {
-    if (cardPicture(card)) return fn(card)
-    if (tries >= 8 || !card.dataset.ibhSeen) return
-    setTimeout(() => whenPictured(card, fn, tries + 1), 500)
-  }
-
   // Firefox for Android decodes about four videos at once on a mid-range phone;
   // past that, new <video> elements sit at "metadata" forever or fail with a
   // decode error. Keep covers under the limit, with one decoder spare for the
@@ -739,8 +622,8 @@
   let liveCovers = 0
   const coverQueue = new Set()
 
-  // Masonry rebuilds card elements as the list grows, so a "this is a GIF"
-  // mark on the element gets lost. Remember it by file hash instead.
+  // A card element can be rebuilt (the autopager, a page restored from the
+  // back button), so "this is a GIF" is remembered by file hash, not on it.
   const knownGifs = new Set()
 
   function releaseCover() {
@@ -755,9 +638,9 @@
   function mountCover(card) {
     if (card.dataset.ibhCover || card.dataset.ibhBigVideo) return
     const pic = cardPicture(card)
-    if (!pic) { whenPictured(card, mountCover); return }
-    // Masonry's rule34 scraper labels posts as video by tag, so some GIFs carry
-    // the video icon. Once a file proved to be one, go straight to the GIF path.
+    if (!pic) return
+    // Tags call some GIFs videos ("animated" alone). Once a file proved to be
+    // a GIF, go straight to the GIF path.
     const parts = thumbParts(pic.src)
     const vcached = parts ? cacheGet('video', parts.hash) : undefined
     // Known not to be a video (no host has it): straight to the GIF path.
@@ -852,20 +735,16 @@
 
     // Site pages mark videos with a border on the thumbnail (rule34: 3px blue
     // .webm-thumb); give the cover the same border so the mark stays visible.
-    if (!isMasonryCard(card)) {
-      const thumb = card.querySelector('img')
-      if (thumb) {
-        v.style.border = getComputedStyle(thumb).border
-        v.style.boxSizing = 'border-box'
-        v.style.borderRadius = '0'
-      }
+    const thumb = card.querySelector('img')
+    if (thumb) {
+      v.style.border = getComputedStyle(thumb).border
+      v.style.boxSizing = 'border-box'
+      v.style.borderRadius = '0'
     }
 
     if (getComputedStyle(card).position === 'static') card.style.position = 'relative'
-    // Sit right above the picture. Masonry's type icon and action buttons are
-    // absolutely positioned with no z-index and come later in the card, so they
-    // keep painting on top; appending at the end used to hide the video icon.
-    const picEl = card.querySelector(':scope > .v-image, :scope > img')
+    // Sit right above the picture, under anything the site lays over it.
+    const picEl = card.querySelector(':scope > img')
     if (picEl) picEl.after(v)
     else card.appendChild(v)
   }
@@ -952,7 +831,7 @@
     if (card.dataset.ibhGif) return   // loading, playing or failed
     if (gifsLive() >= (Number(CFG.gifMaxLive) || 3)) { gifQueue.add(card); return }   // waits its turn
     const pic = cardPicture(card)
-    if (!pic) { whenPictured(card, playGif); return }
+    if (!pic) return
     const hash = (thumbParts(pic.src) || {}).hash
     const gcached = cacheGet('gif', hash)
     const urls = cachedFirst(fileCandidates(pic.src, ['gif']), gcached)
@@ -995,7 +874,6 @@
   // An animated GIF keeps every decoded frame, and under memory pressure
   // Firefox drops it and shows a broken image. Watch the <img> after the swap;
   // when it breaks, free more memory and build the GIF again, twice at most.
-  // A CSS background (Masonry's default <v-img> layout) gives no such signal.
   const GIF_RETRIES = 2
 
   function watchGif(card) {
@@ -1088,7 +966,6 @@
   function trackCard(card) {
     if (tracked.has(card)) return
     tracked.add(card)
-    if (!STATE.masonry && isMasonryCard(card)) { STATE.masonry = true; touch() }
     if (CFG.videoScrub && isVideoCard(card)) {
       card.dataset.ibhVideo = '1'   // scrub target, see F
       // On site pages the thumbnail is an <img> in a link, and a sideways drag
@@ -1110,7 +987,6 @@
 
   function scanCards(root) {
     if (!root || !root.querySelectorAll) return
-    root.querySelectorAll('.posts-image-card').forEach(trackCard)
     const imgs = [...root.querySelectorAll(NATIVE_THUMB)]
     if (root.matches && root.matches(NATIVE_THUMB)) imgs.push(root)
     for (const img of imgs) {
@@ -1129,254 +1005,15 @@
   }
 
   // ═══════════════════════════════════════════════════════════
-  // C. Fancybox repair
-  // ═══════════════════════════════════════════════════════════
-
-  /** The extension ladder from the native onImageLoadError, which Fancybox lacks. */
-  function nextExtension(url) {
-    if (!url) return null
-    if (/\.jpeg(\?|$)/i.test(url)) return url.replace(/\.jpeg(\?|$)/i, '.jpg$1')
-    if (/\.jpg(\?|$)/i.test(url))  return url.replace(/\.jpg(\?|$)/i, '.png$1')
-    if (/\.png(\?|$)/i.test(url))  return url.replace(/\.png(\?|$)/i, '.gif$1')
-    return null
-  }
-
-  function repairItems(items) {
-    if (!Array.isArray(items)) return 0
-    let fixed = 0
-    for (const it of items) {
-      if (!it || it.src || !it.thumb) continue
-      const [guess] = fileCandidates(it.thumb, ['jpeg', 'jpg', 'png'])
-      if (!guess) continue
-      it.src = guess
-      if (!it.downloadSrc) it.downloadSrc = guess
-      fixed++
-    }
-    return fixed
-  }
-
-  function installExtensionFallback(root) {
-    root.addEventListener('error', ev => {
-      const img = ev.target
-      if (!img || img.tagName !== 'IMG') return
-      const tries = Number(img.dataset.ibhTries || 0)
-      if (tries >= 3) return
-      const next = nextExtension(img.src)
-      if (!next) return
-      img.dataset.ibhTries = String(tries + 1)
-      dbg(`fancybox: trying ${next}`)
-      img.src = next
-    }, true)   // capture: <img> error events do not bubble
-  }
-
-  function wrapFancybox(FB) {
-    if (!FB || FB.__ibhWrapped || typeof FB.show !== 'function') return FB
-    const origShow = FB.show.bind(FB)
-
-    FB.show = function (items, opts) {
-      try {
-        const n = repairItems(items)
-        if (n) info(`fancybox: filled ${n} empty src`)
-      } catch (e) {
-        error(`fancybox: failed to repair items — ${describeError(e)}`)
-      }
-      const instance = origShow(items, opts)
-      requestAnimationFrame(() => {
-        const box = document.querySelector('.fancybox__container')
-        if (box && !box.dataset.ibhFallback) {
-          box.dataset.ibhFallback = '1'
-          installExtensionFallback(box)
-        }
-      })
-      return instance
-    }
-
-    FB.__ibhWrapped = true
-    STATE.fancybox = 'active'
-    touch()
-    info('fancybox intercepted')
-    return FB
-  }
-
-  function hookFancybox() {
-    if (!CFG.fixFancybox) { STATE.fancybox = 'disabled'; return }
-    let held = window.Fancybox
-    if (held) { wrapFancybox(held); return }
-    try {
-      // The library is loaded on demand; wait for the assignment on window.
-      Object.defineProperty(window, 'Fancybox', {
-        configurable: true,
-        get: () => held,
-        set(v) { held = wrapFancybox(v) },
-      })
-      dbg('waiting for window.Fancybox')
-    } catch (e) {
-      STATE.fancybox = 'failed'
-      error(`could not intercept Fancybox — ${describeError(e)}`)
-    }
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // D. Gestures
-  // ═══════════════════════════════════════════════════════════
-
-  const GESTURE = {
-    swipeMin: 60,      // minimum travel, in px, to count as a swipe
-    swipeMaxMs: 600,
-    tapSlop: 10,
-    doubleTapMs: 300,
-    pinchIn: 1.25,
-    pinchOut: 0.80,
-  }
-
-  const pressKey = key =>
-    window.dispatchEvent(new KeyboardEvent('keyup', { key, bubbles: true }))
-
-  function clickToolbarIcon(name) {
-    const path = document.querySelector(`.img-detail-toolbar path[d="${ICON[name]}"]`)
-    const btn = path && path.closest('button')
-    if (!btn) { dbg(`toolbar button ${name} not found`); return false }
-    btn.click()   // works even with display:none — the Vue handler still fires
-    return true
-  }
-
-  const detailOpen = () => !!document.querySelector('.img_detail_cont')
-  const zoomOn     = () => !!document.querySelector('.img_scale_scroll')
-  const videoOpen  = () => !!document.querySelector('.img_detail_cont .dplayer')
-
-  const pointers = new Map()
-  let pinchStart = 0
-  let pinchDone = false
-  let lastTap = 0
-  let swallowClickUntil = 0
-
-  const distance = (a, b) => Math.hypot(a.x - b.x, a.y - b.y)
-
-  /** Store the i18n key, so the panel label follows the chosen language. */
-  function noteGesture(key) {
-    STATE.lastGesture = key
-    STATE.gestureCount++
-    dbg(`gesture: ${key}`)
-    touch()
-  }
-
-  /** Touches inside the panel are not gallery gestures. */
-  function insidePanel(ev) {
-    const path = typeof ev.composedPath === 'function' ? ev.composedPath() : []
-    return panelHost ? path.includes(panelHost) : false
-  }
-
-  function onPointerDown(ev) {
-    if (ev.pointerType === 'mouse') return   // on desktop the keyboard already works
-    if (insidePanel(ev)) return
-    pointers.set(ev.pointerId, {
-      ox: ev.clientX, oy: ev.clientY, ot: Date.now(),   // origin, never mutated
-      x: ev.clientX, y: ev.clientY,                      // current position
-    })
-    if (pointers.size === 2) {
-      const [a, b] = [...pointers.values()]
-      pinchStart = distance(a, b)
-      pinchDone = false
-    }
-  }
-
-  function onPointerMove(ev) {
-    const p = pointers.get(ev.pointerId)
-    if (!p) return
-    p.x = ev.clientX
-    p.y = ev.clientY
-
-    if (pointers.size !== 2 || pinchDone || !pinchStart || !detailOpen()) return
-    const [a, b] = [...pointers.values()]
-    const ratio = distance(a, b) / pinchStart
-
-    if (ratio >= GESTURE.pinchIn && !zoomOn()) {
-      pinchDone = true
-      noteGesture('gZoomIn')
-      clickToolbarIcon('zoomIn')
-    } else if (ratio <= GESTURE.pinchOut && zoomOn()) {
-      pinchDone = true
-      noteGesture('gZoomOut')
-      clickToolbarIcon('zoomOut')
-    }
-  }
-
-  function onPointerUp(ev) {
-    const p = pointers.get(ev.pointerId)
-    const hadPinch = pinchDone
-    pointers.delete(ev.pointerId)
-    if (pointers.size < 2) pinchStart = 0
-    if (pointers.size === 0) pinchDone = false
-
-    if (!p || hadPinch || !detailOpen() || videoOpen()) return
-
-    const dx = ev.clientX - p.ox
-    const dy = ev.clientY - p.oy
-    const adx = Math.abs(dx)
-    const ady = Math.abs(dy)
-    const dt = Date.now() - p.ot
-
-    if (adx < GESTURE.tapSlop && ady < GESTURE.tapSlop && dt < 250) {
-      const now = Date.now()
-      if (now - lastTap < GESTURE.doubleTapMs) {
-        lastTap = 0
-        swallowClickUntil = now + 400
-        noteGesture('gFav')
-        pressKey('f')
-      } else {
-        lastTap = now   // single tap: let the app handle it
-      }
-      return
-    }
-
-    if (dt > GESTURE.swipeMaxMs) return
-    if (zoomOn()) return   // with the magnifier on, dragging means panning
-
-    if (adx > ady && adx >= GESTURE.swipeMin) {
-      swallowClickUntil = Date.now() + 400
-      noteGesture(dx < 0 ? 'gNext' : 'gPrev')
-      pressKey(dx < 0 ? 'd' : 'a')
-    } else if (dy >= GESTURE.swipeMin && ady > adx) {
-      swallowClickUntil = Date.now() + 400
-      noteGesture('gClose')
-      clickToolbarIcon('close')
-    }
-  }
-
-  function onPointerCancel(ev) {
-    pointers.delete(ev.pointerId)
-    if (pointers.size < 2) pinchStart = 0
-    if (pointers.size === 0) pinchDone = false
-  }
-
-  // After a swipe the browser still emits a click, which the app would read as
-  // a tap on the image. Drop that ghost click.
-  function onClickCapture(ev) {
-    if (Date.now() < swallowClickUntil) {
-      ev.stopPropagation()
-      ev.preventDefault()
-    }
-  }
-
-  function installGestures() {
-    if (!CFG.gestures) { dbg('gestures disabled'); return }
-    // Listeners on window survive Masonry's replaceDocument().
-    window.addEventListener('pointerdown', onPointerDown, true)
-    window.addEventListener('pointermove', onPointerMove, true)
-    window.addEventListener('pointerup', onPointerUp, true)
-    window.addEventListener('pointercancel', onPointerCancel, true)
-    window.addEventListener('click', onClickCapture, true)
-    info('gestures active')
-  }
-
-  // ═══════════════════════════════════════════════════════════
-  // E. Original thumbnails (optional, off by default)
+  // B. Sharp thumbnails: feed samples and originals
   //
-  // Swaps visible thumbnails — on Masonry cards and on the site's own pages —
-  // for the original file. The thumbnail is always .jpg, so the real extension
-  // is unknown: each one is tried in an off-screen Image and the visible <img>
-  // only changes once one loads, so nothing flickers. Originals cost several
-  // times the data and memory of the sample, which is why this ships off.
+  // Swaps visible thumbnails for a sharper file: the sample in the feed (the
+  // original when there is none) and, with originalThumbs, the original where
+  // the box shows wider than the sample (upgradePlan). The thumbnail is always
+  // .jpg, so the real extension is unknown: each one is tried in an off-screen
+  // Image and the visible <img> only changes once one loads, so nothing
+  // flickers. Originals cost several times the data and memory of the
+  // sample, which is why originalThumbs ships off.
   // ═══════════════════════════════════════════════════════════
 
   const ORIGINAL_EXTS = ['jpg', 'png', 'jpeg']   // no gif: animated originals are heavy
@@ -1415,7 +1052,7 @@
   function upgradePlan(el, src) {
     if (thumbKind(el) === 'video') return { kind: 'poster', stages: [fileCandidates(src, ['jpg'])] }
     const originals = fileCandidates(src, ORIGINAL_EXTS)
-    const sitePage = !isCard(el)
+    const sitePage = true
     const sampleDoes = sitePage && (!CFG.originalThumbs || displayPixels(el) <= SAMPLE_WIDTH * 1.1)
     if (sampleDoes && (inFeed(el) || CFG.originalThumbs)) return { kind: 'sample', stages: [sampleCandidates(src), originals] }
     return { kind: 'orig', stages: [originals] }
@@ -1423,23 +1060,20 @@
 
   // Downloads already run on the browser's network threads; the slots shared
   // with GIFs (IMAGE_MAX_INFLIGHT, see B) cap how many the script starts at once.
-  // Targets are Masonry cards (either layout) or <img> on the site's own pages.
-  const ORIGINAL_SELECTOR = '.posts-image-card, img[src*="/thumbnails/"], img[src*="/samples/"]'
+  // Targets are the thumbnails (and samples) on the site's pages.
+  const ORIGINAL_SELECTOR = 'img[src*="/thumbnails/"], img[src*="/samples/"]'
   const originalQueue = []
   let upgradeGen = 0   // bumped by freeMemory(): upgrades already in flight drop their result
 
-  const isCard = el => el.classList.contains('posts-image-card')
 
   function pictureOf(el) {
-    if (isCard(el)) return cardPicture(el)
     return imgPicture(el)
   }
 
-  // Native pages put the tags in title/alt; Masonry marks videos with an icon.
-  // The kind of post an element shows. A native <img> takes it from its link,
-  // which is what the cover and GIF code treat as the card.
+  // The kind of post a thumbnail shows, taken from its link, which is what the
+  // cover and GIF code treat as the card (the tags sit in title/alt).
   function thumbKind(el) {
-    const card = isCard(el) ? el : (el.closest('a') || el.parentElement)
+    const card = el.closest('a') || el.parentElement
     if (card && isGifCard(card)) return 'gif'
     if (card && isVideoCard(card)) return 'video'
     return 'image'
@@ -1450,10 +1084,8 @@
     if (el.dataset.ibhOrig) return true   // already queued, done or failed
     // Without originalThumbs, only feed images on site pages get upgraded.
     if (!CFG.originalThumbs && !inFeed(el)) return true
-    // The detail viewer owns zoom and pan; leave its image alone.
-    if (el.closest('.img_detail_cont, .fancybox__container')) return true
     if (thumbKind(el) === 'gif') return true   // inline GIFs have their own path
-    // Masonry may not have painted the picture yet; try on the next intersection.
+    // No picture yet: try on the next intersection.
     const pic = pictureOf(el)
     if (!pic || !thumbParts(pic.src)) return false
     el.dataset.ibhOrig = 'queued'
@@ -1534,9 +1166,9 @@
         done()
         return
       }
-      // Off Masonry the thumbnail has no fixed box: pin its current size so the
-      // full-resolution file does not blow up the page layout.
-      if (!isCard(el) && !inFeed(el) && el.clientWidth) {
+      // Out of the feed the thumbnail has no fixed box: pin its current size so
+      // the full-resolution file does not blow up the page layout.
+      if (!inFeed(el) && el.clientWidth) {
         el.style.width = `${el.clientWidth}px`
         el.style.height = `${el.clientHeight}px`
         el.style.objectFit = 'contain'
@@ -1571,8 +1203,6 @@
     const found = [...root.querySelectorAll(ORIGINAL_SELECTOR)]
     if (root.matches && root.matches(ORIGINAL_SELECTOR)) found.push(root)
     for (const el of found) {
-      // An <img> inside a card is handled through the card.
-      if (!isCard(el) && el.closest('.posts-image-card')) continue
       if (watchedThumbs.has(el)) continue
       watchedThumbs.add(el)
       originalViewport ? originalViewport.observe(el) : upgradeToOriginal(el)
@@ -1580,7 +1210,7 @@
   }
 
   // ═══════════════════════════════════════════════════════════
-  // F. Scene preview
+  // C. Scene preview
   //
   // Drag a finger sideways across a video thumbnail to see its scenes (left
   // edge = start, right edge = end), and drag the modal's seek bar to see the
@@ -1692,11 +1322,10 @@
     releaseCover()   // a queued cover takes the slot back
   }
 
-  // Right above the picture: Masonry's icons and buttons come later in the
-  // card with no z-index, so they keep painting on top.
+  // Right above the picture, under anything the site lays over it.
   function placeOverPicture(card, node) {
     if (getComputedStyle(card).position === 'static') card.style.position = 'relative'
-    const picEl = card.querySelector(':scope > .v-image, :scope > img')
+    const picEl = card.querySelector(':scope > img')
     if (picEl) picEl.after(node)
     else card.appendChild(node)
   }
@@ -1707,7 +1336,7 @@
   let scrubClickUntil = 0
 
   function onScrubDown(ev) {
-    if (scrub || detailOpen() || insidePanel(ev) || (modal && modal.open)) return
+    if (scrub || insidePanel(ev) || (modal && modal.open)) return
     if (ev.pointerType === 'mouse' && ev.button !== 0) return
     const card = ev.target.closest && ev.target.closest('[data-ibh-video]')
     if (!card || card.dataset.ibhKind === 'gif') return
@@ -1794,7 +1423,7 @@
       'border-radius:4px;pointer-events:none;opacity:0'
     h.onerror = () => { if (scrub === s) dropSlideHelper(s) }   // no decoder free: carry on with one
     h.src = src
-    s.video.after(h)   // right above the first video, still under Masonry's icons
+    s.video.after(h)   // right above the first video
     const view = slideView(s, h, true)
     s.helper = view
     s.views.push(view)
@@ -1988,12 +1617,11 @@
   }
 
   // ═══════════════════════════════════════════════════════════
-  // G. Memory management
+  // D. Memory management
   //
   // Upgraded images stay decoded while the page lives, so a long feed keeps
   // every original it ever showed. Release what scrolled far away, unload
-  // videos Masonry throws out when it rebuilds the grid, and drop everything
-  // when the page is left.
+  // videos taken out of the page, and drop everything when the page is left.
   // ═══════════════════════════════════════════════════════════
 
   // Two screens of slack each way: far enough that a quick scroll back does
@@ -2041,10 +1669,10 @@
   // leaving them out let covers open past the phone's limit mid-preview.
   const liveDecoders = () => document.querySelectorAll('video[data-ibh]').length + decodersBorrowed
 
-  // Masonry rebuilds the grid without reloading the page. A removed <video>
-  // keeps its decoder until garbage collection, and the live-cover count never
-  // came back down, so covers stopped once it sat at the cap. Unload them and
-  // recount from what is actually in the document.
+  // A <video> taken out of the page (search results replacing the list, a
+  // card rebuilt) keeps its decoder until garbage collection, and the
+  // live-cover count would never come back down. Unload them and recount
+  // from what is actually in the document.
   function onNodesRemoved(nodes) {
     let unloaded = 0
     for (const node of nodes) {
@@ -2063,15 +1691,6 @@
     liveCovers = liveDecoders()
     for (const card of coverQueue) if (!card.isConnected) coverQueue.delete(card)
     dbg(`memory: unloaded ${unloaded} videos removed from the page`)
-  }
-
-  // Masonry changes page with history.pushState. What it learned about the
-  // old page (which video cards were GIFs) is of no use on the new one.
-  function onLocationChange() {
-    knownGifs.clear()
-    for (const card of coverQueue) if (!card.isConnected) coverQueue.delete(card)
-    liveCovers = liveDecoders()
-    dbg(`memory: page changed to ${location.pathname}${location.search.slice(0, 60)}`)
   }
 
   // Leaving the page: release everything so the copy Firefox keeps for the
@@ -2154,29 +1773,18 @@
     setInterval(() => sweep('timed'), SWEEP_MS)
     window.addEventListener('scrollend', () => sweep('scroll'), { passive: true })
     document.addEventListener('visibilitychange', onVisibilityChange)
-    for (const name of ['pushState', 'replaceState']) {
-      const orig = history[name]
-      history[name] = function (...args) {
-        const before = location.href
-        const out = orig.apply(this, args)
-        if (location.href !== before) onLocationChange()
-        return out
-      }
-    }
-    window.addEventListener('popstate', onLocationChange)
     window.addEventListener('pagehide', releaseAll)
     window.addEventListener('pageshow', ev => { if (ev.persisted) redoThumbs() })
     info('memory saver active: off-screen images, GIFs and covers are released (every 15 s, after scrolls, while hidden, before previews)')
   }
 
   // ═══════════════════════════════════════════════════════════
-  // H. Post modal on site pages
+  // E. Post modal on site pages
   //
   // Tapping a thumbnail on the site's own pages opens the post in an overlay
   // instead of leaving the page: videos play with sound, GIFs animate, images
   // show the original. Swipe sideways for the next/previous post, down to
-  // close. Own Shadow DOM host, so it works with the panel off. Masonry has its
-  // own viewer.
+  // close. Own Shadow DOM host, so it works with the panel off.
   // ═══════════════════════════════════════════════════════════
 
   const SITE_LINK = '.image-list span.thumb a'
@@ -2468,6 +2076,17 @@
   }
 
   const hasMark = (kind, id) => loadMarks()[kind].has(id)
+
+  function readCookie(name) {
+    const m = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`))
+    return m ? m[1] : null
+  }
+
+  /** Touches inside the panel are not page gestures. */
+  function insidePanel(ev) {
+    const path = typeof ev.composedPath === 'function' ? ev.composedPath() : []
+    return panelHost ? path.includes(panelHost) : false
+  }
   const userId = () => (document.cookie.match(/(?:^|; )user_id=(\d+)/) || [])[1] || null
 
   // The viewer's own favorites page: every post on it is a favorite.
@@ -2561,55 +2180,76 @@
     return p
   }
 
-  // ── Storage shared with the bridge ──
-  // The lists live in Violentmonkey's storage, on the device, when the storage
-  // bridge (ibh-storage-bridge.user.js) is installed: a second script with the
-  // @grant this one cannot have. They talk through events on window, as JSON
-  // strings. Without the bridge, the site's own localStorage holds them.
-  const STORE_TIMEOUT_MS = 700
-  const BRIDGE_URL = 'https://raw.githubusercontent.com/JoaoRoch4/ImageBoardHelper/main/ibh-storage-bridge.user.js'
-  let storeBridge = null   // unknown until it answers, or stays silent once
-  const storeWaiters = new Map()
-  let storeSeq = 0
-
-  window.addEventListener('ibh-store-reply', ev => {
-    let msg
-    try { msg = JSON.parse(ev.detail) } catch (e) { return }
-    const waiter = msg && storeWaiters.get(msg.id)
-    if (!waiter) return
-    storeWaiters.delete(msg.id)
-    clearTimeout(waiter.timer)
-    storeBridge = true
-    waiter.resolve(msg.value)
-  })
-  // Loaded after a first silent try: use it from now on.
-  window.addEventListener('ibh-store-ready', () => { storeBridge = true })
-
-  // Resolves with the stored value, or undefined when no bridge answered.
-  function bridgeCall(op, key, value) {
-    return new Promise(resolve => {
-      if (storeBridge === false) { resolve(undefined); return }
-      const id = ++storeSeq
-      const timer = setTimeout(() => {
-        storeWaiters.delete(id)
-        if (storeBridge === null) { storeBridge = false; info('storage bridge not installed: lists kept in the site’s data') }
-        resolve(undefined)
-      }, STORE_TIMEOUT_MS)
-      storeWaiters.set(id, { resolve, timer })
-      window.dispatchEvent(new CustomEvent('ibh-store-request', { detail: JSON.stringify({ id, op, key, value }) }))
-    })
-  }
+  // ── Storage ──
+  // The lists (Watch later, the favorites index, saved searches) and a copy
+  // of the settings live in Violentmonkey's storage, on the device, out of
+  // reach of anything that clears the site's data. Where GM storage is
+  // missing (another userscript manager), the site's IndexedDB holds them.
+  const GM_STORE = typeof GM_getValue === 'function' && typeof GM_setValue === 'function'
+  const STORE_KEYS = ['later', 'favs', 'cfg', 'searches']   // also what the storage bridge held (moveIn)
+  // An empty list or object counts as nothing stored.
+  const hasData = v => v != null && (typeof v !== 'object' || (Array.isArray(v) ? v.length > 0 : Object.keys(v).length > 0))
 
   // ── Download ──
   // Saves the post's own file (the original image, the GIF, the video) as
-  // SITE_ID.ext. Only the storage bridge can save a file from the image hosts;
-  // without it the file opens in a new tab, to be saved with a long press (still
-  // inside the tap's user activation, so the popup blocker lets it through).
-  const downloads = new Map()   // bridge id -> post id, for the outcome
+  // SITE_ID.ext. A page script cannot read a file from the image hosts (they
+  // send no CORS headers); GM_xmlhttpRequest can. Without it the file opens
+  // in a new tab, to be saved with a long press (still inside the tap's user
+  // activation, so the popup blocker lets it through).
+  const GM_XHR = typeof GM_xmlhttpRequest === 'function'
   const downloading = new Set() // post ids in flight: a second tap does not start another
   const dlPercent = new Map()   // post id -> last progress, for the button
   const DL_DONE_MS = 1500       // the ✓ stays this long before the button comes back
+  const BLOB_LIFE_MS = 120000   // how long Firefox gets to save the file
   let dlDoneAt = { post: null, until: 0 }
+
+  // Files come only from the site's own hosts (rule34.xxx, api-cdn.rule34.xxx…).
+  function siteFile(url) {
+    try {
+      const u = new URL(url)
+      return u.protocol === 'https:' && (u.hostname === SITE || u.hostname.endsWith(`.${SITE}`))
+    } catch (e) {
+      return false
+    }
+  }
+
+  // GM_download on Firefox for Android shows the save prompt but revokes its
+  // blob: link right away, so confirming saves nothing. Same path, done here:
+  // fetch the file, hand Firefox a blob: link to save, and keep that link
+  // alive long enough to confirm the prompt.
+  function saveFile(url, name, done, progress) {
+    let last = 0
+    GM_xmlhttpRequest({
+      // A big file takes a while: report how far it got, twice a second at most.
+      onprogress: e => {
+        if (!e.total || Date.now() - last < 500) return
+        last = Date.now()
+        progress(e.loaded, e.total)
+      },
+      method: 'GET',
+      url,
+      responseType: 'blob',
+      timeout: 180000,
+      // The video hosts refuse a request without the site as referrer (403),
+      // which the browser sends when it plays the video and the extension not.
+      headers: { Referer: `${location.origin}/` },
+      onload: res => {
+        if (res.status !== 200 || !res.response) { done(false, `HTTP ${res.status}`); return }
+        const href = URL.createObjectURL(res.response)
+        const a = document.createElement('a')
+        a.href = href
+        a.download = name
+        a.style.display = 'none'
+        ;(document.body || document.documentElement).appendChild(a)
+        a.click()
+        a.remove()
+        setTimeout(() => URL.revokeObjectURL(href), BLOB_LIFE_MS)
+        done(true)
+      },
+      onerror: () => done(false, 'network error'),
+      ontimeout: () => done(false, 'timeout'),
+    })
+  }
 
   // The button follows the post on screen: spinning with the progress while
   // it downloads (and disabled, the cooldown), ✓ for a moment once done.
@@ -2630,32 +2270,18 @@
     }
   }
 
-  window.addEventListener('ibh-download-progress', ev => {
-    let msg
-    try { msg = JSON.parse(ev.detail) } catch (e) { return }
-    const post = downloads.get(msg.id)
-    if (post === undefined) return
-    dlPercent.set(post, Math.round((msg.loaded / msg.total) * 100))
-    refreshDlButton()
-  })
-
-  window.addEventListener('ibh-download-done', ev => {
-    let msg
-    try { msg = JSON.parse(ev.detail) } catch (e) { return }
-    const post = downloads.get(msg.id)
-    if (post === undefined) return
-    downloads.delete(msg.id)
+  function dlFinished(post, ok, error) {
     downloading.delete(post)
     dlPercent.delete(post)
-    if (msg.ok) {
+    if (ok) {
       dlDoneAt = { post, until: Date.now() + DL_DONE_MS }
       setTimeout(refreshDlButton, DL_DONE_MS)
     }
     refreshDlButton()
-    if (modal && modal.open) flash(t(msg.ok ? 'dlDone' : 'dlFail'))
-    if (msg.ok) info(`download: post ${post} fetched, handed to Firefox to save`)
-    else warn(`download: post ${post} failed — ${msg.error}`)
-  })
+    if (modal && modal.open) flash(t(ok ? 'dlDone' : 'dlFail'))
+    if (ok) info(`download: post ${post} fetched, handed to Firefox to save`)
+    else warn(`download: post ${post} failed — ${error}`)
+  }
 
   async function modalDownload() {
     let url = modal.fileUrl
@@ -2671,40 +2297,41 @@
     }
     const post = postId(modal.link)
     if (downloading.has(post)) { flash(t('dlBusy')); return }
-    const ext = (url.split(/[?#]/)[0].match(/\.(\w+)$/) || [])[1] || 'bin'
-    const name = `${SITE.split('.')[0]}_${post}.${ext}`
-    const id = storeSeq + 1   // the id bridgeCall is about to use
-    downloads.set(id, post)
-    const started = await bridgeCall('download', null, { url, name })
-    if (started === undefined) {
-      downloads.delete(id)
+    if (!GM_XHR || !siteFile(url)) {
       window.open(url, '_blank', 'noopener')
       flash(t('dlOpened'))
-      info(`download: no storage bridge, post ${post} opened in a new tab`)
+      info(`download: post ${post} opened in a new tab (${GM_XHR ? 'not on the site’s hosts' : 'no GM_xmlhttpRequest'})`)
       return
     }
+    const ext = (url.split(/[?#]/)[0].match(/\.(\w+)$/) || [])[1] || 'bin'
+    const name = `${SITE.split('.')[0]}_${post}.${ext}`
     downloading.add(post)
     refreshDlButton()
     info(`download: post ${post} as ${name}`)
+    saveFile(url, name, (ok, error) => dlFinished(post, ok, error), (loaded, total) => {
+      dlPercent.set(post, Math.round((loaded / total) * 100))
+      refreshDlButton()
+    })
   }
 
-  // A copy of the settings in the site's IndexedDB, which localStorage.clear()
-  // leaves alone (another script's reset cleared localStorage and the
-  // settings with it), and in Violentmonkey when the storage bridge is there.
+  // A copy of the settings in Violentmonkey and in the site's IndexedDB:
+  // both outlive localStorage.clear() (another script's reset cleared
+  // localStorage and the settings with it).
   function backupCfg() {
     const copy = JSON.parse(JSON.stringify(CFG))
     idbSet('cfg', copy)
-    bridgeCall('set', 'cfg', copy)
+    if (GM_STORE && JSON.stringify(GM_getValue('cfg', null)) !== JSON.stringify(copy)) GM_setValue('cfg', copy)
   }
 
   // Settings gone from localStorage come back from a copy, and the page
   // reloads once so every option applies from the start. Settings still
-  // there refresh the copies. Run a moment after load, once the bridge is up.
+  // there refresh the copies.
   async function restoreCfg() {
     if (CFG_FOUND) { backupCfg(); return }
-    let saved = await idbGet('cfg')
-    if (!saved || typeof saved !== 'object' || !Object.keys(saved).length) saved = await bridgeCall('get', 'cfg')
-    if (!saved || typeof saved !== 'object' || !Object.keys(saved).length) return
+    await storeReady()   // the first run may still be bringing the copy over
+    let saved = GM_STORE ? GM_getValue('cfg', null) : null
+    if (!hasData(saved)) saved = await idbGet('cfg')
+    if (!hasData(saved) || typeof saved !== 'object') return
     try {
       if (sessionStorage.getItem('IBH_CFG_RESTORED')) return   // once: no reload loop
       sessionStorage.setItem('IBH_CFG_RESTORED', '1')
@@ -2760,7 +2387,7 @@
     }
   }
 
-  // Without the bridge: IndexedDB, or localStorage where IndexedDB fails.
+  // Without GM storage: IndexedDB, or localStorage where IndexedDB fails.
   // What an older version left in localStorage moves into IndexedDB.
   async function siteGet(key) {
     const value = await idbGet(key)
@@ -2777,21 +2404,103 @@
     if (!(await idbSet(key, value))) writeJSON(`IBH_${key}`, value)
   }
 
-  async function storeGet(key) {
-    const value = await bridgeCall('get', key)
-    if (value === undefined) return siteGet(key)
-    const local = await siteGet(key)
-    // First time with the bridge: move what the site's data held into it.
-    if (local && (value === null || (Array.isArray(value) && !value.length))) {
-      await bridgeCall('set', key, local)
-      info(`storage: ${key} moved into Violentmonkey`)
-      return local
+  // ── Moving in from the storage bridge ──
+  // Up to 0.64 the lists lived in a second script, the storage bridge, and
+  // Violentmonkey keeps each script's storage apart. Before the first read or
+  // write, the first run asks the bridge for them (it answers while it is
+  // installed) and takes what the site's own data held for the rest. Done for
+  // good once the bridge has answered, or after a few loads without it.
+  const BRIDGE_WAIT_MS = 1500
+  const BRIDGE_TRIES = 3
+  let movedIn = null
+
+  // The bridge's value for each key that got an answer in time.
+  function askBridge(keys) {
+    return new Promise(resolve => {
+      const got = {}
+      const asked = new Map()   // request id -> key
+      let seq = 0
+      const ask = () => {
+        for (const key of keys) {
+          if (key in got) continue
+          const id = `move-${++seq}`
+          asked.set(id, key)
+          window.dispatchEvent(new CustomEvent('ibh-store-request', { detail: JSON.stringify({ id, op: 'get', key }) }))
+        }
+      }
+      const onReply = ev => {
+        let msg
+        try { msg = JSON.parse(ev.detail) } catch (e) { return }
+        const key = msg && asked.get(msg.id)
+        if (key === undefined) return
+        got[key] = msg.value
+        if (Object.keys(got).length === keys.length) finish()
+      }
+      const finish = () => {
+        clearTimeout(timer)
+        window.removeEventListener('ibh-store-reply', onReply)
+        window.removeEventListener('ibh-store-ready', ask)
+        resolve(got)
+      }
+      const timer = setTimeout(finish, BRIDGE_WAIT_MS)
+      window.addEventListener('ibh-store-reply', onReply)
+      window.addEventListener('ibh-store-ready', ask)   // it loaded after this script: ask again
+      ask()
+    })
+  }
+
+  // Two copies of the same key, as they can differ when the bridge answers
+  // only on a later load: everything from both, this script's own first.
+  function mergeStored(key, mine, theirs) {
+    if (!hasData(mine)) return theirs
+    const union = (a, b, id) => {
+      const seen = new Set(a.map(id))
+      return [...a, ...b.filter(x => !seen.has(id(x)))]
     }
-    return value
+    if (key === 'later') return union(mine, theirs, item => item.href).slice(0, LATER_MAX)
+    if (key === 'searches') {
+      return { saved: union(mine.saved || [], theirs.saved || [], searchKey), recent: union(mine.recent || [], theirs.recent || [], searchKey),
+        favLast: mine.favLast || theirs.favLast || null }
+    }
+    // The favorites index is a copy of the site's list: the fuller one.
+    if (key === 'favs') return (theirs.items || []).length > (mine.items || []).length ? theirs : mine
+    return mine
+  }
+
+  async function moveIn() {
+    const tries = GM_getValue('movedIn', 0)
+    if (tries === true) return
+    const bridge = await askBridge(STORE_KEYS)
+    const answered = Object.keys(bridge).length > 0
+    for (const key of STORE_KEYS) {
+      const mine = GM_getValue(key, null)
+      if (key === 'cfg' && hasData(mine)) continue   // the live settings are newer (backupCfg)
+      let theirs = bridge[key]
+      let from = 'the storage bridge'
+      // The site's own data on the first try only: later ones look for the bridge.
+      if (!hasData(theirs) && tries === 0) { theirs = await siteGet(key); from = 'the site’s data' }
+      if (!hasData(theirs)) continue
+      GM_setValue(key, mergeStored(key, mine, theirs))
+      info(`storage: ${key} moved in from ${from}`)
+    }
+    GM_setValue('movedIn', answered || tries + 1 >= BRIDGE_TRIES ? true : tries + 1)
+    if (!answered) info(`storage: no storage bridge answered (load ${tries + 1} of ${BRIDGE_TRIES})`)
+  }
+
+  // Every read and write waits for it, so nothing written at load (a recent
+  // search, the favorites index) lands before the bridge's copy.
+  const storeReady = () => movedIn || (movedIn = (GM_STORE ? moveIn() : Promise.resolve())
+    .catch(e => warn(`storage: moving in failed — ${describeError(e)}`)))
+
+  async function storeGet(key) {
+    await storeReady()
+    return GM_STORE ? GM_getValue(key, null) : siteGet(key)
   }
 
   async function storeSet(key, value) {
-    if ((await bridgeCall('set', key, value)) === undefined) await siteSet(key, value)
+    await storeReady()
+    if (GM_STORE) GM_setValue(key, value)
+    else await siteSet(key, value)
   }
 
   // ── Watch later ──
@@ -2867,11 +2576,7 @@
   async function renderLater() {
     const list = (await laterList()).filter(item => item.site === SITE)
     modal.laterHead.querySelector('.lt').textContent = `🕒 ${t('laterTitle')} · ${list.length}`
-    // Without the bridge, the note is the way to install it: Violentmonkey
-    // opens its install page for a .user.js link. (@require would paste the
-    // bridge into this script, under its @grant none, without the storage.)
-    if (storeBridge) modal.laterNote.textContent = t('laterOnDevice')
-    else modal.laterNote.replaceChildren(el('a', { href: BRIDGE_URL, target: '_blank', rel: 'noopener', text: t('laterOnSite') }))
+    modal.laterNote.textContent = t(GM_STORE ? 'laterOnDevice' : 'laterOnSite')
     if (!list.length) {
       modal.laterGrid.replaceChildren(el('div', { class: 'none', text: t('laterEmpty') }))
       return
@@ -2916,8 +2621,8 @@
 
   // ── Favorites search ──
   // A search bar on your own favorites page. An index of every favorite (id,
-  // thumbnail, tags, score) is read once from the favorites pages and kept by
-  // the storage bridge; later visits only read the first pages, until they
+  // thumbnail, tags, score) is read once from the favorites pages and kept
+  // with the lists; later visits only read the first pages, until they
   // reach favorites already known (the site lists the newest first). Results
   // go into the page's own .image-list as the site's own thumbnails, so the
   // feed, covers, the modal and its swipe all work on them as on any page.
@@ -3408,7 +3113,7 @@
         const pic = pictureOf(img)
         if (!pic) return
         rawLoads.delete(img)
-        // Release goes back to the thumbnail like any upgrade (see G).
+        // Release goes back to the thumbnail like any upgrade (see D).
         if (img.dataset.ibhOrig !== 'done') {
           img.dataset.ibhThumb = src
           img.dataset.ibhOrig = 'done'
@@ -3580,7 +3285,7 @@
     const bar = document.getElementById('ibh-sitesearch')
     const home = homeSearchForm()
     const listing = new URLSearchParams(location.search).get('page') === 'post' && !!document.querySelector('.image-list')
-    const want = CFG.siteSearch && !onFavoritesPage() && !document.querySelector('.v-application') && (listing || !!home)
+    const want = CFG.siteSearch && !onFavoritesPage() && (listing || !!home)
     if (!want) {
       if (bar) bar.remove()
       if (home) home.style.display = ''   // the site's own box comes back
@@ -3652,7 +3357,7 @@
 
   // Idempotent: the observer calls it on every change of the page.
   function ensureFavPager() {
-    const want = CFG.favAutopager && (onFavoritesPage() || onListPage()) && !document.querySelector('.v-application') &&
+    const want = CFG.favAutopager && (onFavoritesPage() || onListPage()) &&
       !!document.querySelector('.image-list')
     if (!want) {
       if (pager) { pager.io.disconnect(); pager.sentinel.remove(); pager = null }
@@ -5133,7 +4838,7 @@
   }
 
   // Capture on window: runs before the link's own onclick (favorites navigate
-  // from an inline handler) and survives Masonry replacing the body.
+  // from an inline handler).
   function onSiteLinkClick(ev) {
     if (ev.defaultPrevented || ev.button !== 0) return
     const link = ev.target.closest && ev.target.closest(SITE_LINK)
@@ -5156,100 +4861,13 @@
   }
 
   // ═══════════════════════════════════════════════════════════
-  // Optional: unlock the API path on rule34
-  //
-  //   isRule34Firefox() = hostname == "rule34.xxx"
-  //                       && (UA contains "Firefox" || !credentialQuery)
-  //
-  // Because of the ||, Firefox falls into the HTML scraper even with an API
-  // credential, and that adapter comes before the API one in fetchPostsActions.
-  // Removing "Firefox" from the userAgent makes the first half false, so the
-  // list reaches booruAction, which uses the API and returns a ready file_url.
-  //
-  // OFF BY DEFAULT, on purpose: the scraper sends the session cookie
-  // (credentials: "include") and honours the account blacklist, filter_ai and
-  // post_threshold. The API goes to api.rule34.xxx, a different host, with no
-  // cookie — you gain a correct URL and lose your account filters.
-  // ═══════════════════════════════════════════════════════════
-
-  function applyRule34ApiUnlock() {
-    if (!CFG.forceRule34Api || SITE !== 'rule34.xxx') return
-    if (!masonrySettings().credentialQuery) {
-      dbg('rule34: no API credential in Masonry, keeping the scraper (it keeps the account filters itself)')
-      return
-    }
-    try {
-      // Replace only the word "Firefox": the app's isMobile check and the
-      // download headers read the rest of the string and stay correct.
-      const ua = navigator.userAgent.replace(/Firefox/g, 'Fx')
-      Object.defineProperty(navigator, 'userAgent', {
-        configurable: true,
-        get: () => ua,
-      })
-      installAccountFilters()
-      info('rule34 API path unlocked; account filters applied by the script')
-    } catch (e) {
-      error(`could not unlock the rule34 API path — ${describeError(e)}`)
-    }
-  }
-
-  // The API answers without the session cookie, so the account's own filters
-  // would be lost. The site keeps them in cookies the page can read:
-  // tag_blacklist, post_threshold and filter_ai. Masonry's booru client calls
-  // the API with the page's fetch (it runs in page mode), so the answer is
-  // filtered here before it parses it: what the site would hide stays hidden.
-  const AI_TAGS = ['ai_generated', 'ai_assisted']
-
-  function readCookie(name) {
-    const m = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`))
-    return m ? m[1] : null
-  }
-
-  function accountFilters() {
-    let raw = readCookie('tag_blacklist') || ''
-    // Stored encoded twice (spaces come back as %20 after one pass).
-    for (let i = 0; i < 2; i++) { try { raw = decodeURIComponent(raw) } catch (e) { break } }
-    const words = raw.split(/\s+/).filter(Boolean)
-    const tags = new Set(words.filter(w => !w.includes(':')))
-    const ratings = new Set(words.filter(w => w.startsWith('rating:')).map(w => w.slice(7, 8)))   // e, q, s
-    if (readCookie('filter_ai') === '1') AI_TAGS.forEach(tag => tags.add(tag))
-    return { tags, ratings, threshold: Number(readCookie('post_threshold')) || 0 }
-  }
-
-  function accountHides(post, f) {
-    if (f.threshold && Number(post.score) < f.threshold) return true
-    if (f.ratings.size && post.rating && f.ratings.has(String(post.rating)[0])) return true
-    return String(post.tags || '').split(/\s+/).some(tag => f.tags.has(tag))
-  }
-
-  function installAccountFilters() {
-    const pageFetch = window.fetch
-    window.fetch = async function (input, init) {
-      const res = await pageFetch.apply(this, arguments)
-      const url = typeof input === 'string' ? input : (input && input.url) || ''
-      if (!/\/\/api\.rule34\.xxx\/index\.php\?.*s=post&q=index/.test(url) || !/json=1/.test(url)) return res
-      try {
-        const posts = await res.clone().json()
-        if (!Array.isArray(posts)) return res
-        const f = accountFilters()
-        const kept = posts.filter(post => !accountHides(post, f))
-        if (kept.length === posts.length) return res
-        info(`rule34 API: account filters hid ${posts.length - kept.length} of ${posts.length} posts`)
-        return new Response(JSON.stringify(kept), { status: res.status, statusText: res.statusText, headers: res.headers })
-      } catch (e) {
-        return res   // not the JSON we expected: hand it over untouched
-      }
-    }
-  }
-
-  // ═══════════════════════════════════════════════════════════
   // On-demand diagnostics
   // ═══════════════════════════════════════════════════════════
 
   /** Test every candidate URL of the first video card and log the outcome. */
   function probeVideoUrls() {
     // Prefer a card that is on screen, so the result matches what you see.
-    const cards = [...document.querySelectorAll('.posts-image-card')].filter(isVideoCard)
+    const cards = [...document.querySelectorAll(SITE_LINK)].filter(isVideoCard)
     const card = cards.find(c => c.dataset.ibhSeen) || cards[0]
     if (!card) { warn('no video card on screen to test'); return }
     const pic = cardPicture(card)
@@ -5293,7 +4911,7 @@
   // Other tabs of the same site running the script hear the Free memory
   // button through this channel. Without any @grant there is no storage shared
   // between sites, so tabs of another site are out of reach; a hidden tab
-  // parks its covers and GIFs by itself (see G).
+  // parks its covers and GIFs by itself (see D).
   const tabChannel = 'BroadcastChannel' in window ? new BroadcastChannel('ibh') : null
   if (tabChannel) {
     tabChannel.onmessage = ev => {
@@ -5310,7 +4928,7 @@
   /**
    * Give back the memory this script holds on the page and drop its caches.
    * The browser's HTTP cache is out of reach for any page script; settings
-   * (IBH_CFG), Masonry's settings and the site login are left alone.
+   * (IBH_CFG) and the site login are left alone.
    */
   async function freeMemory(fromOtherTab = false) {
     // The button frees every tab of this site running the script, not only this one.
@@ -5390,7 +5008,7 @@
       if (CFG.videoCovers && isVideoCard(card)) { mountCover(card); n.covers++ }
       else if (CFG.gifInline && isGifCard(card)) { playGif(card); n.gifs++ }
     })
-    // Pick up elements Masonry rebuilt since the last scan.
+    // Pick up thumbnails added since the last scan (autopager, search results).
     scanCards(document)
     scanThumbs(document)
     info(`redo thumbnails: ${n.images} images re-queued, ${n.covers} covers and ${n.gifs} GIFs restarted, ${misses} cached misses dropped`)
@@ -5400,9 +5018,6 @@
   function logSnapshot() {
     info(`v${VERSION} on ${SITE} · ui=${LANG}`)
     dbg(`userAgent: ${navigator.userAgent}`)
-    readMasonryState()
-    dbg(`columns: ${STATE.columns} · thumbnails: ${STATE.thumbMode}`)
-    dbg(`API credential: ${STATE.credential ? 'filled' : 'empty'}`)
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -5464,7 +5079,6 @@
     }
     .panel:not([hidden]) ~ .laterfab, .panel:not([hidden]) ~ .bulkfab, .panel:not([hidden]) ~ .favsfab, .panel:not([hidden]) ~ .pagenav { display: none; }
     .feednav button:disabled { opacity: .35; }
-    .feednav.raised { bottom: 76px; }
 
     .panel {
       position: fixed; left: 12px; bottom: 60px; z-index: 2147483000;
@@ -5569,7 +5183,6 @@
   }
 
   function drawStatus() {
-    readMasonryState(false)
     statusBox.textContent = ''
 
     const c = STATE.covers
@@ -5580,20 +5193,8 @@
 
     const rows = [
       statusRow(t('site'), SITE, 'ok'),
-      statusRow(t('gallery'), STATE.masonry ? t('active') : t('notDetected'),
-        STATE.masonry ? 'ok' : 'idle'),
-      statusRow(t('thumbnail'),
-        STATE.thumbMode === 'large' ? t('largeImage') : t('smallThumb'),
-        STATE.thumbMode === 'large' ? 'ok' : 'warn'),
-      statusRow(t('columns'), STATE.columns == null ? '—' : STATE.columns, 'idle'),
       statusRow(t('host'), hostLabel, STATE.imageBase ? 'ok' : 'warn'),
       statusRow(t('covers'), t('coversFmt')(c.ok, c.failed, c.tracked), coverTone),
-      statusRow(t('fancybox'), t(STATE.fancybox),
-        STATE.fancybox === 'active' ? 'ok' : STATE.fancybox === 'failed' ? 'bad' : 'idle'),
-      statusRow(t('credential'), STATE.credential ? t('filled') : t('empty'),
-        STATE.credential ? 'ok' : 'idle'),
-      statusRow(t('lastGesture'), STATE.lastGesture ? t(STATE.lastGesture) : '—',
-        STATE.gestureCount ? 'ok' : 'idle'),
     ]
     rows.forEach(r => statusBox.appendChild(r))
   }
@@ -5695,7 +5296,6 @@
     body.appendChild(statusBox)
 
     body.appendChild(el('div', { class: 'sec', text: t('fixes') }))
-    body.appendChild(toggle('sharpThumbs', t('tSharp'), t('noteReload')))
     body.appendChild(toggle('originalThumbs', t('tOriginal'), t('noteReload')))
     body.appendChild(toggle('nativeFeed', t('tFeed'), null, () => { switchFeed(); rebuildPanel() }))
     if (CFG.nativeFeed) {
@@ -5726,8 +5326,6 @@
     scrubModeControls(body)
     body.appendChild(toggle('memorySaver', t('tMemory'), t('noteReload')))
     body.appendChild(toggle('urlCache', t('tUrlCache')))
-    body.appendChild(toggle('fixFancybox', t('tFancybox')))
-    body.appendChild(toggle('gestures', t('tGestures')))
     body.appendChild(toggle('debug', t('tDebug')))
 
     body.appendChild(el('div', { class: 'sec', text: t('language') }))
@@ -5754,8 +5352,7 @@
   function copyLog() {
     const head = `Image Board Helper v${VERSION} · ${SITE}\n` +
       `UA: ${navigator.userAgent}\n` +
-      `host: ${STATE.imageBase} · thumbnails: ${STATE.thumbMode} · ` +
-      `columns: ${STATE.columns}\n\n`
+      `host: ${STATE.imageBase}\n\n`
     const body = LOG.map(e =>
       `${new Date(e.t).toTimeString().slice(0, 8)} [${e.level}] ${e.msg}`).join('\n')
 
@@ -5835,7 +5432,7 @@
     }
     // Your favorites: top right, beside ♥ and 🕒.
     let favs = shadow.querySelector('.favsfab')
-    const wantFavs = !!CFG.favsButton && SITE === 'rule34.xxx' && !!userId() && !document.querySelector('.v-application')
+    const wantFavs = !!CFG.favsButton && SITE === 'rule34.xxx' && !!userId()
     if (favs && !wantFavs) { favs.remove(); favs = null }
     if (!favs && wantFavs) {
       favs = iconButton('laterfab favsfab', t('navFavs'), BOOKMARK_ICON)
@@ -5868,8 +5465,6 @@
       shadow.appendChild(clock)
     }
     packRight()
-    // Masonry's refresh button sits in the same corner; stay above it.
-    if (nav) nav.classList.toggle('raised', !!document.querySelector('.v-application'))
     let pages = shadow.querySelector('.pagenav')
     if (pages && !feed) { pages.remove(); pages = null }
     if (!pages && feed) { pages = buildPageNav(); shadow.appendChild(pages) }
@@ -6046,8 +5641,6 @@
   // Boot
   // ═══════════════════════════════════════════════════════════
 
-  // Without this the browser claims the horizontal drag as history navigation
-  // and the swipe never reaches our listeners.
   // The site injects .thumb { width/max-height: <thumbnail size> !important }
   // from the account's thumbnail setting; max-height has to be lifted too, or
   // a tall image overflows its 250px box and covers the next post.
@@ -6103,9 +5696,9 @@
 
   let feedCssShown = null
 
-  // Keeps the feed's <style> in step with the options; Masonry rewrites
-  // <head>, so it is put back when it goes missing. Unchanged CSS is not
-  // rewritten (this runs on every DOM change).
+  // Keeps the feed's <style> in step with the options, putting it back if it
+  // goes missing. Unchanged CSS is not rewritten (this runs on every DOM
+  // change).
   function applyFeed() {
     const css = CFG.nativeFeed ? feedCss() : ''
     let style = document.querySelector('style[data-ibh-feed]')
@@ -6133,8 +5726,8 @@
 
   // The modal's look on the site's own pages: dark slate background, light
   // text, teal links and controls, tag kinds in the tags menu's colours. All
-  // of it hangs on html.ibh-theme, which applySiteTheme() sets only off
-  // Masonry (it has its own interface) and only with the option on.
+  // of it hangs on html.ibh-theme, which applySiteTheme() sets with the
+  // option on.
   // Backgrounds go transparent over the dark page (images, videos and icons
   // keep theirs); the thumbnails' blue video frame is left alone.
   const THEME_CSS = `
@@ -6172,11 +5765,10 @@
   let themeOn = null
 
   function applySiteTheme() {
-    const on = !!CFG.siteTheme && !document.querySelector('.v-application')   // not on Masonry
+    const on = !!CFG.siteTheme
     if (on === themeOn && document.documentElement.classList.contains('ibh-theme') === on) return
     themeOn = on
     document.documentElement.classList.toggle('ibh-theme', on)
-    // Masonry swaps the whole <html>: the old one may still carry the class.
     dbg(`site theme ${on ? 'on' : 'off'}`)
   }
 
@@ -6205,19 +5797,18 @@
   function injectPageCSS() {
     if (document.querySelector('style[data-ibh]')) return
     const style = el('style', { 'data-ibh': '1' })
-    style.textContent = '.img_detail_cont { touch-action: pan-y; }' + NATIVE_MARK_CSS + THEME_CSS + FAVSEARCH_CSS +
+    style.textContent = NATIVE_MARK_CSS + THEME_CSS + FAVSEARCH_CSS +
       (CFG.videoScrub ? SCRUB_CSS : '')
     ;(document.head || document.documentElement).appendChild(style)
   }
 
-  // Masonry swaps documentElement and body wholesale; document itself never
-  // changes. The same observer finds new cards and remounts the panel.
+  // One observer on the document finds new thumbnails (autopager, search
+  // results) and keeps the page-level pieces in place.
   new MutationObserver(records => {
     for (const r of records) {
       for (const node of r.addedNodes) {
         if (node.nodeType !== 1) continue
-        if (node.classList && node.classList.contains('posts-image-card')) trackCard(node)
-        else scanCards(node)
+        scanCards(node)
         scanThumbs(node)
       }
       if (CFG.memorySaver && r.removedNodes.length) onNodesRemoved(r.removedNodes)
@@ -6233,10 +5824,6 @@
     ensureSiteSearch()
   }).observe(document, { childList: true, subtree: true })
 
-  applySharpThumbs()
-  applyRule34ApiUnlock()
-  hookFancybox()
-  installGestures()
   installMemorySaver()
   window.addEventListener('click', onBulkClick, true)   // before the modal: in mass favorite a tap favorites
   window.addEventListener('click', onRawClick, true)    // before the modal: the release of a raw hold
@@ -6251,7 +5838,8 @@
   if (CFG.originalThumbs) info('original thumbnails on: visible thumbnails load the full file')
   if (CFG.nativeFeed) info(`feed on: ${CFG.feedColumns} columns, ${CFG.feedLayout}; site pages show samples`)
 
-  setTimeout(restoreCfg, 2000)   // after the storage bridge has loaded
+  storeReady()   // the first run brings the lists over from the storage bridge
+  restoreCfg()
 
   const boot = () => {
     injectPageCSS()
@@ -6268,8 +5856,9 @@
     boot()
   }
 
-  // Console access, useful when the panel is turned off.
-  window.__ibh = {
+  // Console access, useful when the panel is turned off. On the page's own
+  // window: with GM grants, this script's window is a wrapper around it.
+  ;(typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).__ibh = {
     version: VERSION,
     cfg: CFG,
     state: STATE,
@@ -6281,5 +5870,7 @@
     clearUrlCache,
     redo: redoThumbs,
     set: setCfg,
+    // Size of each stored key (JSON characters) and the move-in state.
+    stored: () => (GM_STORE ? Object.fromEntries([...STORE_KEYS.map(k => [k, JSON.stringify(GM_getValue(k, null)).length]), ['movedIn', GM_getValue('movedIn', 0)]]) : null),
   }
 })()

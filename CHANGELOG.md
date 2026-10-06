@@ -1,5 +1,26 @@
 # Changelog
 
+## 1.0.0
+
+- Standalone: the script now works on its own, on the pages of Gelbooru 0.2
+  boards (rule34.xxx, safebooru, tbib, xbooru, realbooru), and no longer
+  supports Yande.re Masonry. The companion version stays in the
+  `masonry-companion` branch
+- Gone with Masonry support: sharp thumbnails (`sharpThumbs`), the Fancybox
+  repair (`fixFancybox`), the gesture layer (`gestures`), the rule34 API path
+  and its account filters (`forceRule34Api`), and the `@match` lines of the
+  boards only Masonry served (yande.re, konachan, danbooru, gelbooru.com and
+  others)
+- The storage bridge is now part of the script: the lists (Watch later, the
+  favorites index, saved searches) and the copy of the settings live in its
+  own Violentmonkey storage, and ⬇ Download saves files by itself. The first
+  run brings the lists over from the bridge (or from the site's data, without
+  it) before anything is read or written; uninstall the bridge after that
+- Grants: `GM_getValue`, `GM_setValue`, `GM_xmlhttpRequest` (`@connect *`;
+  files still come only from the site's own hosts) and `unsafeWindow`
+  (`window.__ibh` stays on the page's window). Still `@inject-into page`
+- `__ibh.stored()` gives the size of each stored list and the move-in state
+
 ## 0.64.0
 
 - OR field in both search bars: tags typed apart by spaces become one
