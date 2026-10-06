@@ -4,9 +4,9 @@
 // Smoke test in a headless Firefox (Playwright), without the phone: loads a
 // safebooru listing with the userscript injected (the GM functions stubbed
 // in memory) and checks that it boots, mounts the panel and the search bar,
-// lays out the feed, opens and closes the modal and runs the autopager, with
-// no page errors. rule34 answers a headless browser with a CAPTCHA;
-// safebooru has the same Gelbooru 0.2 markup. Same engine as the phone
+// lays out the feed, hides the buttons with 👁, opens and closes the modal
+// and runs the autopager, with no page errors. rule34 answers a headless
+// browser with a CAPTCHA; safebooru has the same Gelbooru 0.2 markup. Same engine as the phone
 // (Gecko), not the same browser: touch, video decoding and Violentmonkey
 // itself still need the device.
 //
@@ -66,6 +66,18 @@ const logLine = (page, re, timeout = 15000) => page.waitForFunction(
     const shadowHosts = await page.evaluate(() => [...document.querySelectorAll('*')].filter(e => e.shadowRoot).length)
     check('panel mounted', shadowHosts >= 1, `${shadowHosts} shadow host(s)`)
     check('site search bar', await page.locator('#ibh-sitesearch').count() === 1)
+
+    // 👁 hides the other floating buttons, and a second tap brings them back.
+    const fabShown = () => page.evaluate(() => {
+      const host = [...document.querySelectorAll('*')].find(e => e.shadowRoot && e.shadowRoot.querySelector('.eyefab'))
+      const other = host && host.shadowRoot.querySelector('.fab, .feednav, .laterfab')
+      return other ? getComputedStyle(other).display !== 'none' : null
+    })
+    await page.locator('.eyefab').click()
+    const hidden = (await fabShown()) === false
+    await page.locator('.eyefab').click()
+    const back = (await fabShown()) === true
+    check('eye button', hidden && back, `${hidden ? 'hid' : 'did not hide'} the other buttons, ${back ? 'brought them back' : 'left them hidden'}`)
 
     // Everything below works on the site's .image-list (Gelbooru 0.2 markup).
     if (!(await page.locator('.image-list').count())) {

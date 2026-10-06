@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.0.1
+// @version      1.1.0
 // @description  For the phone, on Gelbooru 0.2 boards (rule34.xxx and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -62,7 +62,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.0.1'
+  const VERSION = '1.1.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -90,6 +90,8 @@
     bulkFavButton:  true,   // ♥ button next to 🕒 on site pages: a mode where each tapped post is favorited and upvoted
     freeButton:     true,   // trash-can button next to them: Free memory & cache in one tap
     redoButton:     true,   // ↻ button beside it: free memory, then redo every thumbnail
+    eyeButton:      true,   // 👁 button beside ◐: hides the other floating buttons, and brings them back
+    buttonsHidden:  false,  // set by the 👁 button (no panel switch): the floating buttons are hidden
     laterButton:    true,   // 🕒 button next to them on site pages: the Watch later list
     favSearch:      true,   // search bar on your own rule34 favorites page, results in the page's own list
     favAutopager:   true,   // search listings and favorites load the next page as you near the bottom
@@ -171,6 +173,7 @@
       tBulkBtn: 'Mass-favorite button', navBulk: 'Mass favorite: each tapped post gets ♥ and ▲',
       bulkOn: 'Mass favorite on: tap posts to favorite and upvote them', bulkOff: 'Mass favorite off',
       tRedoBtn: 'Redo-thumbnails shortcut button', navRedo: 'Free memory, then redo thumbnails',
+      tEyeBtn: '👁 button: hides the other buttons', eyeHide: 'Hide the buttons', eyeShow: 'Show the buttons',
       tFreeBtn: 'Free-memory shortcut button', navFree: 'Free memory & cache',
       tFavSearch: 'Search your favorites', tSiteSearch: 'Search bar on site pages',
       savedPick: 'Favorite searches…', recentPick: 'Recent searches…', saveSearch: '☆ Favorite', savedSearch: '★ Favorite', savedAll: '(everything)',
@@ -239,6 +242,7 @@
       tBulkBtn: 'Botão de favoritar em massa', navBulk: 'Favoritar em massa: cada post tocado ganha ♥ e ▲',
       bulkOn: 'Favoritar em massa ligado: toque nos posts para favoritar e votar', bulkOff: 'Favoritar em massa desligado',
       tRedoBtn: 'Botão de atalho para refazer as miniaturas', navRedo: 'Limpar a memória e refazer as miniaturas',
+      tEyeBtn: 'Botão 👁: oculta os outros botões', eyeHide: 'Ocultar os botões', eyeShow: 'Mostrar os botões',
       tFreeBtn: 'Botão de atalho para limpar a memória', navFree: 'Limpar memória e cache',
       tFavSearch: 'Buscar nos seus favoritos', tSiteSearch: 'Barra de busca nas páginas do site',
       savedPick: 'Buscas favoritas…', recentPick: 'Buscas recentes…', saveSearch: '☆ Favoritar', savedSearch: '★ Favorita', savedAll: '(tudo)',
@@ -5071,6 +5075,18 @@
     .laterfab.favsfab { right: 116px; }
     .feednav.pagenav { top: 6px; bottom: auto; right: auto; left: 12px; }
     .laterfab.on { background: #5eead4; color: #0f1417; border-color: #5eead4; }
+    /* 👁: bottom left, beside ◐; in its place when the panel is off. */
+    .eyefab {
+      position: fixed; left: 60px; bottom: 12px; z-index: 2147483000;
+      width: 40px; height: 40px; border-radius: 50%; padding: 0; display: grid; place-items: center;
+      border: 1px solid #2a3a3f; background: rgba(15, 20, 23, .8); color: #5eead4;
+      box-shadow: 0 4px 14px rgba(0,0,0,.5);
+    }
+    .eyefab.solo { left: 12px; }
+    .eyefab svg { width: 20px; height: 20px; fill: currentColor; }
+    /* Hidden by the eye: every other button, and the eye fades. */
+    :host(.ibh-clean) .fab, :host(.ibh-clean) .panel, :host(.ibh-clean) .feednav, :host(.ibh-clean) .laterfab { display: none !important; }
+    :host(.ibh-clean) .eyefab { opacity: .4; box-shadow: none; }
     .pagetoast {
       position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); z-index: 2147483000; max-width: 86vw;
       padding: 8px 14px; border-radius: 18px; background: rgba(15, 20, 23, .92); color: #d7dee0;
@@ -5309,6 +5325,7 @@
     body.appendChild(toggle('holdRaw', t('tHoldRaw')))
     body.appendChild(toggle('freeButton', t('tFreeBtn'), null, ensureFeedNav))
     body.appendChild(toggle('redoButton', t('tRedoBtn'), null, ensureFeedNav))
+    body.appendChild(toggle('eyeButton', t('tEyeBtn'), null, ensureFeedNav))
     body.appendChild(toggle('laterButton', t('tLaterBtn'), null, ensureFeedNav))
     body.appendChild(toggle('favSearch', t('tFavSearch'), null, ensureFavSearch))
     body.appendChild(toggle('favAutopager', t('tPager'), null, ensureFavPager))
@@ -5380,7 +5397,7 @@
   }
 
   function mountPanel() {
-    const nav = wantsFeedButtons() || CFG.freeButton || CFG.redoButton || CFG.laterButton || CFG.bulkFavButton || CFG.favsButton
+    const nav = wantsFeedButtons() || CFG.freeButton || CFG.redoButton || CFG.laterButton || CFG.bulkFavButton || CFG.favsButton || CFG.eyeButton
     if (!CFG.panel && !nav) return
     if (panelHost && panelHost.isConnected) return
     if (!document.body) return
@@ -5464,6 +5481,16 @@
       shadow.appendChild(clock)
     }
     packRight()
+    // 👁: bottom left, beside ◐ (in its place when the panel is off).
+    let eye = shadow.querySelector('.eyefab')
+    if (eye && !CFG.eyeButton) { eye.remove(); eye = null }
+    if (!eye && CFG.eyeButton) {
+      eye = iconButton('eyefab', t('eyeHide'), EYE_ICON)
+      eye.classList.toggle('solo', !CFG.panel)
+      eye.addEventListener('click', () => setButtonsHidden(!CFG.buttonsHidden))
+      shadow.appendChild(eye)
+    }
+    applyButtonsHidden()
     let pages = shadow.querySelector('.pagenav')
     if (pages && !feed) { pages.remove(); pages = null }
     if (!pages && feed) { pages = buildPageNav(); shadow.appendChild(pages) }
@@ -5576,6 +5603,34 @@
       })
     })
     return btn
+  }
+
+  // Material Design's "visibility" and "visibility off" icons, as path data.
+  const EYE_ICON = 'M12 4.5C7 4.5 2.73 7.61 1 12c1.73 4.39 6 7.5 11 7.5s9.27-3.11 11-7.5c-1.73-4.39-6-7.5-11-7.5zM12 17c-2.76 0-5-2.24-5-5s2.24-5 5-5 5 2.24 5 5-2.24 5-5 5zm0-8c-1.66 0-3 1.34-3 3s1.34 3 3 3 3-1.34 3-3-1.34-3-3-3z'
+  const EYE_OFF_ICON = 'M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c1.51-1.26 2.7-2.89 3.43-4.75-1.73-4.39-6-7.5-11-7.5-1.4 0-2.74.25-3.98.7l2.16 2.16C10.74 7.13 11.35 7 12 7zM2 4.27l2.28 2.28.46.46C3.08 8.3 1.78 10.02 1 12c1.73 4.39 6 7.5 11 7.5 1.55 0 3.03-.3 4.38-.84l.42.42L19.73 22 21 20.73 3.27 3 2 4.27zM7.53 9.8l1.55 1.55c-.05.21-.08.43-.08.65 0 1.66 1.34 3 3 3 .22 0 .44-.03.65-.08l1.55 1.55c-.67.33-1.41.53-2.2.53-2.76 0-5-2.24-5-5 0-.79.2-1.53.53-2.2zm4.31-.78l3.15 3.15.02-.16c0-1.66-1.34-3-3-3l-.17.01z'
+
+  // 👁: hides every other floating button (◐ and the panel too) for a page
+  // with nothing over it, and brings them back. Remembered across pages.
+  function setButtonsHidden(hidden) {
+    if (hidden) {
+      if (bulkMode) setBulkMode(false)   // its ♥ goes away: no tap may favorite unseen
+      if (panelOpen) togglePanel(false)
+    }
+    setCfg('buttonsHidden', hidden)
+    applyButtonsHidden()
+  }
+
+  // The hiding is a class on the host, read by PANEL_CSS; without the eye
+  // nothing stays hidden. Runs on every DOM change: only acts on a change.
+  function applyButtonsHidden() {
+    const eye = shadow && shadow.querySelector('.eyefab')
+    if (!eye) { if (panelHost) panelHost.classList.remove('ibh-clean'); return }
+    const hidden = !!CFG.buttonsHidden
+    if (eye.dataset.hidden === String(hidden)) return
+    eye.dataset.hidden = String(hidden)
+    panelHost.classList.toggle('ibh-clean', hidden)
+    eye.title = t(hidden ? 'eyeShow' : 'eyeHide')
+    eye.querySelector('path').setAttribute('d', hidden ? EYE_OFF_ICON : EYE_ICON)
   }
 
   // Material Design's "watch later" icon (a clock), as path data.

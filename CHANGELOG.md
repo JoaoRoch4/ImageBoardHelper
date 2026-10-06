@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.1.0
+
+- 👁 button bottom left, beside ◐ (`eyeButton`): one tap hides every other
+  floating button, the panel's ◐ included, for a page with nothing over it;
+  the next brings them back. Remembered across pages (`buttonsHidden`), and
+  hiding leaves mass favorite, whose ♥ goes away with the rest
+
 ## 1.0.1
 
 - tbib and realbooru are out of `@match` for now: their listing pages do not
