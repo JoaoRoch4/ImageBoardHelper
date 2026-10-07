@@ -247,3 +247,37 @@ test('Shizuku down: 503', async () => {
   await startServer({ IBH_SERVER_PORT: String(p2), RISH: path.join(dir, 'no-such-rish') })
   assert.equal((await req('open', { app: 'org.videolan.vlc' }, TOKEN, undefined, p2)).status, 503)
 })
+
+// ─── notify, clipboard, toast (through the fake Termux:API) ───
+
+stub(termuxBin, 'termux-notification')
+stub(termuxBin, 'termux-toast')
+stub(termuxBin, 'termux-clipboard-set', `cat >> "${callsLog}"; echo >> "${callsLog}"`)   // its stdin, on the next line
+stub(termuxBin, 'termux-clipboard-get', 'printf "copied text"')
+
+test('notify with a link', async () => {
+  await req('notify', { title: 'Deploy', text: 'v1.9 ok', url: 'https://rule34.xxx/', id: 'deploy' })
+  const call = lastCall() ?? ''
+  assert.match(call, /^termux-notification --title Deploy --content v1\.9 ok --id deploy --action /)
+  assert.match(call, /am start -a android\.intent\.action\.VIEW -d 'https:\/\/rule34\.xxx\/'/)
+})
+
+test('notify refuses a link with quotes', async () => assert.equal((await req('notify', { title: 't', text: 'x', url: "https://x/'" })).status, 400))
+
+test('clipboard read', async () => assert.equal((await req('clipboard', {})).json.text, 'copied text'))
+
+test('clipboard write goes through stdin', async () => {
+  await req('clipboard', { set: "it's" })
+  assert.deepEqual(calls().slice(-2), ['termux-clipboard-set', "it's"])
+})
+
+test('toast', async () => {
+  await req('toast', { text: 'oi' })
+  assert.equal(lastCall(), 'termux-toast oi')
+})
+
+test('Termux:API missing: 503', async () => {
+  const p3 = await freePort()
+  await startServer({ IBH_SERVER_PORT: String(p3), IBH_TERMUX_BIN: path.join(dir, 'no-termux') + '/' })
+  assert.equal((await req('toast', { text: 'oi' }, TOKEN, undefined, p3)).status, 503)
+})

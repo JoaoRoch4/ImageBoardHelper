@@ -22,7 +22,7 @@ import * as path from 'node:path'
 import * as http from 'node:http'
 import * as crypto from 'node:crypto'
 import { spawn } from 'node:child_process'
-import { rish, shizukuUp } from './rish.mts'
+import { findRish, rish, shizukuUp } from './rish.mts'
 
 const VERSION = '1.0.0'
 const DIR = process.env.IBH_SERVER_DIR || path.join(os.homedir(), '.config', 'ibh-server')
@@ -227,6 +227,26 @@ export const ROUTES: Record<string, Handler> = {
     await shell(cmd, 30000)
     return { done: cmd }
   },
+
+  // A notification; with `url`, tapping it opens the link. The tap runs a
+  // shell line in Termux, and Android refuses `am` to Termux: rish runs it.
+  notify: async body => {
+    const url = optText(body, 'url')
+    if (url && !LINK.test(url)) throw new HttpError(400, 'url must be a link without spaces or quotes')
+    const args = ['--title', text(body, 'title'), '--content', text(body, 'text'), '--id', optText(body, 'id') ?? 'ibh']
+    if (url) args.push('--action', `${findRish()} -c "am start -a android.intent.action.VIEW -d '${url}'"`)
+    await termux('termux-notification', args)
+    return {}
+  },
+
+  // Reads the clipboard, or writes `set` to it (on stdin: nothing to quote).
+  clipboard: async body => {
+    const set = optText(body, 'set')
+    if (set !== undefined) { await termux('termux-clipboard-set', [], set); return {} }
+    return { text: await termux('termux-clipboard-get', []) }
+  },
+
+  toast: async body => { await termux('termux-toast', [text(body, 'text')]); return {} },
 
   run: async body => {
     const timeout = optNumber(body, 'timeout') ?? 60
