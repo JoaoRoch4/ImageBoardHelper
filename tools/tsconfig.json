@@ -14,7 +14,8 @@
     "erasableSyntaxOnly": true,           // no enum, namespace or parameter properties: they would need compiling
     "strict": true,
     "noUncheckedIndexedAccess": true,     // arr[i] and match[1] may be undefined
-    "noUnusedLocals": true                // what ESLint's no-unused-vars did for the .js tools
+    "noUnusedLocals": true,               // what ESLint's no-unused-vars did for the .js tools
+    "skipLibCheck": true                  // Playwright's own .d.ts files name DOM types, left out here on purpose
   },
   "include": ["*.mts", "*.d.ts"]
 }
