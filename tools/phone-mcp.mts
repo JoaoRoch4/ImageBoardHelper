@@ -24,8 +24,8 @@ import * as path from 'node:path'
 import * as https from 'node:https'
 import * as readline from 'node:readline'
 import { execFileSync, spawn } from 'node:child_process'
-import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import * as ff from './ffrdp.mts'
+import { rish, shizukuUp } from './rish.mts'
 import type { Connection, PrefAction, Tab } from './ffrdp.mts'
 
 const REPO = path.resolve(import.meta.dirname, '..')
@@ -34,8 +34,6 @@ const BROWSER = 'org.mozilla.firefox_beta'   // the Firefox used until connect p
 const SCREENSHOTS = '/sdcard/Pictures/Screenshots'   // where the phone's own screenshots land
 const SHOT = '/sdcard/Download/ibh.png'              // where screencap writes; the container reads it too
 const RECORDING = '/sdcard/Download/ibh-rec.mp4'
-const LOCAL_RISH = path.join(os.homedir(), '.local/bin/rish')
-const RISH = fs.existsSync(LOCAL_RISH) ? LOCAL_RISH : 'rish'
 const LOGS = path.join(os.homedir(), '.cache', 'ibh-logs')    // log snapshots, taken before every deploy
 const WORK = path.join(os.homedir(), '.cache', 'ibh-mcp')     // scratch: frames, wasm build state
 const SITE_REFERER = 'https://rule34.xxx/'                    // rule34's fast host serves videos only with it
@@ -89,89 +87,7 @@ function withTimeout<T>(promise: Promise<T>, ms: number, what: string): Promise<
 
 // ─── the phone: Shizuku (rish) first, the adb connection as a fallback ───
 
-// rish starts a Java VM (app_process) for every call: seconds each on this
-// phone, and the first call after ColorOS froze Shizuku's idle process can
-// come back empty. So one rish stays open for the whole server, and every
-// command goes through its stdin, followed by a random marker that carries
-// the exit code: the VM starts once (~4 s), then commands take ~50 ms.
-// rish mixes up its two channels (a plain echo can arrive on stderr), but
-// keeps the order: both feed one buffer, and the marker always comes last.
-interface RishCommand {
-  cmd: string
-  timeout: number
-  marker: string
-  resolve: (r: { out: string; code: number }) => void
-  reject: (e: Error) => void
-  timer?: NodeJS.Timeout
-}
-
-interface RishSession {
-  child: ChildProcessWithoutNullStreams
-  buf: string
-  queue: RishCommand[]
-  busy: RishCommand | null
-  dead: boolean
-}
-
-let session: RishSession | null = null
-
-function rishSession(): RishSession {
-  if (session && !session.dead) return session
-  const child = spawn(RISH, [], { stdio: 'pipe' })
-  const s: RishSession = { child, buf: '', queue: [], busy: null, dead: false }
-  for (const stream of [child.stdout, child.stderr]) {
-    stream.setEncoding('utf8')
-    stream.on('data', (d: string) => { s.buf += d; pump(s) })
-  }
-  child.stdin.on('error', () => { /* the session ended: exit below */ })
-  const end = () => {
-    if (s.dead) return
-    s.dead = true
-    const err = new Error('the rish session ended (Shizuku down?)')
-    if (s.busy) { clearTimeout(s.busy.timer); s.busy.reject(err) }
-    for (const q of s.queue.splice(0)) q.reject(err)
-  }
-  child.on('exit', end)
-  child.on('error', end)
-  session = s
-  return s
-}
-
-// The command in flight finishes at its marker; then the next one goes in.
-function pump(s: RishSession) {
-  if (s.busy) {
-    const at = s.buf.indexOf(s.busy.marker)
-    const eol = at < 0 ? -1 : s.buf.indexOf('\n', at)
-    if (eol < 0) return
-    const code = Number(s.buf.slice(at + s.busy.marker.length, eol).trim())
-    const out = s.buf.slice(0, at)
-    s.buf = s.buf.slice(eol + 1)
-    clearTimeout(s.busy.timer)
-    s.busy.resolve({ out: out.trim(), code })
-    s.busy = null
-  }
-  const next = !s.busy && !s.dead ? s.queue.shift() : undefined
-  if (next) {
-    s.busy = next
-    next.timer = setTimeout(() => s.child.kill(), next.timeout)   // a stuck command takes the session with it
-    // stdin from /dev/null: a command reading it would eat the ones after.
-    s.child.stdin.write(`{ { ${next.cmd}\n} </dev/null; echo "${next.marker} $?"; } 2>&1\n`)
-  }
-}
-
-function rish(cmd: string, timeout = 20000) {
-  return new Promise<{ out: string; code: number }>((resolve, reject) => {
-    const s = rishSession()
-    if (s.dead) { reject(new Error('rish would not start')); return }
-    s.queue.push({ cmd, timeout, resolve, reject, marker: `__ibh_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}__` })
-    pump(s)
-  })
-}
-
-// The first command also starts the session, so it gets time for the VM.
-async function shizukuUp() {
-  try { return (await rish('echo ok', 30000)).out.split('\n').includes('ok') } catch (e) { return false }
-}
+// The rish session (Shizuku, uid shell) lives in ./rish.mts, shared with the phone server.
 
 function adbSerial(): string | null {
   try {

@@ -3,10 +3,11 @@
   "private": true,
   "description": "Development tools only: the userscript itself has no dependencies and no build",
   "scripts": {
-    "check": "node --check image-board-helper.user.js && node tools/check-i18n.js && eslint && tsc -p . && tsc -p tools",
+    "check": "node --check image-board-helper.user.js && node tools/check-i18n.js && eslint && tsc -p . && tsc -p tools && npm run -s test:tools",
     "lint": "eslint",
     "typecheck": "tsc -p . && tsc -p tools",
-    "smoke": "node tools/smoke.js"
+    "smoke": "node tools/smoke.js",
+    "test:tools": "node --test tools/rish.test.mts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
