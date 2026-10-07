@@ -168,7 +168,8 @@ node tools/ffrdp.mts eval rule34 'window.__ibh.log()'   # aba por índice ou tre
 ```
 
 - O `adb` (`android-tools`) já está pareado com a depuração sem fio do próprio aparelho — o pareamento é permanente. A porta de conexão muda quando a depuração sem fio reinicia; o `setup` acha a nova pelo mDNS e precisa ser rodado de novo.
-- Requer "Depuração remota via USB" ligada no Firefox. Hoje o socket ativo é o do **Firefox Beta** (`org.mozilla.firefox_beta`), onde o script está instalado; o `setup` usa o primeiro socket que achar.
+- Requer "Depuração remota via USB" ligada no Firefox. O script está no **Firefox Beta** (`org.mozilla.firefox_beta`) e no **Nightly** (`org.mozilla.fenix`), que o usuário passou a usar em 2026-10-07. O `setup` escolhe pelo `FFRDP_APP` (ou pelo parâmetro), senão o primeiro socket; o phone MCP lembra a escolha (`connect app=…`, guardada em `~/.cache/ibh-mcp/firefox-app`), e `open_url`, `deploy` e `device` seguem esse Firefox.
+- Firefox em segundo plano fica congelado pelo Android (estado de processo em cache): não aceita conexão, a fila do socket enche e o `adbd` registra `could not connect … (Try again)`. Só responde com o app na frente; o `withFirefox` diz isso em vez de um timeout seco.
 - A conexão direta ao socket pelo container é bloqueada pelo SELinux; por isso o caminho passa pelo `adb`.
 - `FFRDP_DEBUG=1` imprime cada pacote no stderr.
 - `eval` só lê expressões síncronas; uma `Promise` volta como `{}`.

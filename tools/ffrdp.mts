@@ -60,9 +60,11 @@ export function adb(...args: string[]): string {
   return execFileSync('adb', args, { encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 }
 
-// Connects adb to the phone's Wireless debugging and forwards Firefox's
-// debugger socket to tcp:PORT. Returns { serial, socket }.
-export function setup(): { serial: string; socket: string } {
+// Connects adb to the phone's Wireless debugging and forwards a Firefox's
+// debugger socket to tcp:PORT: `app` (a package, such as org.mozilla.fenix
+// for Nightly) or FFRDP_APP when its socket exists, else the first found.
+// Returns { serial, socket, app }.
+export function setup(app = process.env.FFRDP_APP): { serial: string; socket: string; app: string } {
   // The connect port changes every time Wireless debugging restarts; mDNS has
   // it. A record can outlive the service, so try each one, on the loopback
   // address first (the phone talking to itself) and then the one advertised.
@@ -81,13 +83,14 @@ export function setup(): { serial: string; socket: string } {
   }
   if (!serial) throw new Error('Wireless debugging advertised but refusing connections (stale record?); is it on?')
 
-  // Firefox and Firefox Beta use different socket names; take whichever exists.
-  const found = adb('-s', serial, 'shell', 'cat /proc/net/unix')
-    .match(/@org\.mozilla\.[\w.]+\/firefox-debugger-socket/)
+  // Each Firefox (release, Beta, Nightly) has a socket of its own name.
+  const sockets = adb('-s', serial, 'shell', 'cat /proc/net/unix')
+    .match(/@org\.mozilla\.[\w.]+\/firefox-debugger-socket/g) || []
+  const found = (app && sockets.find(s => s.startsWith(`@${app}/`))) || sockets[0]
   if (!found) throw new Error('No Firefox debugger socket; enable "Remote debugging via USB" and open Firefox')
-  const socket = found[0].slice(1)
+  const socket = found.slice(1)
   adb('-s', serial, 'forward', `tcp:${PORT}`, `localabstract:${socket}`)
-  return { serial, socket }
+  return { serial, socket, app: socket.split('/')[0] ?? socket }
 }
 
 // ─── protocol: packets are "<byte length>:<json>" in both directions ───

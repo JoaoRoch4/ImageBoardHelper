@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.8.1
+
+- The site's ☰ menus (rule34's mobile layout) get a dark background of
+  their own under the dark theme: it made every background transparent, so
+  an open menu laid its links over the posts, crossed by green lines
+- The site's title is centred in the header, out from under the « » page
+  buttons in the top-left corner
+
 ## 1.8.0
 
 - Ads blocked by the script itself (`blockAds`, on), so an ad blocker can

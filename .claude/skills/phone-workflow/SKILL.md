@@ -26,7 +26,8 @@ Start with `status`; it reads everything without changing anything.
 | Shizuku not running | Shizuku's server died | ask the user to start it in the Shizuku app; adb still works meanwhile |
 | the first phone call of a session takes ~4 s | the MCP starts its one rish session (a Java VM); later commands take ~50 ms | nothing |
 | Firefox debugger not reachable | the forward is gone | any Firefox tool redoes it; `connect force=true` to insist |
-| no tabs | Firefox unloaded its tabs (memory) or is closed | ask the user to open the site; the log of unloaded tabs is lost |
+| no tabs | Firefox unloaded its tabs (memory) or is closed, or it is the other Firefox | ask the user to open the site; the log of unloaded tabs is lost. Beta and Nightly both have the script: `connect app=org.mozilla.fenix` (Nightly) or `org.mozilla.firefox_beta`, remembered |
+| "does not answer: Android freezes it in the background" | the app is frozen while the user is elsewhere (Termux) | ask the user to bring that Firefox to the front for a moment; a loop that retries every 2 s catches the window |
 
 ## Shipping a change
 

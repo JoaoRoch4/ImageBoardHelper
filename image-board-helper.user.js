@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.8.0
+// @version      1.8.1
 // @description  For the phone, on Gelbooru 0.2 boards (rule34.xxx and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -66,7 +66,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.8.0'
+  const VERSION = '1.8.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -6558,6 +6558,10 @@
       background-color: #5eead4 !important; color: #0f1417 !important; border-color: #5eead4 !important; }
     html.ibh-theme .awesomplete > ul, html.ibh-theme .awesomplete > ul * { background-color: #26363c !important; }
     html.ibh-theme .awesomplete > ul [aria-selected="true"] { background-color: #1d3b38 !important; }
+    /* The mobile layout's ☰ menus float over the page (position: absolute);
+       made transparent above, an open one would lay its links over the posts. */
+    html.ibh-theme #navbar, html.ibh-theme #subnavbar { background-color: #26363c !important; box-shadow: 0 8px 18px rgba(0, 0, 0, .55); }
+    html.ibh-theme #navbar li, html.ibh-theme #subnavbar li { border-color: #2f4a4f !important; }
     html.ibh-theme ::selection { background: #2f7d72; }
     html.ibh-theme hr { border: none !important; border-top: 1px solid #39ff14 !important; }
   `
@@ -6646,10 +6650,14 @@
   // browser's double-tap zoom (video cards set their own touch-action).
   const TAP_CSS = '.image-list span.thumb a:not([data-ibh-video]) { touch-action: manipulation; }'
 
+  // The site's title, centred: on the left it sat under the « » page buttons
+  // in the top-left corner (two IDs outrank the site's own #site-title rule).
+  const HEADER_CSS = '#header #site-title { text-align: center; padding-left: 0; }'
+
   function injectPageCSS() {
     if (document.querySelector('style[data-ibh]')) return
     const style = el('style', { 'data-ibh': '1' })
-    style.textContent = NATIVE_MARK_CSS + THEME_CSS + FAVSEARCH_CSS + TAP_CSS +
+    style.textContent = NATIVE_MARK_CSS + THEME_CSS + FAVSEARCH_CSS + TAP_CSS + HEADER_CSS +
       (CFG.videoScrub ? SCRUB_CSS : '') + (CFG.blockAds ? ADS_CSS : '')
     ;(document.head || document.documentElement).appendChild(style)
   }

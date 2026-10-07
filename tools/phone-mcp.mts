@@ -30,7 +30,7 @@ import type { Connection, PrefAction, Tab } from './ffrdp.mts'
 
 const REPO = path.resolve(import.meta.dirname, '..')
 const SCRIPT = 'image-board-helper.user.js'
-const BROWSER = 'org.mozilla.firefox_beta'
+const BROWSER = 'org.mozilla.firefox_beta'   // the Firefox used until connect picks another
 const SCREENSHOTS = '/sdcard/Pictures/Screenshots'   // where the phone's own screenshots land
 const SHOT = '/sdcard/Download/ibh.png'              // where screencap writes; the container reads it too
 const RECORDING = '/sdcard/Download/ibh-rec.mp4'
@@ -219,12 +219,20 @@ async function firefoxTabs(): Promise<Tab[] | null> {
   }
 }
 
-async function connectPhone(force: boolean) {
-  if (!force && await firefoxTabs()) return 'already connected'
+// The Firefox whose debugger is forwarded (Beta, Nightly…), remembered
+// across restarts: open_url, deploy and device follow it.
+const BROWSER_FILE = path.join(WORK, 'firefox-app')
+let browser = (() => { try { return fs.readFileSync(BROWSER_FILE, 'utf8').trim() || BROWSER } catch (e) { return BROWSER } })()
+
+async function connectPhone(force: boolean, app?: string) {
+  if (!force && !app && await firefoxTabs()) return 'already connected'
   if (await wirelessDebugging() === false) {
     throw new Error('Wireless debugging is off. Ask the user to turn it on (Developer options → Wireless debugging); never with `settings put`, which kills Shizuku.')
   }
-  const { serial, socket } = ff.setup()
+  const { serial, socket, app: chosen } = ff.setup(app || browser)
+  if (app && chosen !== app) throw new Error(`${app} has no debugger socket: ask the user to open it and turn on its "Remote debugging via USB"`)
+  browser = chosen
+  try { fs.mkdirSync(WORK, { recursive: true }); fs.writeFileSync(BROWSER_FILE, browser) } catch (e) { /* remembered for this run only */ }
   return `connected to ${serial}, forward tcp:${ff.PORT} -> ${socket}`
 }
 
@@ -236,7 +244,12 @@ async function withFirefox<T>(fn: (c: Connection) => Promise<T>): Promise<T> {
     c.sock.destroy()
     await connectPhone(true)
     c = ff.connect()
-    await withTimeout(c.ready, 4000, 'Firefox greeting')
+    // Silence after a fresh forward: Android froze the app in the background
+    // (its debugger queue fills up, adbd logs "Try again").
+    await withTimeout(c.ready, 4000, 'Firefox greeting').catch(err => {
+      c.sock.destroy()
+      throw new Error(`${browser} does not answer: Android freezes it in the background. Ask the user to bring it to the front (and accept a debugging prompt if one shows)`, { cause: err })
+    })
   }
   try {
     return await fn(c)
@@ -649,7 +662,7 @@ async function reloadTabs({ match = 'rule34', only_hidden = true, except_version
   return report.join('\n')
 }
 
-async function openUrl({ url = '', package: pkg = BROWSER }: { url?: string; package?: string }) {
+async function openUrl({ url = '', package: pkg = browser }: { url?: string; package?: string }) {
   if (!/^https?:\/\/[^\s'"\\]+$/.test(url)) throw new Error('url must be http(s) without spaces or quotes')
   if (!/^[\w.]+$/.test(pkg)) throw new Error('bad package name')
   return phoneShell(`am start -a android.intent.action.VIEW -d '${url}' ${pkg}`)   // a promise: callers await it
@@ -776,9 +789,9 @@ async function device() {
     const all = await phoneShell('dumpsys meminfo', 60000)
     const at = all.search(/Total (PSS|RSS) by process:/)
     const section = at < 0 ? '' : all.slice(at).split(/\n\s*\n/)[0] ?? ''
-    const procs = section.split('\n').filter(l => l.includes(BROWSER))
+    const procs = section.split('\n').filter(l => l.includes(browser))
       .map(l => Number(((l.match(/([\d,]+)K:/) || [])[1] || '0').replace(/,/g, '')))
-    rows.push(`Firefox Beta: ${Math.round(procs.reduce((a, b) => a + b, 0) / 1024)} MB (${/PSS/.test(section) ? 'PSS' : 'RSS'}) in ${procs.length} process(es)`)
+    rows.push(`${browser}: ${Math.round(procs.reduce((a, b) => a + b, 0) / 1024)} MB (${/PSS/.test(section) ? 'PSS' : 'RSS'}) in ${procs.length} process(es)`)
   } catch (e) { /* not reported */ }
   try {
     const st = fs.statfsSync('/sdcard')
@@ -1029,7 +1042,7 @@ const CLICK_INSTALL = `(() => {
 
 // The usual ship: the checks, the committed and pushed file, a copy in
 // Downloads, the commit-pinned raw link (no CDN or browser cache in the way)
-// opened in Firefox Beta, Violentmonkey watched, then every site tab's log
+// opened in the connected Firefox, Violentmonkey watched, then every site tab's log
 // saved before the hidden ones reload.
 async function deploy({ confirm = false, dry_run = false, wait_s = 60, match = 'rule34', skip_check = false }: { confirm?: boolean; dry_run?: boolean; wait_s?: number; match?: string; skip_check?: boolean }) {
   const steps = []
@@ -1055,7 +1068,7 @@ async function deploy({ confirm = false, dry_run = false, wait_s = 60, match = '
   fs.writeFileSync(`/sdcard/Download/${SCRIPT}`, code)
   steps.push(`copied v${version} to /sdcard/Download/${SCRIPT}`)
   await openUrl({ url })
-  steps.push('opened the raw link in Firefox Beta')
+  steps.push(`opened the raw link in ${browser}`)
 
   // Violentmonkey shows its confirm page on every install and closes it by
   // itself within seconds; one that stays open waits for a tap (or for
@@ -1120,8 +1133,9 @@ const VIDEO = { post: str('rule34 post id (its file is read through the logged-i
 const TOOLS: Tool[] = [
   { name: 'status', run: status, inputSchema: obj(),
     description: 'Phone connection status: Shizuku, Wireless debugging, adb, the Firefox debugger forward, the native Termux tmux session. Read only.' },
-  { name: 'connect', run: ({ force = false }: { force?: boolean }) => connectPhone(force), inputSchema: obj({ force: bool('set up again even if Firefox answers') }),
-    description: 'Connects adb over Wireless debugging and forwards Firefox Beta\'s debugger to tcp:6000. Other tools call it by themselves. Fails with what to ask the user when Wireless debugging is off.' },
+  { name: 'connect', run: ({ force = false, app }: { force?: boolean; app?: string }) => connectPhone(force, app),
+    inputSchema: obj({ force: bool('set up again even if Firefox answers'), app: str('which Firefox: org.mozilla.firefox_beta (Beta), org.mozilla.fenix (Nightly), org.mozilla.firefox; remembered') }),
+    description: 'Connects adb over Wireless debugging and forwards a Firefox\'s debugger to tcp:6000: the one last chosen (Beta at first), or `app`. open_url, deploy and device follow it. Other tools call it by themselves. Fails with what to ask the user when Wireless debugging is off.' },
   { name: 'tabs', run: tabsTool, inputSchema: obj({ details: bool('read version and visibility in each tab (default true)') }),
     description: 'Firefox tabs on the phone: index, script version (window.__ibh), visible or hidden, title, URL.' },
   { name: 'eval', run: evalTool,
@@ -1130,11 +1144,11 @@ const TOOLS: Tool[] = [
   { name: 'reload_tabs', run: reloadTabs,
     inputSchema: obj({ match: str('URL substring (default "rule34")'), only_hidden: bool('default true'), except_version: str('leave tabs on this __ibh.version alone') }),
     description: 'Reloads the tabs whose URL has `match`: only hidden ones by default (the visible one is the user\'s). Wipes their script logs: log_snapshot first.' },
-  { name: 'open_url', run: openUrl, inputSchema: obj({ url: str('http(s) link'), package: str(`app to open it (default ${BROWSER})`) }, ['url']),
-    description: 'Opens a link in Firefox Beta (or another app) on the phone, bringing it to the front. Changes what the user sees: only when the user asked.' },
+  { name: 'open_url', run: openUrl, inputSchema: obj({ url: str('http(s) link'), package: str('app to open it (default: the connected Firefox)') }, ['url']),
+    description: 'Opens a link in the connected Firefox (or another app) on the phone, bringing it to the front. Changes what the user sees: only when the user asked.' },
   { name: 'firefox_pref', run: firefoxPref,
     inputSchema: obj({ name: str('preference, as in about:config'), action: { type: 'string', enum: ['get', 'set', 'clear'], description: 'default get' }, value: { description: 'for set: boolean, number or string' } }, ['name']),
-    description: 'Reads, sets or resets a Firefox Beta preference through the debugger (about:config, reachable even where it is locked). get is read only; set and clear change the user\'s browser for good: only when the user asked, and say how to undo it (clear).' },
+    description: 'Reads, sets or resets a preference of the connected Firefox through the debugger (about:config, reachable even where it is locked). get is read only; set and clear change the user\'s browser for good: only when the user asked, and say how to undo it (clear).' },
   { name: 'screenshot', run: screenshot, inputSchema: obj(),
     description: 'Captures the phone screen now (screencap; touches nothing) and returns it as an image.' },
   { name: 'latest_screenshot', run: latestScreenshot, inputSchema: obj(),
@@ -1149,7 +1163,7 @@ const TOOLS: Tool[] = [
   { name: 'apps', run: apps, inputSchema: obj({ url: str('a link: which apps would open it'), mime: str('MIME type for the link (default video/*)'), filter: str('or: installed packages whose name has this') }),
     description: 'Which installed apps take a link (what an intent opens, with BROWSABLE as Firefox asks), or the installed packages matching a name, with versions. Read only.' },
   { name: 'device', run: device, inputSchema: obj(),
-    description: 'Battery (level, temperature), thermal status, free memory, Firefox Beta\'s memory, free storage. Read only.' },
+    description: 'Battery (level, temperature), thermal status, free memory, the connected Firefox\'s memory, free storage. Read only.' },
   { name: 'script_log', run: scriptLog,
     inputSchema: obj({ tab: TAB, filter: str('regular expression on the message, case-insensitive'), levels: { type: 'array', items: { type: 'string', enum: ['error', 'warn', 'info', 'debug'] } }, last: num('how many lines (default 40, at most 250)') }),
     description: 'Image Board Helper\'s log in a tab (window.__ibh.log()), newest last, with the version and URL.' },
@@ -1177,10 +1191,11 @@ const TOOLS: Tool[] = [
     description: 'A native Termux job\'s state and last output lines, or the list of recent jobs.' },
   { name: 'deploy', run: deploy,
     inputSchema: obj({ confirm: bool('click Violentmonkey\'s install button if it asks (changed grants); default false: wait for the user'), dry_run: bool('check everything without touching the phone'), skip_check: bool('skip npm run check'), wait_s: num('how long to watch the confirm page (default 60)'), match: str('site tabs (default "rule34")') }),
-    description: 'Ships the committed, pushed image-board-helper.user.js: npm run check, every site tab\'s log saved, a copy in /sdcard/Download, the commit-pinned raw link opened in Firefox Beta, Violentmonkey watched, hidden site tabs reloaded.' },
+    description: 'Ships the committed, pushed image-board-helper.user.js: npm run check, every site tab\'s log saved, a copy in /sdcard/Download, the commit-pinned raw link opened in the connected Firefox, Violentmonkey watched, hidden site tabs reloaded.' },
 ]
 
-const INSTRUCTIONS = 'Tools for the user\'s phone (Firefox Beta with Violentmonkey) where Image Board Helper is tested, and for the repo around it. ' +
+const INSTRUCTIONS = 'Tools for the user\'s phone (Firefox Beta or Nightly, with Violentmonkey) where Image Board Helper is tested, and for the repo around it. ' +
+  'connect app=… picks the Firefox (remembered); a Firefox in the background is frozen by Android and answers nothing until brought to the front. ' +
   'Each tool reconnects by itself. When Wireless debugging is off, ask the user to turn it on: never enable it with `settings put` (it kills Shizuku). ' +
   'open_url, input, firefox_pref (set/clear) and deploy change the phone: use them when the user asked, or for the deploy that follows a change they requested. ' +
   'Leave the visible tab alone; reload only hidden ones; script logs vanish on reload, so log_snapshot before (deploy does). ' +
@@ -1207,7 +1222,7 @@ async function handle(msg: RpcMessage) {
       return reply({
         protocolVersion: (msg.params && msg.params.protocolVersion) || '2025-06-18',
         capabilities: { tools: {} },
-        serverInfo: { name: 'phone', version: '2.2.0' },
+        serverInfo: { name: 'phone', version: '2.3.0' },
         instructions: INSTRUCTIONS,
       })
     case 'ping':
