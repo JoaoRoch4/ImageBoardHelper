@@ -19,7 +19,7 @@ import { spawn } from 'node:child_process'
 import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 
 // The container's root filesystem as native Termux sees it.
-const ROOTFS = '/data/data/com.termux/files/usr/var/lib/proot-distro/containers/fedora/rootfs'
+export const ROOTFS = '/data/data/com.termux/files/usr/var/lib/proot-distro/containers/fedora/rootfs'
 
 // rish: $RISH, the container's ~/.local/bin/rish, the same file through the
 // rootfs path (natively, outside proot), else whatever `rish` is on PATH.

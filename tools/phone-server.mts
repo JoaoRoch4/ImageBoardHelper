@@ -7,9 +7,11 @@
 //   node tools/phone-server.mts serve                 run the server on 127.0.0.1:8730
 //   node tools/phone-server.mts call <route> [json]   one request, the answer printed
 //   node tools/phone-server.mts token                 the token (created if missing)
+//   node tools/phone-server.mts install-boot          starts the server when the phone boots (Termux:Boot)
 //
 // Every request carries "Authorization: Bearer <token>"; the token lives in
-// ~/.config/ibh-server/token (mode 600), where the server also keeps its log.
+// ~/.config/ibh-server/token in Termux's home (mode 600), where the server
+// also keeps its log.
 // GET /status; every action is POST /<action> with a JSON body; answers are
 // { ok: true, ... } or { ok: false, error } with 400, 401, 404, 413, 503, 500.
 // Everything outside is reached through paths the tests override:
@@ -22,10 +24,13 @@ import * as path from 'node:path'
 import * as http from 'node:http'
 import * as crypto from 'node:crypto'
 import { spawn } from 'node:child_process'
-import { findRish, rish, shizukuUp } from './rish.mts'
+import { ROOTFS, findRish, rish, shizukuUp } from './rish.mts'
 
 const VERSION = '1.0.0'
-const DIR = process.env.IBH_SERVER_DIR || path.join(os.homedir(), '.config', 'ibh-server')
+// Termux's home: the same path natively and from the container, so both
+// sides read one token.
+const TERMUX_HOME = '/data/data/com.termux/files/home'
+const DIR = process.env.IBH_SERVER_DIR || path.join(fs.existsSync(TERMUX_HOME) ? TERMUX_HOME : os.homedir(), '.config', 'ibh-server')
 const PORT = Number(process.env.IBH_SERVER_PORT || 8730)
 const TERMUX_BIN = process.env.IBH_TERMUX_BIN || ''   // a folder ending in /, or empty: termux-* from PATH
 const MEDIA = process.env.IBH_SERVER_MEDIA || '/sdcard/Download'   // screenshots and recordings
@@ -98,17 +103,6 @@ function optNumber(body: Record<string, unknown>, key: string): number | undefin
   const v = body[key]
   if (v !== undefined && typeof v !== 'number') throw new HttpError(400, `${key} must be a number`)
   return v
-}
-
-// A command's stdout, or '' when it cannot run (a fact the device route can do without).
-function capture(cmd: string, args: string[]): Promise<string> {
-  return new Promise(resolve => {
-    const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'ignore'] })
-    let out = ''
-    child.stdout.on('data', d => { out += d })
-    child.on('error', () => resolve(''))
-    child.on('close', () => resolve(out))
-  })
 }
 
 // A native command in a login bash, in its own process group so a timeout
@@ -285,14 +279,15 @@ export const ROUTES: Record<string, Handler> = {
     try { battery = JSON.parse(await termux('termux-battery-status', [])) } catch (e) { /* no Termux:API: no battery */ }
     const meminfo = fs.readFileSync('/proc/meminfo', 'utf8')
     const mb = (key: string) => Math.round(Number(new RegExp(`^${key}:\\s+(\\d+)`, 'm').exec(meminfo)?.[1] ?? 0) / 1024)
-    const storage = (await capture('df', ['-k', '/sdcard', os.homedir()])).trim().split('\n').slice(1).flatMap(line => {
-      const f = line.trim().split(/\s+/)   // filesystem, 1K-blocks, used, available, use%, mounted on
-      return f.length >= 6 ? [{ mount: f[5], size_mb: Math.round(Number(f[1]) / 1024), free_mb: Math.round(Number(f[3]) / 1024) }] : []
+    // Node's own calls, not df or ip: natively Android's /bin/df breaks and
+    // netlink is denied to apps, while statfs and getifaddrs work.
+    const storage = ['/sdcard', os.homedir()].flatMap(mount => {
+      try {
+        const st = fs.statfsSync(mount)
+        return [{ mount, size_mb: Math.round((st.blocks * st.bsize) / 1048576), free_mb: Math.round((st.bavail * st.bsize) / 1048576) }]
+      } catch (e) { return [] }
     })
-    const network = (await capture('ip', ['-o', 'addr'])).trim().split('\n').flatMap(line => {
-      const m = /^\d+:\s+(\S+)\s+inet6?\s+(\S+)/.exec(line)
-      return m ? [{ iface: m[1], address: m[2] }] : []
-    })
+    const network = Object.entries(os.networkInterfaces()).flatMap(([iface, addrs]) => (addrs ?? []).map(a => ({ iface, address: a.address })))
     return { battery, memory: { total_mb: mb('MemTotal'), available_mb: mb('MemAvailable') }, storage, network }
   },
 }
@@ -362,6 +357,26 @@ function serve() {
   })
 }
 
+// The Termux:Boot script: Termux's wake lock, the tmux session `ibh`, and
+// the server in a window of it. Termux:Boot runs it natively, so it names
+// this file as seen from outside proot.
+function installBoot() {
+  const here = path.join(import.meta.dirname, 'phone-server.mts')
+  const native = here.startsWith(ROOTFS) ? here : `${ROOTFS}${here}`
+  const file = path.join(os.homedir(), '.termux', 'boot', 'ibh-server.sh')
+  fs.mkdirSync(path.dirname(file), { recursive: true })
+  fs.writeFileSync(file, [
+    '#!/data/data/com.termux/files/usr/bin/sh',
+    "# Image Board Helper's phone server, started when the phone boots (Termux:Boot).",
+    'termux-wake-lock',
+    'tmux has-session -t ibh || tmux new-session -d -s ibh',
+    `tmux new-window -d -t ibh -n server 'node ${native} serve'`,
+    '',
+  ].join('\n'), { mode: 0o755 })
+  fs.chmodSync(file, 0o755)   // mode applies only when the file is created
+  console.log(`wrote ${file}`)
+}
+
 // One request from the command line: the answer printed, exit 0 when ok.
 async function call(route: string, json?: string) {
   let token: string
@@ -381,6 +396,7 @@ if (import.meta.main) {
   const [cmd, ...args] = process.argv.slice(2)
   if (cmd === 'serve') serve()
   else if (cmd === 'token') console.log(readToken(true))
+  else if (cmd === 'install-boot') installBoot()
   else if (cmd === 'call' && args[0]) call(args[0], args[1]).then(code => process.exit(code), e => { console.error(e.message); process.exit(1) })
-  else { console.error('usage: phone-server.mts serve | call <route> [json] | token'); process.exit(1) }
+  else { console.error('usage: phone-server.mts serve | call <route> [json] | token | install-boot'); process.exit(1) }
 }

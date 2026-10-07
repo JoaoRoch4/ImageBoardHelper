@@ -197,7 +197,8 @@ test('device', async () => {
   const { json } = await req('device', {})
   assert.equal(json.battery.percentage, 80)
   assert.ok(json.memory.total_mb > 0)
-  assert.ok('storage' in json && 'network' in json)
+  assert.ok(json.storage.length > 0 && json.storage[0].free_mb > 0)   // statfs, not df: Android's /bin/df breaks natively
+  assert.ok(json.network.some((n: { address: string }) => n.address === '127.0.0.1'))   // not ip: Android denies netlink to apps
 })
 
 // ─── open, apps, screenshot, record, input (through the fake rish) ───
@@ -280,4 +281,28 @@ test('Termux:API missing: 503', async () => {
   const p3 = await freePort()
   await startServer({ IBH_SERVER_PORT: String(p3), IBH_TERMUX_BIN: path.join(dir, 'no-termux') + '/' })
   assert.equal((await req('toast', { text: 'oi' }, TOKEN, undefined, p3)).status, 503)
+})
+
+// ─── install-boot ───
+
+test('install-boot writes the Termux:Boot script', async () => {
+  const home = fs.mkdtempSync(path.join(dir, 'home-'))
+  const r = await cli(['install-boot'], { HOME: home })
+  assert.equal(r.code, 0)
+  const file = path.join(home, '.termux', 'boot', 'ibh-server.sh')
+  assert.equal(fs.statSync(file).mode & 0o777, 0o755)
+  const script = fs.readFileSync(file, 'utf8')
+  assert.ok(script.includes('termux-wake-lock'))
+  assert.ok(script.includes('tmux has-session -t ibh || tmux new-session -d -s ibh'))
+  assert.ok(script.includes('node /data/data/com.termux/files/usr/var/lib/proot-distro/containers/fedora/rootfs/root/ImageBoardHelper/tools/phone-server.mts serve'))
+})
+
+test('the default folder is in Termux\'s home, the same from the container and natively', async () => {
+  const saved = process.env.IBH_SERVER_DIR
+  delete process.env.IBH_SERVER_DIR
+  const fresh = './phone-server.mts?default-dir'   // a fresh copy of the module, read without the override
+  const { serverDir } = await import(fresh) as typeof import('./phone-server.mts')
+  process.env.IBH_SERVER_DIR = saved
+  const termuxHome = '/data/data/com.termux/files/home'
+  assert.equal(serverDir(), fs.existsSync(termuxHome) ? `${termuxHome}/.config/ibh-server` : path.join(os.homedir(), '.config', 'ibh-server'))
 })
