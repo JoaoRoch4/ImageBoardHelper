@@ -8,6 +8,7 @@
 //   node tools/ffrdp.js setup                 adb connect + forward tcp:6000
 //   node tools/ffrdp.js tabs                  list open tabs
 //   node tools/ffrdp.js eval <tab> '<expr>'   evaluate in a tab
+//   node tools/ffrdp.js pref <name> [value|clear]   read, set or reset a Firefox preference
 //
 // <tab> is the index printed by `tabs` or any substring of the tab URL.
 // The result is passed through JSON.stringify, so objects print in full.
@@ -154,6 +155,27 @@ async function evaluate(c, key, expr, indent = 2) {
   return out?.type === 'undefined' ? 'undefined' : out
 }
 
+// A Firefox preference (what about:config shows, reachable here even where
+// about:config is locked): get, set (boolean, number or string, by the
+// value's type) or clear back to the default. Returns { before, after }.
+async function pref(c, name, action = 'get', value) {
+  const actor = (await c.request('root', 'getRoot')).preferenceActor
+  const read = async () => {
+    for (const kind of ['Bool', 'Int', 'Char']) {
+      try { return (await c.request(actor, `get${kind}Pref`, { value: name })).value } catch (e) { /* another type */ }
+    }
+    return null   // not set anywhere
+  }
+  const before = await read()
+  if (action === 'set') {
+    const kind = typeof value === 'boolean' ? 'Bool' : typeof value === 'number' ? 'Int' : 'Char'
+    await c.request(actor, `set${kind}Pref`, { name, value: kind === 'Char' ? String(value) : value })
+  } else if (action === 'clear') {
+    await c.request(actor, 'clearUserPref', { name })
+  }
+  return { before, after: action === 'get' ? before : await read() }
+}
+
 async function main() {
   const [cmd, ...args] = process.argv.slice(2)
   if (cmd === 'setup') {
@@ -170,14 +192,18 @@ async function main() {
       tabs.forEach((t, i) => console.log(`${i}  ${(t.title || '').slice(0, 40).padEnd(40)}  ${t.url}`))
     } else if (cmd === 'eval' && args.length === 2) {
       console.log(await evaluate(c, args[0], args[1]))
+    } else if (cmd === 'pref' && args.length >= 1) {
+      const [name, v] = args
+      const value = v === 'true' ? true : v === 'false' ? false : /^-?\d+$/.test(v || '') ? Number(v) : v
+      console.log(JSON.stringify(await pref(c, name, v === undefined ? 'get' : v === 'clear' ? 'clear' : 'set', value)))
     } else {
-      console.log('usage: ffrdp.js setup | tabs | eval <tab> <expr>')
+      console.log('usage: ffrdp.js setup | tabs | eval <tab> <expr> | pref <name> [value|clear]')
     }
   } finally {
     c.sock.end()
   }
 }
 
-module.exports = { PORT, adb, setup, connect, listTabs, pickTab, evaluate }
+module.exports = { PORT, adb, setup, connect, listTabs, pickTab, evaluate, pref }
 
 if (require.main === module) main().catch(e => { console.error(e.message); process.exit(1) })
