@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.7.0
+
+- `__ibh.help()` and `__ibh.tail(n, filter)` for the console: the list of
+  what `window.__ibh` offers, and the last log lines as text (a regular
+  expression keeps only the matching ones). Both return text rather than
+  printing it, so they also show in an on-phone console such as
+  MobiDevTools, whose REPL shows what a call returns but never sees the
+  page's console
+
 ## 1.6.0
 
 - 🔗 Copy link in the post's ☰ menu (`copyLinkButton`, on): the link to the

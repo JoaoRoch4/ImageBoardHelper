@@ -49,6 +49,8 @@ Useful actions:
 
 The panel uses Shadow DOM, so the site's CSS cannot reach it; touches inside it never start a scene preview (checked via `composedPath`).
 
+**From the console.** `window.__ibh` answers in the browser console and in an on-phone console such as MobiDevTools or Eruda: `__ibh.help()` lists what it offers, and `__ibh.tail(20, 'slideshow')` gives the last log lines (a regular expression keeps only the matching ones). Both return text instead of printing it, because MobiDevTools shows what a call returns but not the page's console.
+
 ---
 
 ## Options

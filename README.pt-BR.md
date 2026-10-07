@@ -49,6 +49,8 @@ O painel tem um seletor de idioma (automático, português, inglês). As linhas 
 
 O painel usa Shadow DOM, então o CSS do site não o alcança; toques dentro dele nunca começam uma prévia de cenas (verificado via `composedPath`).
 
+**Pelo console.** O `window.__ibh` responde no console do navegador e num console de celular como o MobiDevTools ou o Eruda: `__ibh.help()` lista o que ele oferece, e `__ibh.tail(20, 'slideshow')` traz as últimas linhas do log (uma expressão regular deixa só as que batem). As duas devolvem texto em vez de imprimir, porque o MobiDevTools mostra o que uma chamada devolve, mas não o console da página.
+
 ---
 
 ## Opções

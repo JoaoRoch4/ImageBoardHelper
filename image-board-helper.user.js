@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.6.0
+// @version      1.7.0
 // @description  For the phone, on Gelbooru 0.2 boards (rule34.xxx and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -66,7 +66,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.6.0'
+  const VERSION = '1.7.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -346,6 +346,9 @@
   const error = m => log('error', m)
 
   const describeError = e => (e && e.message ? e.message : String(e))
+
+  // A log entry as one line of text, as Copy log and the console's tail() give it.
+  const logLine = e => `${new Date(e.t).toTimeString().slice(0, 8)} [${e.level}] ${e.msg}`
 
   // ═══════════════════════════════════════════════════════════
   // State observed by the panel
@@ -6109,8 +6112,7 @@
     const head = `Image Board Helper v${VERSION} · ${SITE}\n` +
       `UA: ${navigator.userAgent}\n` +
       `host: ${STATE.imageBase}\n\n`
-    const body = LOG.map(e =>
-      `${new Date(e.t).toTimeString().slice(0, 8)} [${e.level}] ${e.msg}`).join('\n')
+    const body = LOG.map(logLine).join('\n')
 
     navigator.clipboard.writeText(head + body)
       .then(() => info('log copied'))
@@ -6655,9 +6657,34 @@
     boot()
   }
 
+  // What __ibh.help() answers. The console functions return text or data
+  // instead of printing it: MobiDevTools' REPL shows what a call returns, but
+  // it never sees the page's console.
+  const CONSOLE_HELP = [
+    `Image Board Helper v${VERSION} · window.__ibh`,
+    '  help()                 this list',
+    '  tail(n, filter)        the last n log lines (20), only those matching filter (a regular expression)',
+    '  log()                  the whole log (250 entries) as objects',
+    '  version, cfg, state    the version, the settings, the live state',
+    '  set(key, value)        changes a setting, as the panel does',
+    '  probe()                tests the candidate URLs of the first video on screen (Test URLs)',
+    '  free()                 frees memory and caches (Free memory & cache)',
+    '  redo()                 starts every thumbnail over (Redo thumbnails)',
+    '  clearHostCache()       resolves the image host again (Clear host)',
+    '  urlCache(), clearUrlCache()   the cache of which address worked',
+    '  stored(), moveAgain()  the stored lists; merges the old storage bridge in again',
+  ].join('\n')
+
   // Console access, useful when the panel is turned off. On the page's own
   // window: with GM grants, this script's window is a wrapper around it.
   ;(typeof unsafeWindow !== 'undefined' ? unsafeWindow : window).__ibh = {
+    help: () => CONSOLE_HELP,
+    // The last n log lines as text; with a filter, only the lines whose
+    // message matches it (a regular expression, case-insensitive).
+    tail: (n = 20, filter = '') => {
+      const re = filter ? new RegExp(filter, 'i') : null
+      return LOG.filter(e => !re || re.test(e.msg)).slice(-Math.max(1, n)).map(logLine).join('\n') || '(no matching lines)'
+    },
     version: VERSION,
     cfg: CFG,
     state: STATE,

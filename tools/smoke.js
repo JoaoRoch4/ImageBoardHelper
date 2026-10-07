@@ -66,6 +66,10 @@ const logLine = (page, re, timeout = 15000) => page.waitForFunction(
     const shadowHosts = await page.evaluate(() => [...document.querySelectorAll('*')].filter(e => e.shadowRoot).length)
     check('panel mounted', shadowHosts >= 1, `${shadowHosts} shadow host(s)`)
     check('site search bar', await page.locator('#ibh-sitesearch').count() === 1)
+    // The console helpers return text (an on-phone console shows only that).
+    const consoleHelp = await page.evaluate(() => ({ help: window.__ibh.help(), tail: window.__ibh.tail(3).split('\n').length, none: window.__ibh.tail(5, '^no such line$') }))
+    check('console help() and tail()', consoleHelp.help.includes('tail(n, filter)') && consoleHelp.tail === 3 && consoleHelp.none === '(no matching lines)',
+      `help ${consoleHelp.help.split('\n').length} lines, tail(3) ${consoleHelp.tail} lines, unmatched filter: ${consoleHelp.none}`)
 
     // 👁 hides the other floating buttons, and a second tap brings them back.
     const fabShown = () => page.evaluate(() => {
