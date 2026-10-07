@@ -59,6 +59,10 @@ The hold slideshow reads the MP4's index and one keyframe per scene (Range reads
 
 How to read the outcomes: few keyframes and a short clip → it plays at 2×; few keyframes and a long video → it seeks (slow, about a second a scene); past 1920×1088 → always a reel, decoded on the CPU; not H.264 (WebM, HEVC) → the `<video>` reel or seeking.
 
+## The phone server
+
+`tools/phone-server.mts` runs natively in Termux (window `server` of the tmux session `ibh`, started at boot by Termux:Boot) on `127.0.0.1:8730`, token in Termux's home at `~/.config/ibh-server/token`. From the container, `node tools/phone-server.mts call <route> '<json>'`: `status`, `apps`, `device`, `clipboard`, `file`, `run` read or run things natively (a quick native command without a tmux window: `call run '{"command":"…"}'`), while `open`, `notify`, `toast`, `input` change what the user sees (the same rule as the MCP's: only on request). If it does not answer, `termux_run` can start it again: `tmux new-window -d -t ibh -n server 'node <rootfs>/root/ImageBoardHelper/tools/phone-server.mts serve'`.
+
 ## Native Termux
 
 proot traces every process, which makes builds slow: each compiler process takes ~3.6 s in proot against ~1 s natively, and the first WebAssembly build took ~25 min in proot against 12 natively (Emscripten's one-time cache included), with a byte-identical result. Termux's `~/.zshrc` starts a detached tmux session `ibh` in every native shell, and its socket is shared with the container.
