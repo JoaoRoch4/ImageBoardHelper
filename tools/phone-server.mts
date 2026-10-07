@@ -79,6 +79,60 @@ export function termux(name: string, args: string[], input?: string): Promise<st
   })
 }
 
+const RUN_CUT = 1024 * 1024        // stdout and stderr of run, each
+const FILE_MAX = 20 * 1024 * 1024
+
+// Body fields: the type asked for, or 400 naming the field.
+function text(body: Record<string, unknown>, key: string): string {
+  const v = body[key]
+  if (typeof v !== 'string' || !v) throw new HttpError(400, `${key} is required (a string)`)
+  return v
+}
+function optText(body: Record<string, unknown>, key: string): string | undefined {
+  const v = body[key]
+  if (v !== undefined && typeof v !== 'string') throw new HttpError(400, `${key} must be a string`)
+  return v
+}
+function optNumber(body: Record<string, unknown>, key: string): number | undefined {
+  const v = body[key]
+  if (v !== undefined && typeof v !== 'number') throw new HttpError(400, `${key} must be a number`)
+  return v
+}
+
+// A command's stdout, or '' when it cannot run (a fact the device route can do without).
+function capture(cmd: string, args: string[]): Promise<string> {
+  return new Promise(resolve => {
+    const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'ignore'] })
+    let out = ''
+    child.stdout.on('data', d => { out += d })
+    child.on('error', () => resolve(''))
+    child.on('close', () => resolve(out))
+  })
+}
+
+// A native command in a login bash, in its own process group so a timeout
+// kills it and everything it started (a lone kill would leave a `sleep`
+// holding the output open).
+function runCommand(command: string, cwd: string, timeoutS: number) {
+  return new Promise<Record<string, unknown>>(resolve => {
+    const child = spawn('bash', ['-lc', command], { cwd, detached: true, stdio: ['ignore', 'pipe', 'pipe'] })
+    const out = { stdout: '', stderr: '' }
+    let cut = false
+    let timedOut = false
+    const add = (key: 'stdout' | 'stderr') => (d: Buffer) => {
+      const room = RUN_CUT - out[key].length
+      const chunk = d.toString('utf8')
+      if (chunk.length > room) cut = true
+      if (room > 0) out[key] += chunk.slice(0, room)
+    }
+    child.stdout.on('data', add('stdout'))
+    child.stderr.on('data', add('stderr'))
+    const timer = setTimeout(() => { timedOut = true; try { process.kill(-(child.pid ?? 0), 'SIGKILL') } catch (e) { child.kill('SIGKILL') } }, timeoutS * 1000)
+    child.on('error', e => { clearTimeout(timer); resolve({ code: -1, stdout: '', stderr: String(e), timedOut, cut }) })
+    child.on('close', code => { clearTimeout(timer); resolve({ code, ...out, timedOut, cut }) })
+  })
+}
+
 export const ROUTES: Record<string, Handler> = {
   status: async () => ({
     version: VERSION,
@@ -86,6 +140,54 @@ export const ROUTES: Record<string, Handler> = {
     shizuku: await shizukuUp(),
     termuxApi: fs.existsSync(termuxPath('termux-toast')),
   }),
+
+  run: async body => {
+    const timeout = optNumber(body, 'timeout') ?? 60
+    if (!(timeout > 0 && timeout <= 600)) throw new HttpError(400, 'timeout is 1 to 600 seconds')
+    return runCommand(text(body, 'command'), optText(body, 'cwd') || os.homedir(), timeout)
+  },
+
+  // Reads a file, or writes `write` to it (creating its folders); utf8 or base64.
+  file: async body => {
+    const file = text(body, 'path')
+    const encoding = optText(body, 'encoding') ?? 'utf8'
+    if (encoding !== 'utf8' && encoding !== 'base64') throw new HttpError(400, 'encoding is utf8 or base64')
+    const write = optText(body, 'write')
+    if (write !== undefined) {
+      const bytes = Buffer.from(write, encoding)
+      if (bytes.length > FILE_MAX) throw new HttpError(400, `over ${FILE_MAX / 1048576} MB`)
+      fs.mkdirSync(path.dirname(file), { recursive: true })
+      fs.writeFileSync(file, bytes)
+      return { path: file, bytes: bytes.length }
+    }
+    let size: number
+    try {
+      const st = fs.statSync(file)
+      if (!st.isFile()) throw new HttpError(400, `not a file: ${file}`)
+      size = st.size
+    } catch (e) {
+      throw e instanceof HttpError ? e : new HttpError(400, `no such file: ${file}`)
+    }
+    if (size > FILE_MAX) throw new HttpError(400, `over ${FILE_MAX / 1048576} MB: ${file}`)
+    return { path: file, bytes: size, content: fs.readFileSync(file).toString(encoding) }
+  },
+
+  // Battery (Termux:API, null without it), memory, storage and addresses.
+  device: async () => {
+    let battery: unknown = null
+    try { battery = JSON.parse(await termux('termux-battery-status', [])) } catch (e) { /* no Termux:API: no battery */ }
+    const meminfo = fs.readFileSync('/proc/meminfo', 'utf8')
+    const mb = (key: string) => Math.round(Number(new RegExp(`^${key}:\\s+(\\d+)`, 'm').exec(meminfo)?.[1] ?? 0) / 1024)
+    const storage = (await capture('df', ['-k', '/sdcard', os.homedir()])).trim().split('\n').slice(1).flatMap(line => {
+      const f = line.trim().split(/\s+/)   // filesystem, 1K-blocks, used, available, use%, mounted on
+      return f.length >= 6 ? [{ mount: f[5], size_mb: Math.round(Number(f[1]) / 1024), free_mb: Math.round(Number(f[3]) / 1024) }] : []
+    })
+    const network = (await capture('ip', ['-o', 'addr'])).trim().split('\n').flatMap(line => {
+      const m = /^\d+:\s+(\S+)\s+inet6?\s+(\S+)/.exec(line)
+      return m ? [{ iface: m[1], address: m[2] }] : []
+    })
+    return { battery, memory: { total_mb: mb('MemTotal'), available_mb: mb('MemAvailable') }, storage, network }
+  },
 }
 
 // One line per request, never the body (clipboard text, file contents).

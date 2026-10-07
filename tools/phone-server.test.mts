@@ -147,3 +147,55 @@ test('call prints the answer', async () => {
   assert.equal(r.code, 0)
   assert.equal(JSON.parse(r.stdout).ok, true)
 })
+
+// ─── run, file, device ───
+
+stub(termuxBin, 'termux-battery-status', `echo '{"percentage":80,"status":"DISCHARGING","temperature":30.5}'`)
+
+test('run', async () => {
+  const { json } = await req('run', { command: 'echo hi; echo err >&2; exit 3' })
+  assert.deepEqual(pick(json, 'code', 'stdout', 'stderr'), { code: 3, stdout: 'hi\n', stderr: 'err\n' })
+})
+
+test('run in a folder', async () => assert.equal((await req('run', { command: 'pwd', cwd: dir })).json.stdout.trim(), dir))
+
+test('run times out', async () => {
+  const { json } = await req('run', { command: 'sleep 5', timeout: 1 })
+  assert.equal(json.timedOut, true)
+})
+
+test('run cuts output at 1 MB', async () => {
+  const { json } = await req('run', { command: 'head -c 2000000 /dev/zero | tr "\\0" a' })
+  assert.equal(json.stdout.length, 1048576)
+  assert.equal(json.cut, true)
+})
+
+test('run refuses a timeout over 600 s', async () => assert.equal((await req('run', { command: 'true', timeout: 601 })).status, 400))
+
+test('file: write then read, utf8 and base64', async () => {
+  const text = path.join(dir, 'files', 'a.txt')
+  await req('file', { path: text, write: 'olá' })
+  assert.equal((await req('file', { path: text })).json.content, 'olá')
+  const bin = path.join(dir, 'files', 'b.bin')
+  const b64 = Buffer.from([0, 1, 2]).toString('base64')
+  await req('file', { path: bin, write: b64, encoding: 'base64' })
+  assert.equal((await req('file', { path: bin, encoding: 'base64' })).json.content, b64)
+})
+
+test('file: reading a missing file is 400 naming it', async () => {
+  const missing = path.join(dir, 'nothing-here')
+  const { status, json } = await req('file', { path: missing })
+  assert.equal(status, 400)
+  assert.ok(json.error.includes(missing))
+})
+
+test('file: over 20 MB is refused', async () => {
+  assert.equal((await req('file', { path: path.join(dir, 'big'), write: 'x'.repeat(21 * 1024 * 1024) })).status, 400)
+})
+
+test('device', async () => {
+  const { json } = await req('device', {})
+  assert.equal(json.battery.percentage, 80)
+  assert.ok(json.memory.total_mb > 0)
+  assert.ok('storage' in json && 'network' in json)
+})
