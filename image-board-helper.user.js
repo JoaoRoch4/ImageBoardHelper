@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.5.1
+// @version      1.6.0
 // @description  For the phone, on Gelbooru 0.2 boards (rule34.xxx and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -66,7 +66,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.5.1'
+  const VERSION = '1.6.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -107,6 +107,7 @@
     rotateLandscape: true,  // in the modal player's fullscreen, lock wide videos to landscape
     modalPreload:   true,   // in the modal, have the next post loaded before the swipe
     vlcButton:      true,   // ▶ VLC in a video post's ☰ menu: the video in the VLC app
+    copyLinkButton: true,   // 🔗 in the post's ☰ menu: copies the link to the post's own file (raw, not the sample)
     modalOriginal:  'zoom', // images in the modal: 'zoom' shows the sample and fetches the original on zoom; 'always'
     siteTheme:      true,   // the modal's dark theme on the site's pages
     originalThumbs: false,  // the original where a thumbnail's box is wider than the sample (a desktop screen; needs reload)
@@ -180,6 +181,7 @@
       tFavsBtn: 'Your-favorites shortcut button', navFavs: 'Your favorites',
       tBulkBtn: 'Mass-favorite button', navBulk: 'Mass favorite: each tapped post gets ♥ and ▲',
       bulkOn: 'Mass favorite on: tap posts to favorite and upvote them', bulkOff: 'Mass favorite off',
+      tCopyBtn: 'Copy-link button in the post menu', copyLink: '🔗 Copy link', linkCopied: 'Link to the raw file copied', copyFailed: 'Could not copy the link',
       tVlcBtn: 'VLC button in the post menu', bigVideo: 'Past this phone’s hardware decoder: ☰ → ▶ VLC',
       tRedoBtn: 'Redo-thumbnails shortcut button', navRedo: 'Free memory, then redo thumbnails', tDoubleTap: 'Double tap a thumbnail: favorite + upvote',
       tEyeBtn: '👁 button: hides the other buttons', eyeHide: 'Hide the buttons', eyeShow: 'Show the buttons',
@@ -250,6 +252,7 @@
       tFavsBtn: 'Botão de atalho para os seus favoritos', navFavs: 'Seus favoritos',
       tBulkBtn: 'Botão de favoritar em massa', navBulk: 'Favoritar em massa: cada post tocado ganha ♥ e ▲',
       bulkOn: 'Favoritar em massa ligado: toque nos posts para favoritar e votar', bulkOff: 'Favoritar em massa desligado',
+      tCopyBtn: 'Botão de copiar link no menu do post', copyLink: '🔗 Copiar link', linkCopied: 'Link do arquivo raw copiado', copyFailed: 'Não deu para copiar o link',
       tVlcBtn: 'Botão do VLC no menu do post', bigVideo: 'Grande demais para o decodificador do celular: ☰ → ▶ VLC',
       tRedoBtn: 'Botão de atalho para refazer as miniaturas', navRedo: 'Limpar a memória e refazer as miniaturas', tDoubleTap: 'Toque duplo na miniatura: favoritar + votar',
       tEyeBtn: 'Botão 👁: oculta os outros botões', eyeHide: 'Ocultar os botões', eyeShow: 'Mostrar os botões',
@@ -2602,6 +2605,8 @@
     const tagList = el('div', { class: 'taglist' })
     const laterBtn = el('button', { class: 'pill', text: t('laterAdd') })
     const dlBtn = el('button', { class: 'pill', text: t('dlBtn') })
+    const copyBtn = el('button', { class: 'pill', text: t('copyLink') })
+    copyBtn.hidden = !CFG.copyLinkButton
     const vlcBtn = el('button', { class: 'pill', text: '▶ VLC' })
     vlcBtn.hidden = true   // videos only (showVideo)
     const tabTags = el('button', { class: 'tab on', text: t('tabTags') })
@@ -2611,7 +2616,7 @@
     infoList.hidden = true
     const commentList = el('div', { class: 'commentlist' })
     commentList.hidden = true
-    const sheet = el('div', { class: 'sheet' }, [el('div', { class: 'sheethead' }, [post, laterBtn, dlBtn, vlcBtn, tagAll]),
+    const sheet = el('div', { class: 'sheet' }, [el('div', { class: 'sheethead' }, [post, laterBtn, dlBtn, copyBtn, vlcBtn, tagAll]),
       el('div', { class: 'tabs' }, [tabTags, tabInfo, tabComments]), tagList, infoList, commentList])
     // Sample or raw, for an image that has a sample: tap to switch.
     const quality = el('button', { class: 'quality' })
@@ -2662,6 +2667,7 @@
     laterBtn.addEventListener('click', () => toggleLaterHere())
     dlBtn.addEventListener('click', () => modalDownload())
     vlcBtn.addEventListener('click', () => openInVlc())
+    copyBtn.addEventListener('click', () => copyRawLink())
     laterClose.addEventListener('click', () => closeModal(false))
     quality.addEventListener('click', () => toggleQuality())
     fsBtn.addEventListener('click', () => toggleModalFullscreen())
@@ -2925,18 +2931,43 @@
     else warn(`download: post ${post} failed — ${error}`)
   }
 
-  async function modalDownload() {
-    let url = modal.fileUrl
-    if (!url) { flash(t('dlWait')); return }
-    // The sample is on screen: save the original. Known from the cache or
-    // the post page's Original image link; the sample only as a last resort.
-    if (modal.isSample) {
-      const pic = cardPicture(modal.link)
-      const hash = pic && (thumbParts(pic.src) || {}).hash
-      const known = hash && knownOriginal(hash)
-      const info = typeof known === 'string' ? null : await postInfo(postId(modal.link))
-      url = (typeof known === 'string' && known) || (info && info.original) || url
+  // The post's own file, once it loaded: with the sample on screen, the
+  // original, known from the cache or the post page's Original image link
+  // (the sample only as a last resort).
+  async function rawFileUrl() {
+    const url = modal.fileUrl
+    if (!url || !modal.isSample) return url
+    const pic = cardPicture(modal.link)
+    const hash = pic && (thumbParts(pic.src) || {}).hash
+    const known = hash && knownOriginal(hash)
+    if (typeof known === 'string') return known
+    const page = await postInfo(postId(modal.link))
+    return (page && page.original) || url
+  }
+
+  // A link that opens outside the site: rule34's fast host serves videos
+  // only with the site as Referer (images it serves to anyone); its origin
+  // host serves both.
+  const portableUrl = url => url.replace(/:\/\/api-cdn\.rule34\.xxx\/(.*\.(?:mp4|webm)(?:[?#]|$))/i, '://api-cdn-mp4.rule34.xxx/$1')
+
+  // 🔗: the raw file's link, on the clipboard.
+  async function copyRawLink() {
+    const raw = await rawFileUrl()
+    if (!raw) { flash(t('dlWait')); return }
+    const url = portableUrl(raw)
+    try {
+      await navigator.clipboard.writeText(url)
+      flash(t('linkCopied'))
+      info(`copied the file link of post ${postId(modal.link)}: ${url}`)
+    } catch (e) {
+      flash(t('copyFailed'))
+      warn(`could not copy the file link — ${describeError(e)}`)
     }
+  }
+
+  async function modalDownload() {
+    const url = await rawFileUrl()
+    if (!url) { flash(t('dlWait')); return }
     const post = postId(modal.link)
     if (downloading.has(post)) { flash(t('dlBusy')); return }
     if (!GM_XHR || !siteFile(url)) {
@@ -2965,7 +2996,7 @@
   function openInVlc() {
     const playing = modal.fileUrl || modal.video.currentSrc
     if (!playing) { flash(t('dlWait')); return }
-    const u = new URL(playing.replace('://api-cdn.rule34.xxx/', '://api-cdn-mp4.rule34.xxx/'))
+    const u = new URL(portableUrl(playing))
     const ms = Math.round((modal.video.currentTime || 0) * 1000)
     modal.video.pause()
     const extras = [
@@ -6041,6 +6072,7 @@
     body.appendChild(toggle('rotateLandscape', t('tRotate')))
     body.appendChild(toggle('modalPreload', t('tPreload')))
     body.appendChild(toggle('vlcButton', t('tVlcBtn')))
+    body.appendChild(toggle('copyLinkButton', t('tCopyBtn')))
     body.appendChild(choiceSelect('modalOriginal', t('tModalOrig'), [['zoom', t('origZoom')], ['always', t('origAlways')]]))
     body.appendChild(toggle('videoCovers', t('tCovers')))
     body.appendChild(toggle('gifInline', t('tGif')))

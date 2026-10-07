@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.6.0
+
+- 🔗 Copy link in the post's ☰ menu (`copyLinkButton`, on): the link to the
+  post's own file goes to the clipboard, the original (raw) for an image even
+  with the sample on screen; a video's link points at rule34's origin host,
+  since the fast one serves videos only with the site as Referer
+
 ## 1.5.1
 
 - Only ▶ VLC stays (`vlcButton`, replacing `externalPlayers`): mpv opened and
