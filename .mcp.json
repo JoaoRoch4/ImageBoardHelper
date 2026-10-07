@@ -3,6 +3,16 @@
     "phone": {
       "command": "node",
       "args": ["tools/phone-mcp.js"]
+    },
+    "browser": {
+      "command": "npx",
+      "args": [
+        "-y", "@playwright/mcp@0.0.80",
+        "--browser", "firefox",
+        "--executable-path", "${HOME}/.cache/ms-playwright/firefox-1543/firefox/firefox",
+        "--headless", "--isolated",
+        "--output-dir", "${HOME}/.cache/ibh-playwright-mcp"
+      ]
     }
   }
 }
