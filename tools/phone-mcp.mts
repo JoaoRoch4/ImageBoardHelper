@@ -8,7 +8,7 @@
 //   phone and browser  status, connect, tabs, eval, reload_tabs, open_url,
 //                      firefox_pref, screenshot, latest_screenshot,
 //                      screen_record, input, logcat, apps, device
-//   the userscript     script_log, console, log_snapshot, slideshow_stats, deploy
+//   the userscript     script_log, console, css, try_css, log_snapshot, slideshow_stats, deploy
 //   videos and WASM    video_info, reel_preview, wasm_build
 //   repo checks        check, smoke
 //   native Termux      termux_run, termux_job: windows of a tmux session
@@ -829,6 +829,104 @@ async function consoleTool({ tab, filter = '', levels = null, last = 40 }: { tab
   return clip(picked.map(l => `${new Date(l.time).toTimeString().slice(0, 8)} ${l.level.padEnd(5)} ${l.text}`).join('\n') || '(no matching messages)')
 }
 
+// ─── tools: CSS ───
+
+// Layout properties shown when none are asked for.
+const CSS_PROPS = ['display', 'position', 'top', 'right', 'bottom', 'left', 'z-index', 'width', 'height', 'margin', 'padding',
+  'background-color', 'color', 'border', 'opacity', 'visibility', 'overflow', 'transform', 'font-size', 'text-align']
+
+// Runs in the page: the elements matching a selector, each with its box,
+// computed style and the rules that match it, in stylesheet order (later
+// wins at equal specificity and importance), with where each rule comes
+// from. With shadow, the script's open shadow roots (panel, modal) too.
+// No selector: the stylesheets themselves.
+const CSS_PROBE = `(selector, props, shadow, max, withRules) => {
+  const roots = [document]
+  if (shadow) for (const h of document.querySelectorAll('*')) if (h.shadowRoot) roots.push(h.shadowRoot)
+  const label = (sheet, root) => {
+    if (sheet.href) return sheet.href.replace(location.origin, '')
+    const n = sheet.ownerNode
+    if (root !== document) return 'script shadow <style>'
+    if (n && n.dataset && n.dataset.ibh) return 'script <style data-ibh>'
+    if (n && n.id === 'ibh-mcp-css') return 'try_css <style>'
+    return 'inline <style>'
+  }
+  const readable = sheet => { try { return sheet.cssRules } catch (e) { return null } }
+  if (!selector) {
+    return roots.flatMap(root => [...root.styleSheets].map(sh => {
+      const rules = readable(sh)
+      return label(sh, root) + ': ' + (rules ? rules.length + ' rules' : 'unreadable (another origin)') + (sh.media.mediaText ? ' @media ' + sh.media.mediaText : '') + (sh.disabled ? ' (disabled)' : '')
+    }))
+  }
+  const desc = e => e.tagName.toLowerCase() + (e.id ? '#' + e.id : '') +
+    (typeof e.className === 'string' && e.className.trim() ? '.' + e.className.trim().split(/\\s+/).join('.') : '')
+  const found = roots.flatMap(root => [...root.querySelectorAll(selector)].map(el => ({ el, root })))
+  const out = found.slice(0, max).map(({ el, root }) => {
+    const cs = getComputedStyle(el)
+    const b = el.getBoundingClientRect()
+    const item = {
+      element: desc(el) + (root !== document ? ' (in the script shadow DOM)' : ''),
+      box: [Math.round(b.left), Math.round(b.top), Math.round(b.width), Math.round(b.height)].join(' ') + ' (x y w h, css px)',
+      computed: Object.fromEntries(props.map(p => [p, cs.getPropertyValue(p)])),
+    }
+    if (withRules) {
+      const rules = []
+      const walk = (list, src, media) => {
+        for (const r of list) {
+          if (r.cssRules && !r.selectorText) {   // @media, @supports, @layer: look inside
+            const cond = r.media ? r.media.mediaText : r.conditionText || ''
+            walk(r.cssRules, src, cond ? (media ? media + ' and ' : '') + cond + (r.media && !matchMedia(r.media.mediaText).matches ? ' (not now)' : '') : media)
+            continue
+          }
+          if (!r.selectorText) continue
+          let hit = false
+          try { hit = el.matches(r.selectorText) } catch (e) { /* a pseudo-element selector */ }
+          if (hit) rules.push(src + (media ? ' @media ' + media : '') + ' :: ' + r.cssText.replace(/\\s+/g, ' ').slice(0, 300))
+        }
+      }
+      for (const sh of root.styleSheets) { const list = readable(sh); if (list) walk(list, label(sh, root), '') }
+      if (el.getAttribute('style')) rules.push('style attribute :: ' + el.getAttribute('style').slice(0, 300))
+      item.rules = rules
+    }
+    return item
+  })
+  return { matched: found.length, shown: out }
+}`
+
+async function cssTool({ tab, selector = '', props, shadow = false, max = 3, rules = true }: { tab?: string | number; selector?: string; props?: string[]; shadow?: boolean; max?: number; rules?: boolean }) {
+  const key = tabKey(tab)
+  const args = [selector, props && props.length ? props : CSS_PROPS, shadow, Math.max(1, Math.min(20, Number(max) || 3)), rules]
+  const raw = await withFirefox(async c => {
+    await announce(c, key, selector ? `reading the CSS of ${selector}` : 'listing the stylesheets')
+    return ff.evaluate(c, key, `(${CSS_PROBE})(...${JSON.stringify(args)})`)
+  })
+  return clip(raw)
+}
+
+// A temporary stylesheet in the tab, to try a fix live before it goes into
+// the script: replaced by the next call, gone with clear or a reload. With
+// shadow, it goes into the script's shadow roots (panel, modal) instead.
+async function tryCss({ tab, css = '', shadow = false, clear = false }: { tab?: string | number; css?: string; shadow?: boolean; clear?: boolean }) {
+  if (!clear && !css) throw new Error('css is required (or clear: true)')
+  const key = tabKey(tab)
+  const expr = `((css, shadow, clear) => {
+    const roots = shadow ? [...document.querySelectorAll('*')].filter(h => h.shadowRoot).map(h => h.shadowRoot) : [document.head || document.documentElement]
+    let n = 0
+    for (const root of roots) {
+      let s = root.querySelector('#ibh-mcp-css')
+      if (clear) { if (s) { s.remove(); n++ } continue }
+      if (!s) { s = document.createElement('style'); s.id = 'ibh-mcp-css'; root.appendChild(s) }
+      s.textContent = css
+      n++
+    }
+    return (clear ? 'removed from ' : 'applied to ') + n + (shadow ? ' shadow root(s)' : ' page')
+  })(${JSON.stringify(css)}, ${shadow}, ${clear})`
+  return withFirefox(async c => {
+    await announce(c, key, clear ? 'removing the trial CSS' : `trying CSS: ${css}`)
+    return JSON.parse(await ff.evaluate(c, key, expr))
+  })
+}
+
 const KEY_LINE = /^(slideshow|download|external player|copied|keyframe decoder|storage)/
 
 // A log entry as logSnapshot saves it: [time, level, message].
@@ -1170,6 +1268,13 @@ const TOOLS: Tool[] = [
   { name: 'console', run: consoleTool,
     inputSchema: obj({ tab: TAB, filter: str('regular expression on the text, case-insensitive'), levels: { type: 'array', items: { type: 'string', enum: ['error', 'warn', 'info', 'log', 'debug'] } }, last: num('how many lines (default 40, at most 500)') }),
     description: 'Firefox\'s own console for a tab (console.* calls and page errors since the page loaded), read through the debugger: works in hidden tabs, and sees the page\'s console, which MobiDevTools does not. With the panel\'s debug on, the script mirrors its whole log there ([IBH] lines).' },
+  { name: 'css', run: cssTool,
+    inputSchema: obj({ tab: TAB, selector: str('CSS selector (none: list the stylesheets)'), props: { type: 'array', items: { type: 'string' }, description: 'computed properties to show (default: layout ones: display, position, size, colors, border…)' },
+      shadow: bool('also inside the script\'s shadow DOM (panel, modal)'), max: num('elements to show (default 3, at most 20)'), rules: bool('the matching rules, with their source (default true)') }),
+    description: 'Reads the CSS of a tab: for each element matching a selector, its box, computed style and every rule that matches it, in stylesheet order, with where each comes from (the site\'s sheet, the script\'s <style data-ibh>, its shadow DOM, a style attribute) and any @media condition. Shows which rule wins and why. Read only; the Firefox must be in front.' },
+  { name: 'try_css', run: tryCss,
+    inputSchema: obj({ tab: TAB, css: str('CSS to apply (replaces the previous trial)'), shadow: bool('into the script\'s shadow roots (panel, modal) instead of the page'), clear: bool('remove the trial CSS') }),
+    description: 'Applies temporary CSS to a tab, to try a fix live before putting it in the script (THEME_CSS and the like): replaced by the next call, removed with clear or by a reload. Changes what the user sees: only when the user asked, and clear it afterwards.' },
   { name: 'log_snapshot', run: logSnapshot, inputSchema: obj({ match: str('site tabs (default "rule34")') }),
     description: 'Saves every site tab\'s whole script log to ~/.cache/ibh-logs and shows its key lines (slideshows, downloads, warnings, errors). deploy does it by itself before reloading anything.' },
   { name: 'slideshow_stats', run: slideshowStats, inputSchema: obj({ match: str('site tabs (default "rule34")'), saved: bool('also the logs saved by log_snapshot and deploy') }),
@@ -1222,7 +1327,7 @@ async function handle(msg: RpcMessage) {
       return reply({
         protocolVersion: (msg.params && msg.params.protocolVersion) || '2025-06-18',
         capabilities: { tools: {} },
-        serverInfo: { name: 'phone', version: '2.3.0' },
+        serverInfo: { name: 'phone', version: '2.4.0' },
         instructions: INSTRUCTIONS,
       })
     case 'ping':

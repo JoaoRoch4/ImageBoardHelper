@@ -68,6 +68,16 @@ proot traces every process, which makes builds slow: each compiler process takes
 - Real Termux sessions in the drawer are not available: this Termux build runs no termux-am socket server, and Android refuses `am` to apps.
 - `wasm_build` builds `wasm/h264dec.wasm` (natively when possible) and, asked again with `job=…`, copies a successful native build into `wasm/`. Then: commit the `.wasm` first, put that commit in the `@resource h264dec` link, commit again.
 
+## CSS: a layout that looks wrong
+
+Read before guessing: the phone's page often differs from what a headless browser gets (rule34 serves its mobile layout, `mobile.css`, to the phone).
+
+1. `css selector=…` shows each matching element's box, computed style and every rule that matches it, in stylesheet order, each with its source: the site's sheet, the script's `<style data-ibh>` (THEME_CSS, FAVSEARCH_CSS and the rest), a style attribute, and any `@media` condition. Which rule wins, and why, is right there. `shadow=true` looks inside the script's shadow DOM (panel, modal player); no selector lists the stylesheets.
+2. The usual culprit is the dark theme's broad rule (`html.ibh-theme body :not(…)`), which makes every background transparent and every border neon green: an element of the site that floats (`position: absolute` or `fixed`, a menu, a dropdown) then lays over the page. Such an element needs a background of its own in THEME_CSS, as `#navbar` and `.awesomplete > ul` have.
+3. To beat a site rule without `!important`, out-specify it (two IDs beat one: `#header #site-title`); against the theme's `!important` rule, an ID selector with `!important` wins.
+4. `try_css css=…` applies a trial stylesheet to the tab (`shadow=true` for the panel or modal) to see a fix on the phone before it goes into the script; the next call replaces it, `clear=true` or a reload removes it. It changes what the user sees: only on request, and clear it after.
+5. Then the fix goes into the script's CSS, `check`, ship. These tools read the live page, so that Firefox must be in front (a frozen one answers nothing).
+
 ## Firefox preferences
 
 `firefox_pref name=…` reads any about:config preference through the debugger, even though Firefox locks about:config on release builds. `set` and `clear` persist across restarts: only on request, and say that `clear` undoes it. Already learned: `dom.media.webcodecs.enabled=true` exposes WebCodecs on Android but every codec answers unsupported, so it is no way around the decoder.
