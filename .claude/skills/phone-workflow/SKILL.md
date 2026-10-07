@@ -43,6 +43,7 @@ The project rules (CLAUDE.md) come first: version in both places, CHANGELOG entr
 
 1. `tabs`: the right version in the tab they used?
 2. `script_log` with a `filter` (a word from the feature, or `error|warn`) and `levels`. Log lines are English on purpose; the panel's **Copiar log** is the same buffer.
+   `console` reads Firefox's own console for the tab: the page's errors, and with the panel's debug on, the script's whole log as `[IBH]` lines. It works in hidden tabs. Every tool that works in a tab first writes a `[Claude] …` line there, so the user sees on the phone what was done (MobiDevTools shows it through its own bridge, since it does not see the page's console).
 3. "Olha a screenshot" means `latest_screenshot` (their own, in `/sdcard/Pictures/Screenshots`); `screenshot` grabs the screen now. For something that moves (a slideshow, a swipe), `screen_record` returns a contact sheet of a few seconds.
 4. Outside the page (an app that did not open, a crash): `logcat` with a filter such as `ActivityTaskManager|AndroidRuntime` and `since_s`. `apps url=<link>` says which apps would take an intent.
 5. Reproducing a gesture yourself (`input long_press`, `tap`) needs the user's go-ahead and a screenshot first to know the coordinates.

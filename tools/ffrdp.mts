@@ -9,6 +9,7 @@
 //   node tools/ffrdp.mts tabs                  list open tabs
 //   node tools/ffrdp.mts eval <tab> '<expr>'   evaluate in a tab
 //   node tools/ffrdp.mts pref <name> [value|clear]   read, set or reset a Firefox preference
+//   node tools/ffrdp.mts console <tab>         the tab's console (console.* calls, page errors)
 //
 // <tab> is the index printed by `tabs` or any substring of the tab URL.
 // The result is passed through JSON.stringify, so objects print in full.
@@ -186,6 +187,41 @@ export async function evaluate(c: Connection, key: string, expr: string, indent 
   return out?.type === 'undefined' ? 'undefined' : out
 }
 
+// One line of a tab's console: a console.* call or a page error.
+export interface ConsoleLine {
+  time: number
+  level: string
+  text: string
+  source: string
+}
+
+// A console argument as text: primitives as they are, a long string by its
+// start, an object by its class (a grip, not the object itself).
+const argText = (a: any): string =>
+  a === null || typeof a !== 'object' ? String(a)
+    : a.type === 'longString' ? `${a.initial}…`
+    : a.type === 'undefined' ? 'undefined'
+    : `[${a.class || a.type}]`
+
+// A tab's console, as Firefox's own console shows it: console.* calls and
+// page errors since the page loaded, hidden tabs included. The console
+// actor hands out what it kept only once its listeners run.
+export async function consoleMessages(c: Connection, key: string): Promise<ConsoleLine[]> {
+  const tab = await pickTab(c, key)
+  const { frame } = await c.request(tab.actor, 'getTarget')
+  const types = ['ConsoleAPI', 'PageError']
+  await c.request(frame.consoleActor, 'startListeners', { listeners: types })
+  const { messages = [] } = await c.request(frame.consoleActor, 'getCachedMessages', { messageTypes: types })
+  return messages.map((m: any): ConsoleLine => {
+    if (m.pageError) {
+      const e = m.pageError
+      return { time: e.timeStamp, level: e.warning ? 'warn' : e.info ? 'info' : 'error', text: e.errorMessage, source: `${e.sourceName}:${e.lineNumber}` }
+    }
+    const x = m.message || {}
+    return { time: x.timeStamp, level: x.level || 'log', text: (x.arguments || []).map(argText).join(' '), source: `${x.filename}:${x.lineNumber}` }
+  }).sort((a: ConsoleLine, b: ConsoleLine) => a.time - b.time)   // the actor sends console calls first, then errors
+}
+
 export type PrefAction = 'get' | 'set' | 'clear'
 
 // A Firefox preference (what about:config shows, reachable here even where
@@ -226,12 +262,14 @@ async function main() {
     } else if (cmd === 'eval' && args.length === 2) {
       const [tab = '', expr = ''] = args
       console.log(await evaluate(c, tab, expr))
+    } else if (cmd === 'console' && args.length === 1) {
+      for (const l of await consoleMessages(c, args[0] || '')) console.log(`${new Date(l.time).toTimeString().slice(0, 8)} ${l.level.padEnd(5)} ${l.text}`)
     } else if (cmd === 'pref' && args.length >= 1) {
       const [name = '', v] = args
       const value = v === 'true' ? true : v === 'false' ? false : /^-?\d+$/.test(v || '') ? Number(v) : v
       console.log(JSON.stringify(await pref(c, name, v === undefined ? 'get' : v === 'clear' ? 'clear' : 'set', value)))
     } else {
-      console.log('usage: ffrdp.mts setup | tabs | eval <tab> <expr> | pref <name> [value|clear]')
+      console.log('usage: ffrdp.mts setup | tabs | eval <tab> <expr> | console <tab> | pref <name> [value|clear]')
     }
   } finally {
     c.sock.end()

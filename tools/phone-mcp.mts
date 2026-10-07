@@ -8,7 +8,7 @@
 //   phone and browser  status, connect, tabs, eval, reload_tabs, open_url,
 //                      firefox_pref, screenshot, latest_screenshot,
 //                      screen_record, input, logcat, apps, device
-//   the userscript     script_log, log_snapshot, slideshow_stats, deploy
+//   the userscript     script_log, console, log_snapshot, slideshow_stats, deploy
 //   videos and WASM    video_info, reel_preview, wasm_build
 //   repo checks        check, smoke
 //   native Termux      termux_run, termux_job: windows of a tmux session
@@ -257,14 +257,26 @@ interface TabValue {
   [key: string]: any
 }
 
+// A line in the tab for what a tool does there, so the user sees it on the
+// phone: in Firefox's console, and in MobiDevTools' panel. MobiDevTools does
+// not see the page's console (it hooks console in its own content script),
+// only messages posted through its bridge; "pr" is its REPL's answer, shown
+// as a result line. Best effort: a tab that cannot take it fails nothing.
+async function announce(c: Connection, key: string, what: string) {
+  const text = JSON.stringify(`[Claude] ${what.replace(/\s+/g, ' ').slice(0, 200)}`)
+  try { await ff.evaluate(c, key, `(console.info(${text}), window.postMessage({ _mdt: 'pr', id: -1, v: ${text} }, '*'), 0)`, 0) } catch (e) { /* the tool goes on */ }
+}
+
 // The same expression in every tab whose URL has `match`, by index. The
 // expression must return an object (or null): its fields join the tab's.
-async function inTabs(match: string, expr: string): Promise<TabValue[]> {
+// With `what`, each tab is told first (announce).
+async function inTabs(match: string, expr: string, what?: string): Promise<TabValue[]> {
   return withFirefox(async c => {
     const tabs = await ff.listTabs(c)
     const out: TabValue[] = []
     for (const [i, t] of tabs.entries()) {
       if (match && !t.url.includes(match)) continue
+      if (what) await announce(c, String(i), what)
       let value
       try { value = JSON.parse(await ff.evaluate(c, String(i), expr, 0)) } catch (e) { value = { error: errMessage(e) } }
       out.push({ index: i, url: t.url, title: t.title, ...value })
@@ -601,6 +613,7 @@ async function evalTool({ tab, expression = '', await: wait = false, timeout_ms 
   if (!expression) throw new Error('expression is required')
   const key = tabKey(tab)
   return withFirefox(async c => {
+    await announce(c, key, `eval${wait ? ' (await)' : ''}: ${expression}`)
     if (!wait) return clip(await ff.evaluate(c, key, expression))
     const slot = JSON.stringify(`__mcp_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`)
     await ff.evaluate(c, key, `(window[${slot}] = { pending: true }, (async () => (${expression}))().then(` +
@@ -630,7 +643,7 @@ async function reloadTabs({ match = 'rule34', only_hidden = true, except_version
     const label = `${t.index} v${t.version || '?'} ${t.url}`
     if (except_version && t.version === except_version) { report.push(`${label}: already on ${except_version}`); continue }
     if (only_hidden && !t.hidden) { report.push(`${label}: visible, left alone (ask the user to refresh it)`); continue }
-    await withFirefox(c => ff.evaluate(c, String(t.index), 'location.reload()'))
+    await withFirefox(async c => { await announce(c, String(t.index), 'reloading this tab'); return ff.evaluate(c, String(t.index), 'location.reload()') })
     report.push(`${label}: reload requested${t.hidden ? ' (a hidden tab reloads when shown)' : ''}`)
   }
   return report.join('\n')
@@ -786,10 +799,21 @@ async function scriptLog({ tab, filter = '', levels = null, last = 40 }: { tab?:
       .map(e => new Date(e.t).toTimeString().slice(0, 8) + ' ' + e.level.padEnd(5) + ' ' + e.msg)
     return { version: window.__ibh.version, url: location.href, lines }
   })()`
-  const raw = await withFirefox(c => ff.evaluate(c, tabKey(tab), expr, 0))
+  const raw = await withFirefox(async c => { await announce(c, tabKey(tab), 'reading the script log'); return ff.evaluate(c, tabKey(tab), expr, 0) })
   const out = JSON.parse(raw)
   if (!out) return 'window.__ibh is missing in that tab: the script is not running there'
   return clip(`v${out.version} · ${out.url}\n${out.lines.join('\n') || '(no matching lines)'}`)
+}
+
+// Firefox's own console for a tab, through the debugger: what the page and
+// the script wrote (console.*) and the page's errors, hidden tabs included.
+async function consoleTool({ tab, filter = '', levels = null, last = 40 }: { tab?: string | number; filter?: string; levels?: string[] | null; last?: number }) {
+  const re = filter ? new RegExp(filter, 'i') : null
+  const key = tabKey(tab)
+  const lines = await withFirefox(async c => { await announce(c, key, 'reading the console'); return ff.consoleMessages(c, key) })
+  const picked = lines.filter(l => (!levels || levels.includes(l.level)) && (!re || re.test(l.text)) && !l.text.startsWith('[Claude] reading the console'))
+    .slice(-Math.max(1, Math.min(500, Number(last) || 40)))
+  return clip(picked.map(l => `${new Date(l.time).toTimeString().slice(0, 8)} ${l.level.padEnd(5)} ${l.text}`).join('\n') || '(no matching messages)')
 }
 
 const KEY_LINE = /^(slideshow|download|external player|copied|keyframe decoder|storage)/
@@ -800,7 +824,7 @@ type LogEntry = [number, string, string]
 // Every site tab's whole log, saved to files: the log lives in the page, so
 // a reload (a deploy) wipes it.
 async function logSnapshot({ match = 'rule34' }: { match?: string } = {}) {
-  const tabs = await inTabs(match, 'window.__ibh ? { v: window.__ibh.version, log: window.__ibh.log().map(e => [e.t, e.level, e.msg]) } : null')
+  const tabs = await inTabs(match, 'window.__ibh ? { v: window.__ibh.version, log: window.__ibh.log().map(e => [e.t, e.level, e.msg]) } : null', 'saving the script log')
   fs.mkdirSync(LOGS, { recursive: true })
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
   const out = []
@@ -822,7 +846,7 @@ async function slideshowStats({ match = 'rule34', saved = false }: { match?: str
   try {
     // In an object: inTabs spreads the answer into the tab's fields, and a
     // spread array would come apart into numbered keys.
-    const tabs = await inTabs(match, '({ slides: window.__ibh ? window.__ibh.log().filter(e => /^slideshow \\(/.test(e.msg)).map(e => new Date(e.t).toTimeString().slice(0, 8) + " " + e.msg) : [] })')
+    const tabs = await inTabs(match, '({ slides: window.__ibh ? window.__ibh.log().filter(e => /^slideshow \\(/.test(e.msg)).map(e => new Date(e.t).toTimeString().slice(0, 8) + " " + e.msg) : [] })', 'reading the slideshow lines of the log')
     for (const t of tabs) for (const l of t.slides || []) lines.add(l)
   } catch (e) { if (!saved) throw e }
   if (saved && fs.existsSync(LOGS)) {
@@ -1065,7 +1089,7 @@ async function deploy({ confirm = false, dry_run = false, wait_s = 60, match = '
   for (const t of tabs) {
     if (t.version === version) { steps.push(`tab ${t.index}: on v${version}`); continue }
     if (t.hidden) {
-      await withFirefox(c => ff.evaluate(c, String(t.index), 'location.reload()'))
+      await withFirefox(async c => { await announce(c, String(t.index), `deploy: reloading this tab for v${version}`); return ff.evaluate(c, String(t.index), 'location.reload()') })
       steps.push(`tab ${t.index}: was v${t.version || '?'}, hidden: reload requested`)
     } else {
       steps.push(`tab ${t.index}: still v${t.version || '?'} and visible: ask the user to refresh it`)
@@ -1129,6 +1153,9 @@ const TOOLS: Tool[] = [
   { name: 'script_log', run: scriptLog,
     inputSchema: obj({ tab: TAB, filter: str('regular expression on the message, case-insensitive'), levels: { type: 'array', items: { type: 'string', enum: ['error', 'warn', 'info', 'debug'] } }, last: num('how many lines (default 40, at most 250)') }),
     description: 'Image Board Helper\'s log in a tab (window.__ibh.log()), newest last, with the version and URL.' },
+  { name: 'console', run: consoleTool,
+    inputSchema: obj({ tab: TAB, filter: str('regular expression on the text, case-insensitive'), levels: { type: 'array', items: { type: 'string', enum: ['error', 'warn', 'info', 'log', 'debug'] } }, last: num('how many lines (default 40, at most 500)') }),
+    description: 'Firefox\'s own console for a tab (console.* calls and page errors since the page loaded), read through the debugger: works in hidden tabs, and sees the page\'s console, which MobiDevTools does not. With the panel\'s debug on, the script mirrors its whole log there ([IBH] lines).' },
   { name: 'log_snapshot', run: logSnapshot, inputSchema: obj({ match: str('site tabs (default "rule34")') }),
     description: 'Saves every site tab\'s whole script log to ~/.cache/ibh-logs and shows its key lines (slideshows, downloads, warnings, errors). deploy does it by itself before reloading anything.' },
   { name: 'slideshow_stats', run: slideshowStats, inputSchema: obj({ match: str('site tabs (default "rule34")'), saved: bool('also the logs saved by log_snapshot and deploy') }),
@@ -1157,6 +1184,7 @@ const INSTRUCTIONS = 'Tools for the user\'s phone (Firefox Beta with Violentmonk
   'Each tool reconnects by itself. When Wireless debugging is off, ask the user to turn it on: never enable it with `settings put` (it kills Shizuku). ' +
   'open_url, input, firefox_pref (set/clear) and deploy change the phone: use them when the user asked, or for the deploy that follows a change they requested. ' +
   'Leave the visible tab alone; reload only hidden ones; script logs vanish on reload, so log_snapshot before (deploy does). ' +
+  'Each tool that works in a tab first writes a "[Claude] …" line there (Firefox\'s console and MobiDevTools), so the user sees it on the phone; console reads that console back. ' +
   'For a video question, video_info reads only its index; reel_preview shows the slideshow\'s frames. Long builds go to termux_run (native, outside proot).'
 
 // ─── JSON-RPC over stdio ───
@@ -1179,7 +1207,7 @@ async function handle(msg: RpcMessage) {
       return reply({
         protocolVersion: (msg.params && msg.params.protocolVersion) || '2025-06-18',
         capabilities: { tools: {} },
-        serverInfo: { name: 'phone', version: '2.1.0' },
+        serverInfo: { name: 'phone', version: '2.2.0' },
         instructions: INSTRUCTIONS,
       })
     case 'ping':
