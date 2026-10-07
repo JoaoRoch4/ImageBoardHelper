@@ -4,8 +4,9 @@
 // Smoke test in a headless Firefox (Playwright), without the phone: loads a
 // safebooru listing with the userscript injected (the GM functions stubbed
 // in memory) and checks that it boots, mounts the panel and the search bar,
-// lays out the feed, hides the buttons with 👁, opens and closes the modal
-// and runs the autopager, with no page errors. rule34 answers a headless
+// lays out the feed, hides the buttons with 👁, blocks other hosts' scripts
+// and frames (blockAds), opens and closes the modal and runs the autopager,
+// with no page errors. rule34 answers a headless
 // browser with a CAPTCHA; safebooru has the same Gelbooru 0.2 markup. Same
 // engine as the phone (Gecko), not the same browser: touch, video decoding
 // and Violentmonkey itself still need the device.
@@ -52,6 +53,14 @@ const logLine = (page, re, timeout = 15000) => page.waitForFunction(
   const page = await context.newPage()
   const pageErrors = []
   page.on('pageerror', e => pageErrors.push(e.message))
+  // Scripts and frames asked from other hosts: with blockAds, none should be.
+  const domain = new URL(START).hostname.split('.').slice(-2).join('.')
+  const outside = []
+  page.on('request', r => {
+    const kind = r.resourceType() === 'script' ? 'script' : r.isNavigationRequest() && r.frame() !== page.mainFrame() ? 'frame' : null
+    const host = new URL(r.url()).hostname
+    if (kind && host !== domain && !host.endsWith(`.${domain}`)) outside.push(`${kind} ${host}`)
+  })
 
   try {
     const res = await page.goto(START, { waitUntil: 'domcontentloaded', timeout: 60000 })
@@ -66,6 +75,17 @@ const logLine = (page, re, timeout = 15000) => page.waitForFunction(
     const shadowHosts = await page.evaluate(() => [...document.querySelectorAll('*')].filter(e => e.shadowRoot).length)
     check('panel mounted', shadowHosts >= 1, `${shadowHosts} shadow host(s)`)
     check('site search bar', await page.locator('#ibh-sitesearch').count() === 1)
+    // Ads: no script or frame from another host was even asked for, ExoClick's
+    // queue is still the page's plain array (its script never ran), and
+    // WebAssembly still compiles under the policy (the keyframe decoder).
+    await page.waitForLoadState('load', { timeout: 30000 }).catch(() => {})
+    const ads = await page.evaluate(async () => ({
+      queue: window.AdProvider === undefined ? 'absent' : Array.isArray(window.AdProvider) ? 'a plain array' : 'replaced by its script',
+      wasm: await WebAssembly.compile(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])).then(() => 'compiles', e => e.message),
+    }))
+    const adLine = await logLine(page, /^ads: blocked/, 5000)
+    check('ads blocked', !outside.length && !/replaced/.test(ads.queue) && ads.wasm === 'compiles',
+      `${adLine || 'no "ads:" log line'}; asked from other hosts: ${outside.join(', ') || 'nothing'}; ExoClick queue ${ads.queue}; WebAssembly ${ads.wasm}`)
     // The console helpers return text (an on-phone console shows only that).
     const consoleHelp = await page.evaluate(() => ({ help: window.__ibh.help(), tail: window.__ibh.tail(3).split('\n').length, none: window.__ibh.tail(5, '^no such line$') }))
     check('console help() and tail()', consoleHelp.help.includes('tail(n, filter)') && consoleHelp.tail === 3 && consoleHelp.none === '(no matching lines)',

@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.7.0
+// @version      1.8.0
 // @description  For the phone, on Gelbooru 0.2 boards (rule34.xxx and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -66,7 +66,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.7.0'
+  const VERSION = '1.8.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -110,6 +110,7 @@
     copyLinkButton: true,   // 🔗 in the post's ☰ menu: copies the link to the post's own file (raw, not the sample)
     modalOriginal:  'zoom', // images in the modal: 'zoom' shows the sample and fetches the original on zoom; 'always'
     siteTheme:      true,   // the modal's dark theme on the site's pages
+    blockAds:       true,   // only the site's own scripts and frames load: no ad networks, no popunders (needs reload)
     originalThumbs: false,  // the original where a thumbnail's box is wider than the sample (a desktop screen; needs reload)
     nativeFeed:     false,  // feed with sharp images on the site's own pages (applies at once)
     feedColumns:    1,      // its columns: 'auto' (by screen width) or 1-4
@@ -117,7 +118,7 @@
   }
 
   // Options that only take effect when the page loads.
-  const NEEDS_RELOAD = new Set(['originalThumbs', 'memorySaver', 'feedNav', 'videoModal', 'videoScrub'])
+  const NEEDS_RELOAD = new Set(['originalThumbs', 'memorySaver', 'feedNav', 'videoModal', 'videoScrub', 'blockAds'])
 
   // Whether this page found the settings at all: a script that clears the
   // site's localStorage (one did, on its reset) takes them along, and the
@@ -205,6 +206,7 @@
       laterOnSite: 'kept in this site’s data (IndexedDB)',
       tModal: 'Open posts in a player over the page',
       tTheme: 'Dark theme on site pages',
+      tAds: 'Block ads (only the site\'s own scripts load)',
       mClose: 'Close', mOpen: 'Open the post', mPrev: 'Previous post', mNext: 'Next post',
       mLoading: 'Loading…', mFail: 'Could not load it',
       mFav: 'Add to favorites', mUp: 'Upvote', mFull: 'Fullscreen', mFullExit: 'Exit fullscreen', mMenu: 'Tags and post page',
@@ -276,6 +278,7 @@
       laterOnSite: 'guardado nos dados deste site (IndexedDB)',
       tModal: 'Abrir posts num player sobre a página',
       tTheme: 'Tema escuro nas páginas do site',
+      tAds: 'Bloquear anúncios (só os scripts do próprio site carregam)',
       mClose: 'Fechar', mOpen: 'Abrir o post', mPrev: 'Post anterior', mNext: 'Próximo post',
       mLoading: 'Carregando…', mFail: 'Não foi possível carregar',
       mFav: 'Favoritar', mUp: 'Votar positivo', mFull: 'Tela cheia', mFullExit: 'Sair da tela cheia', mMenu: 'Tags e página do post',
@@ -6073,6 +6076,7 @@
     body.appendChild(toggle('siteSearch', t('tSiteSearch'), null, ensureSiteSearch))
     body.appendChild(toggle('videoModal', t('tModal'), t('noteReload')))
     body.appendChild(toggle('siteTheme', t('tTheme'), null, applySiteTheme))
+    body.appendChild(toggle('blockAds', t('tAds'), t('noteReload')))
     body.appendChild(toggle('rotateLandscape', t('tRotate')))
     body.appendChild(toggle('modalPreload', t('tPreload')))
     body.appendChild(toggle('vlcButton', t('tVlcBtn')))
@@ -6560,6 +6564,54 @@
 
   let themeOn = null
 
+  // ─── Ads ───
+  // Every script and frame these sites need is their own (checked on rule34,
+  // xbooru and safebooru); the ads come from other hosts: ExoClick's
+  // ad-provider.js, TrafficStars' ms.js, a popunder on a host that changes
+  // name, an affiliate iframe. A Content-Security-Policy <meta> in the head,
+  // in place before the parser reaches the body, keeps the browser from
+  // loading them, and CSS hides the slots they would fill. (Firefox 158 no
+  // longer fires beforescriptexecute, the other way to stop a script.)
+  const SITE_DOMAIN = SITE.split('.').slice(-2).join('.')
+  // challenges.cloudflare.com: Cloudflare's CAPTCHA page, which must keep working.
+  const OWN_HOSTS = `'self' https://${SITE_DOMAIN} https://*.${SITE_DOMAIN} https://challenges.cloudflare.com`
+  // One policy, no nonce (a nonce would turn 'unsafe-inline' off): inline for the
+  // site's own scripts and onclick handlers, eval for WebAssembly too (the
+  // keyframe decoder), moz-extension: for devtools extensions such as Eruda.
+  const AD_POLICY = `script-src ${OWN_HOSTS} 'unsafe-inline' 'unsafe-eval' blob: moz-extension:; frame-src ${OWN_HOSTS} blob:`
+  const AD_SLOTS = '.a_list, #nativemlist, #nativempost, ins[data-zoneid]'
+  const ADS_CSS = `${AD_SLOTS} { display: none !important; }`
+  const adBlocked = new Map()   // host -> loads the policy stopped
+  let adPolicyOn = false
+
+  // The policy goes in once the head exists: the observer calls this first.
+  function applyAdBlock() {
+    if (!CFG.blockAds || adPolicyOn || !document.head) return
+    adPolicyOn = true
+    const meta = document.createElement('meta')
+    meta.httpEquiv = 'Content-Security-Policy'
+    meta.content = AD_POLICY
+    document.head.prepend(meta)
+    dbg('ads: policy in place, only the site\'s own scripts and frames load')
+  }
+
+  function installAdBlock() {
+    if (!CFG.blockAds) return
+    document.addEventListener('securitypolicyviolation', e => {
+      if (!e.originalPolicy.includes('moz-extension:')) return   // a policy of the site's own, not this one
+      let host = e.blockedURI
+      try { host = new URL(e.blockedURI).host } catch (err) { /* 'inline' and such: keep it */ }
+      adBlocked.set(host, (adBlocked.get(host) || 0) + 1)
+      if (document.readyState === 'complete') dbg(`ads: blocked ${e.blockedURI}`)
+    })
+    window.addEventListener('load', () => {
+      const total = [...adBlocked.values()].reduce((a, b) => a + b, 0)
+      const hosts = [...adBlocked].map(([h, n]) => (n > 1 ? `${h} ×${n}` : h)).join(', ')
+      info(`ads: blocked ${total} loads${hosts ? ` (${hosts})` : ''}, ${document.querySelectorAll(AD_SLOTS).length} slots hidden`)
+    }, { once: true })
+    applyAdBlock()
+  }
+
   function applySiteTheme() {
     const on = !!CFG.siteTheme
     if (on === themeOn && document.documentElement.classList.contains('ibh-theme') === on) return
@@ -6598,13 +6650,15 @@
     if (document.querySelector('style[data-ibh]')) return
     const style = el('style', { 'data-ibh': '1' })
     style.textContent = NATIVE_MARK_CSS + THEME_CSS + FAVSEARCH_CSS + TAP_CSS +
-      (CFG.videoScrub ? SCRUB_CSS : '')
+      (CFG.videoScrub ? SCRUB_CSS : '') + (CFG.blockAds ? ADS_CSS : '')
     ;(document.head || document.documentElement).appendChild(style)
   }
 
   // One observer on the document finds new thumbnails (autopager, search
   // results) and keeps the page-level pieces in place.
+  installAdBlock()
   new MutationObserver(records => {
+    applyAdBlock()   // first: the policy must be in the head before the body's scripts
     for (const r of records) {
       for (const node of r.addedNodes) {
         if (node.nodeType !== 1) continue

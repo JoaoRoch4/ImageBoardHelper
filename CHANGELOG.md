@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.8.0
+
+- Ads blocked by the script itself (`blockAds`, on), so an ad blocker can
+  stay off: a Content-Security-Policy put in the page's head before the
+  body loads lets only the site's own scripts and frames load. ExoClick,
+  TrafficStars, the popunder (on a host that changes name) and the
+  affiliate iframe are not even downloaded, and CSS hides their empty slots.
+  WebAssembly (the keyframe decoder), the site's inline scripts, devtools
+  extensions and Cloudflare's CAPTCHA page keep working. The log says what
+  was blocked (`ads: blocked …`)
+
 ## 1.7.0
 
 - `__ibh.help()` and `__ibh.tail(n, filter)` for the console: the list of

@@ -46,6 +46,7 @@ Fatos verificados no rule34 (via `ffrdp` e XHR síncrono na aba logada). Se algu
 | Página do post | `#heart-img` com `heart-added.svg` = favorito; tags em `li.tag-type-*`; estatísticas em `#stats li`; o link "Original image" é o arquivo exato. Comentários em `#comment-list > div#c<id>` (`.col1`/`.col2`), 10 por página, cursor no "Next »" de `#post-comments #paginator`. |
 | Score nos favoritos | No script inline da página: `posts[ID] = { … score: 'N' }`. |
 | Cookies | `user_id` (`userId`) e `comment_threshold` (`readCookie`). |
+| Anúncios | ExoClick (`a.magsrv.com/ad-provider.js` e zonas `ins[data-zoneid]`), TrafficStars (`cdn.tsyndicate.com/sdk/v1/ms.js`), um popunder num domínio que muda de nome (página do post) e um iframe de afiliado (`crakrevenue`), em `div.a_list` (`#top`, `#lmid`, `#lbot1-3`), `#nativemlist` e `#nativempost`. O xbooru tem o mesmo ExoClick; o safebooru, só o beacon da Cloudflare. Todo script legítimo dos três é do próprio domínio. O `blockAds` põe uma CSP no `<head>` (`AD_POLICY`) e esconde esses espaços. |
 | Servidores (rule34) | Imagens pelo Cloudflare (`api-cdn.rule34.xxx`); vídeo em `api-cdn-mp4` (origem nginx, 0,4–0,6 MB/s) é reescrito para `api-cdn` (6–7 MB/s). Sample tem 850 px de largura. Vídeo sem o Referer do site dá 403. Cada 404 de extensão errada custa ~0,5 s — daí o cache de endereços. |
 
 ---
@@ -100,6 +101,8 @@ Não sugira estas de novo sem um motivo novo.
 **Medir toque longo só com pointer events.** No Firefox para Android o toque longo termina de três jeitos (gravado com um logger de eventos na aba): `contextmenu` → `pointerup`; `contextmenu` → `pointercancel`; ou `pointercancel` ~110 ms depois do toque, sem `contextmenu`, quando o dedo treme dentro de algo rolável. Os eventos de toque (`touchstart`/`touchend`) seguem nos três casos, então o segurar mede neles (tempo, deslocamento ≤ 12 px, sem rolagem) e abre a aba no `touchend`, que conta como gesto do usuário. `window.open` de dentro de timer é barrado pelo bloqueador de pop-ups. Veja `chipGestures`.
 
 **`GM_download` no Firefox para Android.** Mostra o diálogo de salvar mas revoga o link `blob:` na hora, e confirmar não salva nada. O `saveFile` baixa com `GM_xmlhttpRequest` e mantém o link vivo por 2 min (`BLOB_LIFE_MS`); o host de vídeo exige o Referer do site.
+
+**`beforescriptexecute` para barrar os scripts de anúncio.** Era o jeito de impedir um `<script>` de rodar sem mexer em objeto da página, mas o Firefox 158 não tem mais o evento (testado na aba: não dispara e o script roda). Remover o elemento depois de o parser vê-lo não impede a execução. O `blockAds` usa uma `<meta>` de Content-Security-Policy, posta no `<head>` pelo observer antes de o parser chegar ao corpo, e assim os anúncios nem são baixados (no `smoke` do xbooru, nenhum pedido sai para outro host). A política precisa liberar `'unsafe-eval'` desde o início, porque políticas se somam e sem ele o `WebAssembly.compile` do decodificador é barrado; e não pode ter nonce, que desliga o `'unsafe-inline'` dos `onclick` do site.
 
 **`MediaCapabilities` para saber se um vídeo roda liso.** No Firefox para Android responde sempre "smooth/powerEfficient", até para 4K que o aparelho não aguenta (o decodificador do SM6115 vai até 1920×1088). A aba Info usa os quadros perdidos de `getVideoPlaybackQuality`, e capa acima de 1920×1088 fica no pôster.
 
