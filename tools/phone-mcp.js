@@ -81,10 +81,14 @@ function withTimeout(promise, ms, what) {
 // rish's output lines: warnings can come before or after the answer.
 const rishLines = cmd => run(RISH, ['-c', cmd]).split('\n').map(l => l.trim())
 
-// Asked twice before giving up: the first call after a while can stumble.
+// When rish last answered: no need to ask again for a while.
+let rishOkAt = 0
+
+// Asked twice before giving up: ColorOS freezes Shizuku's idle process, and
+// the first call after that can stumble.
 function shizukuUp() {
   for (let i = 0; i < 2; i++) {
-    try { if (rishLines('echo ok').includes('ok')) return true } catch (e) { /* once more */ }
+    try { if (rishLines('echo ok').includes('ok')) { rishOkAt = Date.now(); return true } } catch (e) { /* once more */ }
   }
   return false
 }
@@ -98,9 +102,21 @@ function adbSerial() {
   }
 }
 
-// A shell command on the phone, as uid shell either way.
-function phoneShell(cmd, timeout = 20000) {
-  if (shizukuUp()) return run(RISH, ['-c', cmd], { timeout }).trim()
+// A shell command on the phone, as uid shell either way. A command that
+// should print something and printed nothing runs once more: a Shizuku
+// just woken from its freeze can answer empty.
+function phoneShell(cmd, timeout = 20000, { expectOutput = true } = {}) {
+  if (Date.now() - rishOkAt < 30000 || shizukuUp()) {
+    try {
+      let out = run(RISH, ['-c', cmd], { timeout }).trim()
+      if (!out && expectOutput) out = run(RISH, ['-c', cmd], { timeout }).trim()
+      rishOkAt = Date.now()
+      return out
+    } catch (e) {
+      rishOkAt = 0
+      if (!adbSerial()) throw e
+    }
+  }
   const serial = adbSerial()
   if (!serial) throw new Error('Shizuku is not running and adb has no device: ask the user to start Shizuku or turn on Wireless debugging')
   return run('adb', ['-s', serial, 'shell', cmd], { timeout }).trim()
@@ -503,7 +519,7 @@ function imageResult(file, label) {
 }
 
 function screenshot() {
-  phoneShell(`screencap -p ${SHOT}`)
+  phoneShell(`screencap -p ${SHOT}`, 20000, { expectOutput: false })
   return imageResult(SHOT, 'screen now')
 }
 
@@ -519,7 +535,7 @@ function latestScreenshot() {
 function screenRecord({ seconds = 5, fps = 2 } = {}) {
   const s = Math.max(1, Math.min(15, Math.round(Number(seconds) || 5)))
   const rate = Math.max(1, Math.min(5, Number(fps) || 2))
-  phoneShell(`screenrecord --time-limit ${s} --bit-rate 6000000 ${RECORDING}`, (s + 20) * 1000)
+  phoneShell(`screenrecord --time-limit ${s} --bit-rate 6000000 ${RECORDING}`, (s + 20) * 1000, { expectOutput: false })
   fs.mkdirSync(WORK, { recursive: true })
   const sheet = path.join(WORK, 'recording.jpg')
   const n = s * rate
@@ -547,7 +563,7 @@ function inputTool({ action, x, y, x2, y2, ms, key, text }) {
     if (typeof text !== 'string' || !text) throw new Error('text is required')
     cmd = `input text ${shq(text.replace(/ /g, '%s'))}`
   } else throw new Error('action: tap, long_press, swipe, key or text')
-  phoneShell(cmd, 30000)
+  phoneShell(cmd, 30000, { expectOutput: false })
   return `done: ${cmd} (screen size: ${phoneShell('wm size').replace(/^Physical size: /, '')})`
 }
 
