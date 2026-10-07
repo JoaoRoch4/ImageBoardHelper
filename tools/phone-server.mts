@@ -22,12 +22,13 @@ import * as path from 'node:path'
 import * as http from 'node:http'
 import * as crypto from 'node:crypto'
 import { spawn } from 'node:child_process'
-import { shizukuUp } from './rish.mts'
+import { rish, shizukuUp } from './rish.mts'
 
 const VERSION = '1.0.0'
 const DIR = process.env.IBH_SERVER_DIR || path.join(os.homedir(), '.config', 'ibh-server')
 const PORT = Number(process.env.IBH_SERVER_PORT || 8730)
 const TERMUX_BIN = process.env.IBH_TERMUX_BIN || ''   // a folder ending in /, or empty: termux-* from PATH
+const MEDIA = process.env.IBH_SERVER_MEDIA || '/sdcard/Download'   // screenshots and recordings
 const MAX_BODY = 30 * 1024 * 1024                     // a 20 MB file as base64, with room to spare
 const LOG_MAX = 1024 * 1024
 const started = Date.now()
@@ -133,6 +134,34 @@ function runCommand(command: string, cwd: string, timeoutS: number) {
   })
 }
 
+// What may reach the shell: a link without spaces or quotes (http, https,
+// intent…), a package name, a key code; anything else is single-quoted.
+const LINK = /^[a-z]+:\/\/[^\s'"\\]+$/i
+const PACKAGE = /^[\w.]+$/
+const KEY = /^(KEYCODE_)?[A-Z0-9_]+$/
+const shq = (s: string) => `'${s.replace(/'/g, `'\\''`)}'`   // one shell word
+
+// A command as uid shell, through rish; 503 when Shizuku is not answering.
+async function shell(cmd: string, timeout?: number) {
+  try {
+    return await rish(cmd, timeout)
+  } catch (e) {
+    throw new HttpError(503, 'Shizuku is not answering: start it in the Shizuku app')
+  }
+}
+
+// A screen coordinate or a duration from the body, or 400.
+function coord(body: Record<string, unknown>, key: string, fallback?: number): number {
+  const v = body[key] ?? fallback
+  if (typeof v !== 'number' || !Number.isFinite(v) || v < 0 || v > 10000) throw new HttpError(400, `${key} must be a number from 0 to 10000`)
+  return Math.round(v)
+}
+
+function mediaFile(ext: string) {
+  try { fs.mkdirSync(MEDIA, { recursive: true }) } catch (e) { /* /sdcard/Download exists already */ }
+  return path.join(MEDIA, `ibh-server-${Date.now()}.${ext}`)
+}
+
 export const ROUTES: Record<string, Handler> = {
   status: async () => ({
     version: VERSION,
@@ -140,6 +169,64 @@ export const ROUTES: Record<string, Handler> = {
     shizuku: await shizukuUp(),
     termuxApi: fs.existsSync(termuxPath('termux-toast')),
   }),
+
+  // A link (in `app` when given), or `app` launched alone.
+  open: async body => {
+    const url = optText(body, 'url')
+    const app = optText(body, 'app')
+    if (!url && !app) throw new HttpError(400, 'url or app is required')
+    if (url && !LINK.test(url)) throw new HttpError(400, 'url must be a link without spaces or quotes')
+    if (app && !PACKAGE.test(app)) throw new HttpError(400, 'app must be a package name, like org.mozilla.fenix')
+    const r = await shell(url ? `am start -a android.intent.action.VIEW -d '${url}'${app ? ` ${app}` : ''}` : `monkey -p ${app} -c android.intent.category.LAUNCHER 1`)
+    if (r.code !== 0) throw new HttpError(500, r.out || `exit ${r.code}`)
+    return { output: r.out }
+  },
+
+  // The apps that open a link (as Firefox asks, BROWSABLE), or the installed packages matching a name.
+  apps: async body => {
+    const url = optText(body, 'url')
+    if (url) {
+      const mime = optText(body, 'mime') ?? 'video/*'
+      if (!LINK.test(url)) throw new HttpError(400, 'url must be a link without spaces or quotes')
+      if (!/^[\w*.+/-]+$/.test(mime)) throw new HttpError(400, 'bad MIME type')
+      const r = await shell(`cmd package query-activities --brief -a android.intent.action.VIEW -c android.intent.category.BROWSABLE -d '${url}' -t '${mime}'`)
+      return { activities: r.out.split('\n').map(l => l.trim()).filter(l => /^[\w.]+\/[\w.$]+$/.test(l)) }
+    }
+    const filter = optText(body, 'filter') ?? ''
+    if (!/^[\w.]*$/.test(filter)) throw new HttpError(400, 'filter is part of a package name')
+    const r = await shell(`pm list packages ${filter}`)
+    return { packages: r.out.split('\n').map(l => l.replace(/^package:/, '').trim()).filter(Boolean) }
+  },
+
+  screenshot: async body => {
+    const file = mediaFile('png')
+    await shell(`screencap -p ${shq(file)}`)
+    return { path: file, ...(body.inline ? { base64: fs.readFileSync(file).toString('base64') } : {}) }
+  },
+
+  record: async body => {
+    const seconds = Math.max(1, Math.min(15, Math.round(Number(body.seconds) || 5)))
+    const file = mediaFile('mp4')
+    await shell(`screenrecord --time-limit ${seconds} ${shq(file)}`, (seconds + 20) * 1000)
+    return { path: file, seconds }
+  },
+
+  // Touches and keys, through Android's `input`.
+  input: async body => {
+    const action = optText(body, 'action')
+    let cmd: string
+    if (action === 'tap') cmd = `input tap ${coord(body, 'x')} ${coord(body, 'y')}`
+    else if (action === 'long_press') cmd = `input swipe ${coord(body, 'x')} ${coord(body, 'y')} ${coord(body, 'x')} ${coord(body, 'y')} ${coord(body, 'ms', 800)}`
+    else if (action === 'swipe') cmd = `input swipe ${coord(body, 'x')} ${coord(body, 'y')} ${coord(body, 'x2')} ${coord(body, 'y2')} ${coord(body, 'ms', 300)}`
+    else if (action === 'key') {
+      const key = text(body, 'key')
+      if (!KEY.test(key)) throw new HttpError(400, 'key must be a key code, like BACK, HOME or KEYCODE_VOLUME_UP')
+      cmd = `input keyevent ${key.startsWith('KEYCODE_') ? key : `KEYCODE_${key}`}`
+    } else if (action === 'text') cmd = `input text ${shq(text(body, 'text').replace(/ /g, '%s'))}`
+    else throw new HttpError(400, 'action: tap, long_press, swipe, key or text')
+    await shell(cmd, 30000)
+    return { done: cmd }
+  },
 
   run: async body => {
     const timeout = optNumber(body, 'timeout') ?? 60

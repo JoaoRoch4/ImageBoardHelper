@@ -46,7 +46,7 @@ let TOKEN = ''
 const servers: ChildProcess[] = []
 
 const serverEnv = (extra: Record<string, string> = {}) => ({
-  ...process.env, IBH_SERVER_DIR: dir, IBH_SERVER_PORT: String(port), RISH: fakeRish, IBH_TERMUX_BIN: `${termuxBin}/`, ...extra,
+  ...process.env, IBH_SERVER_DIR: dir, IBH_SERVER_PORT: String(port), RISH: fakeRish, IBH_TERMUX_BIN: `${termuxBin}/`, IBH_SERVER_MEDIA: path.join(dir, 'media'), ...extra,
 })
 
 // A server process; resolves once its port answers.
@@ -198,4 +198,52 @@ test('device', async () => {
   assert.equal(json.battery.percentage, 80)
   assert.ok(json.memory.total_mb > 0)
   assert.ok('storage' in json && 'network' in json)
+})
+
+// ─── open, apps, screenshot, record, input (through the fake rish) ───
+
+for (const name of ['am', 'monkey', 'cmd', 'input', 'screenrecord']) stub(stubs, name)
+stub(stubs, 'pm', 'echo package:org.videolan.vlc')
+stub(stubs, 'screencap', `for last; do :; done; printf '\\211PNG\\r\\n\\032\\n' > "$last"`)   // a PNG signature into its last argument
+
+test('open a link in an app', async () => {
+  await req('open', { url: 'https://rule34.xxx/', app: 'org.mozilla.fenix' })
+  assert.equal(lastCall(), 'am start -a android.intent.action.VIEW -d https://rule34.xxx/ org.mozilla.fenix')
+})
+
+test('open an app alone', async () => {
+  await req('open', { app: 'org.videolan.vlc' })
+  assert.equal(lastCall(), 'monkey -p org.videolan.vlc -c android.intent.category.LAUNCHER 1')
+})
+
+test('open refuses quotes and spaces', async () => assert.equal((await req('open', { url: "https://x/'; rm -rf ~" })).status, 400))
+
+test('apps by name', async () => assert.deepEqual((await req('apps', { filter: 'vlc' })).json.packages, ['org.videolan.vlc']))
+
+test('input tap, and out-of-range coordinates refused', async () => {
+  await req('input', { action: 'tap', x: 10, y: 20 })
+  assert.equal(lastCall(), 'input tap 10 20')
+  assert.equal((await req('input', { action: 'tap', x: -1, y: 20 })).status, 400)
+})
+
+test('screenshot inline', async () => {
+  const { json } = await req('screenshot', { inline: true })
+  assert.ok(json.path.endsWith('.png'))
+  assert.equal(Buffer.from(json.base64, 'base64').subarray(1, 4).toString(), 'PNG')
+})
+
+test('record clamps to 1-15 s', async () => {
+  await req('record', { seconds: 99 })
+  assert.match(lastCall() ?? '', /^screenrecord --time-limit 15 /)
+})
+
+test('two rish requests at once both succeed', async () => {
+  const [a, b] = await Promise.all([req('input', { action: 'key', key: 'BACK' }), req('input', { action: 'key', key: 'HOME' })])
+  assert.equal(a.json.ok && b.json.ok, true)
+})
+
+test('Shizuku down: 503', async () => {
+  const p2 = await freePort()
+  await startServer({ IBH_SERVER_PORT: String(p2), RISH: path.join(dir, 'no-such-rish') })
+  assert.equal((await req('open', { app: 'org.videolan.vlc' }, TOKEN, undefined, p2)).status, 503)
 })
