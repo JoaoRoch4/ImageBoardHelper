@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.8.1
+// @version      1.9.0
 // @description  For the phone, on Gelbooru 0.2 boards (rule34.xxx and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -66,7 +66,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.8.1'
+  const VERSION = '1.9.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // ═══════════════════════════════════════════════════════════
@@ -88,6 +88,7 @@
     slideDwell:     0.2,    // hold slideshow: seconds each scene stays once painted
     slideReel:      true,   // hold slideshow from keyframes only (MP4): one small read per scene, no seeking the file
     wasmDecode:     true,   // with slideReel, decode the keyframes in WebAssembly (FFmpeg's H.264) into a canvas
+    seekReel:       true,   // modal seek bar: the nearest keyframe at once (WebAssembly), the exact frame when the finger rests
     memorySaver:    true,   // release far off-screen images and removed videos (needs reload)
     urlCache:       true,   // remember which candidate URL worked for each file
     feedNav:        true,   // ⤒ ‹ › buttons: top of page, previous and next post in the feed (needs reload)
@@ -206,6 +207,7 @@
       laterOnSite: 'kept in this site’s data (IndexedDB)',
       tModal: 'Open posts in a player over the page',
       tTheme: 'Dark theme on site pages',
+      tSeekReel: 'Seek bar preview from keyframes (WebAssembly)',
       tAds: 'Block ads (only the site\'s own scripts load)',
       mClose: 'Close', mOpen: 'Open the post', mPrev: 'Previous post', mNext: 'Next post',
       mLoading: 'Loading…', mFail: 'Could not load it',
@@ -278,6 +280,7 @@
       laterOnSite: 'guardado nos dados deste site (IndexedDB)',
       tModal: 'Abrir posts num player sobre a página',
       tTheme: 'Tema escuro nas páginas do site',
+      tSeekReel: 'Prévia da barra de busca por keyframes (WebAssembly)',
       tAds: 'Bloquear anúncios (só os scripts do próprio site carregam)',
       mClose: 'Fechar', mOpen: 'Abrir o post', mPrev: 'Post anterior', mNext: 'Próximo post',
       mLoading: 'Carregando…', mFail: 'Não foi possível carregar',
@@ -2007,14 +2010,24 @@
     return null
   }
 
-  async function showReelWasm(s, reel) {
-    const x = await h264Decoder()
-    if (scrub !== s) return
+  // The decoder has one stream open at a time: the hold slideshow's reel or
+  // the seek bar's. Opened again only when it changes.
+  let h264Stream = null
+  function openStream(x, reel) {
+    if (h264Stream === reel) return
+    h264Stream = null
     const cfg = x.buf_alloc(reel.avcC.length)
     new Uint8Array(x.memory.buffer, cfg, reel.avcC.length).set(reel.avcC)
     const opened = x.dec_open(cfg, reel.avcC.length)
     x.buf_free(cfg)
     if (opened !== 0) throw new Error(`the decoder refused the stream (${opened})`)
+    h264Stream = reel
+  }
+
+  async function showReelWasm(s, reel) {
+    const x = await h264Decoder()
+    if (scrub !== s) return
+    openStream(x, reel)
     s.stats.method = 'wasm reel'
     const r = s.reel
     const maxW = Math.round(s.card.getBoundingClientRect().width * (window.devicePixelRatio || 1))
@@ -2438,7 +2451,7 @@
 
   const SITE_LINK = '.image-list span.thumb a'
   const SWIPE_MIN = 60        // px sideways to change post
-  const CONTROLS_BAND = 48    // bottom strip of the video: the player's own controls
+  const CONTROLS_BAND = 64    // bottom strip of the video: the player's own controls (the capsule and its margin)
   let modal = null
 
   const siteLinks = () => [...document.querySelectorAll(SITE_LINK)]
@@ -2460,22 +2473,41 @@
        hid their bar behind the layer, worst in fullscreen. */
     .vlayer { position: absolute; left: 0; right: 0; top: 0; bottom: ${CONTROLS_BAND}px;
       -webkit-touch-callout: none; user-select: none; }
+    /* The controls: a glass capsule floating over the bottom of the video. */
     .vctl {
-      position: absolute; left: 0; right: 0; bottom: 0; height: ${CONTROLS_BAND}px;
-      display: flex; align-items: center; gap: 8px; padding: 0 8px;
-      background: linear-gradient(transparent, rgba(0, 0, 0, .45));
-      opacity: .8; transition: opacity .3s;
+      position: absolute; left: 10px; right: 10px; bottom: 10px; height: 44px;
+      display: flex; align-items: center; gap: 6px; padding: 0 6px 0 14px;
+      border-radius: 22px; border: 1px solid rgba(255, 255, 255, .1);
+      background: rgba(12, 18, 21, .55); -webkit-backdrop-filter: blur(10px) saturate(1.2); backdrop-filter: blur(10px) saturate(1.2);
+      box-shadow: 0 4px 18px rgba(0, 0, 0, .35); transition: opacity .3s;
     }
     .vctl.hide { opacity: 0; pointer-events: none; }
-    .vctl button { width: 36px; height: 36px; border: none; background: transparent; font-size: 17px; }
-    .vctl .vfs { display: flex; align-items: center; justify-content: center; color: #fff; padding: 0; }
-    .vctl .vfs svg { width: 26px; height: 26px; fill: currentColor; }
+    .vctl button { width: 34px; height: 34px; border: none; background: transparent; color: #e6eef0; padding: 0; flex: none; }
+    .vctl button svg, .vbig svg { width: 24px; height: 24px; fill: currentColor; }
     .vtime { color: #d7dee0; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    .vseek { flex: 1; min-width: 0; accent-color: #5eead4; }
+    /* Thin seek bar: played in the theme's teal (the range's own progress),
+       downloaded in light grey (--buf, kept by the player), a thumb that
+       grows while dragged; a tall input for the finger. */
+    .vseek { flex: 1; min-width: 0; height: 24px; margin: 0; background: transparent; -moz-appearance: none; appearance: none; --buf: 0%; }
+    .vseek::-moz-range-track { height: 4px; border-radius: 2px;
+      background: linear-gradient(to right, rgba(255, 255, 255, .45) var(--buf), rgba(255, 255, 255, .16) var(--buf)); }
+    .vseek::-moz-range-progress { height: 4px; border-radius: 2px; background: #5eead4; }
+    .vseek::-moz-range-thumb { width: 12px; height: 12px; border: none; border-radius: 50%; background: #5eead4; transition: transform .15s; }
+    .vseek:active::-moz-range-thumb { transform: scale(1.6); }
+    /* The big ▶ in the middle of a paused video. */
+    .vbig {
+      position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 64px; height: 64px;
+      border: 1px solid rgba(255, 255, 255, .14); background: rgba(12, 18, 21, .5); color: #fff;
+      -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); box-shadow: 0 4px 18px rgba(0, 0, 0, .35);
+    }
+    .vbig svg { width: 34px; height: 34px; margin-left: 4px; }
     .vprev {
       position: absolute; bottom: ${CONTROLS_BAND + 6}px; width: 160px; height: 90px;
       border: 1px solid #2a3a3f; border-radius: 6px; overflow: hidden; background: #000; pointer-events: none;
     }
+    /* seekReel: the nearest keyframe, over the preview video until it reaches the exact frame. */
+    .vprev canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: opacity .15s; }
+    .vprev.exact canvas { opacity: 0; }
     .vprev span {
       position: absolute; left: 0; right: 0; bottom: 0; text-align: center; font-size: 11px;
       color: #fff; background: rgba(0, 0, 0, .55); padding: 1px 0;
@@ -2591,19 +2623,22 @@
     const image = document.createElement('img')
     image.draggable = false
     const layer = el('div', { class: 'vlayer' })
-    const playBtn = el('button', { text: '❚❚', title: t('mPlay') })
-    const time = el('span', { class: 'vtime', text: '0:00 / 0:00' })
+    // The big ▶ shows on a paused video; a tap on the video pauses (gestures).
+    const playBtn = el('button', { class: 'vbig', title: t('mPlay') })
+    setIcon(playBtn, PLAYER_ICON.play)
+    const times = [el('span', { class: 'vtime', text: '0:00' }), el('span', { class: 'vtime', text: '0:00' })]   // where, and how long
     const seek = el('input', { class: 'vseek', type: 'range', min: '0', max: '1000', value: '0' })
-    const muteBtn = el('button', { text: '🔊', title: t('mMute') })
+    const muteBtn = el('button', { title: t('mMute') })
+    setIcon(muteBtn, PLAYER_ICON.volume)
     // Bottom right, like YouTube: the way into fullscreen and back out of it,
     // where the top bar is hidden.
     const fsBtn = el('button', { class: 'vfs', title: t('mFull') })
     setFsIcon(fsBtn, false)
-    const ctl = el('div', { class: 'vctl' }, [playBtn, time, seek, muteBtn, fsBtn])
+    const ctl = el('div', { class: 'vctl' }, [times[0], seek, times[1], muteBtn, fsBtn])
     const prevBox = el('div', { class: 'vprev' }, [el('span')])
     prevBox.hidden = true
-    const vwrap = el('div', { class: 'vwrap' }, [video, layer, prevBox, ctl])
-    const controls = installVideoControls(video, ctl, playBtn, time, seek, muteBtn, prevBox, vwrap)
+    const vwrap = el('div', { class: 'vwrap' }, [video, layer, playBtn, prevBox, ctl])
+    const controls = installVideoControls(video, ctl, playBtn, times, seek, muteBtn, prevBox, vwrap)
     const stage = el('div', { class: 'stage' }, [vwrap, image])
     const close = el('button', { text: '✕', title: t('mClose') })
     const post = el('a', { class: 'btn', text: '↗', title: t('mOpen'), target: '_blank', rel: 'noopener' })   // a new tab
@@ -4819,45 +4854,119 @@
 
   const CONTROLS_HIDE_MS = 2000
 
-  // Returns { shown(), poke() }: the bar fades after 2 s without interaction
-  // while playing, and stays up while paused or while the seek bar is dragged.
-  function installVideoControls(video, ctl, playBtn, time, seek, muteBtn, prevBox, vwrap) {
+  // The seek bar's preview from keyframes (seekReel): this many, evenly spread.
+  const SEEK_STEPS = Array.from({ length: 40 }, (_, i) => i / 40)
+
+  // Returns { shown(), poke(), dropReel() }: the bar fades after 2 s without
+  // interaction while playing, and stays up while paused or while the seek
+  // bar is dragged.
+  function installVideoControls(video, ctl, playBtn, times, seek, muteBtn, prevBox, vwrap) {
     let dragging = false
     let hideTimer = 0
+    let muted = null   // the icon on show, so timeupdate does not rebuild it
     const poke = () => {
       ctl.classList.remove('hide')
       clearTimeout(hideTimer)
       hideTimer = setTimeout(() => { if (!dragging && !video.paused) ctl.classList.add('hide') }, CONTROLS_HIDE_MS)
     }
     const sync = () => {
-      playBtn.textContent = video.paused ? '▶' : '❚❚'
-      muteBtn.textContent = video.muted ? '🔇' : '🔊'
-      time.textContent = `${mmss(video.currentTime)} / ${mmss(video.duration)}`
+      playBtn.hidden = !video.paused
+      if (muted !== video.muted) { muted = video.muted; setIcon(muteBtn, muted ? PLAYER_ICON.muted : PLAYER_ICON.volume) }
+      times[1].textContent = mmss(video.duration)
+      if (!dragging) times[0].textContent = mmss(video.currentTime)
       if (!dragging && video.duration) seek.value = String(Math.round((video.currentTime / video.duration) * 1000))
+      // How far the download reaches from where it plays: the light part of the bar.
+      const b = video.buffered
+      let end = 0
+      for (let i = 0; i < b.length; i++) if (b.start(i) <= video.currentTime + 0.5) end = Math.max(end, b.end(i))
+      seek.style.setProperty('--buf', `${video.duration ? Math.min(100, (end / video.duration) * 100) : 0}%`)
     }
-    for (const type of ['timeupdate', 'play', 'pause', 'volumechange', 'loadedmetadata', 'durationchange', 'emptied']) {
+    for (const type of ['timeupdate', 'play', 'pause', 'volumechange', 'loadedmetadata', 'durationchange', 'emptied', 'progress']) {
       video.addEventListener(type, sync)
     }
-    playBtn.addEventListener('click', () => { if (video.paused) video.play().catch(() => {}); else video.pause() })
+    playBtn.addEventListener('click', () => { video.play().catch(() => {}) })
     muteBtn.addEventListener('click', () => { video.muted = !video.muted })
+
     // While the seek bar is dragged, only the preview box follows the finger;
-    // the main video jumps once, on release.
+    // the main video jumps once, on release. With seekReel, the box first
+    // shows the nearest keyframe (a reel of SEEK_STEPS keyframes of this
+    // video, decoded in WebAssembly to the box's size, each kept once
+    // decoded), and the preview video, still seeking, takes over when it
+    // reaches the exact frame.
     const PREV_W = 160
+    let reel = null   // { src, reel, x, frames, canvas, f, failed } for the video on show
+    let target = 0    // the time the finger asks for, in seconds
+    const drawKeyframe = f => {
+      const r = reel
+      if (!r || !r.reel || r.failed) return
+      const scenes = r.reel.scenes
+      let i = 0
+      for (let k = 1; k < scenes.length; k++) if (Math.abs(scenes[k].f - f) < Math.abs(scenes[i].f - f)) i = k
+      let img = r.frames.get(i)
+      if (!img) {
+        try {
+          openStream(r.x, r.reel)
+          img = decodeKeyframe(r.x, r.reel.frames[i], Math.round(PREV_W * (window.devicePixelRatio || 1)))
+        } catch (e) {
+          r.failed = true
+          dbg(`seek preview: keyframe not decoded (${describeError(e)}), the <video> preview alone`)
+          return
+        }
+        r.frames.set(i, img)
+      }
+      if (!r.canvas) r.canvas = document.createElement('canvas')
+      if (!r.canvas.isConnected) prevBox.insertBefore(r.canvas, prevBox.lastChild)   // over the preview video, under the time
+      if (r.canvas.width !== img.width || r.canvas.height !== img.height) { r.canvas.width = img.width; r.canvas.height = img.height }
+      r.canvas.getContext('2d').putImageData(img, 0, 0)
+    }
+    const reelPreview = f => {
+      if (!CFG.seekReel || !CFG.wasmDecode || h264Broken || typeof GM_xmlhttpRequest !== 'function') return
+      const src = video.currentSrc
+      if (!/\.mp4(?:[?#]|$)/i.test(src)) return   // WebM and the rest: the preview video alone
+      if (!reel || reel.src !== src) {
+        const mine = { src, reel: null, x: null, frames: new Map(), canvas: null, f, failed: false }
+        reel = mine
+        Promise.all([h264Decoder(), reelFor([src], SEEK_STEPS, new Set(), null)]).then(([x, built]) => {
+          if (reel !== mine) return
+          if (!built.avcC) throw new Error('not H.264')
+          mine.x = x
+          mine.reel = built
+          info(`seek preview: wasm reel of ${built.scenes.length} scenes in ${built.ms} ms${built.kept ? ' (kept from before)' : ''}`)
+          if (dragging) drawKeyframe(mine.f)   // where the finger is by now
+        }).catch(e => {
+          if (reel !== mine) return
+          mine.failed = true
+          dbg(`seek preview: no reel (${describeError(e)}), the <video> preview alone`)
+        })
+      }
+      reel.f = f
+      drawKeyframe(f)
+    }
     seek.addEventListener('input', () => {
       dragging = true
       const f = Number(seek.value) / 1000
       if (prevBox.hidden && video.currentSrc) {
         prevBox.hidden = false
-        previewLoad(prevBox, [video.currentSrc], null)
+        const v = previewLoad(prevBox, [video.currentSrc], null)
+        // The exact frame arrived: the preview video shows through the keyframe.
+        if (!v.dataset.ibhSeekExact) {
+          v.dataset.ibhSeekExact = '1'
+          v.addEventListener('seeked', () => {
+            if (prevBox.contains(v) && Math.abs(v.currentTime - target) < 0.6) prevBox.classList.add('exact')
+          })
+        }
       }
       const sr = seek.getBoundingClientRect()
       const wr = vwrap.getBoundingClientRect()
       const x = sr.left - wr.left + f * sr.width - PREV_W / 2
       prevBox.style.left = `${Math.min(wr.width - PREV_W - 4, Math.max(4, x))}px`
-      if (previewEl && previewEl.isConnected) seekFraction(previewEl, f)
       const d = video.duration
-      prevBox.lastChild.textContent = mmss(f * d)
-      time.textContent = `${mmss(f * d)} / ${mmss(d)}`
+      target = f * d
+      prevBox.classList.remove('exact')
+      reelPreview(f)
+      if (previewEl && previewEl.isConnected) seekFraction(previewEl, f)
+      prevBox.lastChild.textContent = mmss(target)
+      times[0].textContent = mmss(target)
       poke()
     })
     seek.addEventListener('change', () => {
@@ -4866,13 +4975,20 @@
       if (d) video.currentTime = (Number(seek.value) / 1000) * d
       previewStop()
       prevBox.hidden = true
+      prevBox.classList.remove('exact')
       poke()
     })
     ctl.addEventListener('pointerdown', poke)
     video.addEventListener('play', poke)
     video.addEventListener('pause', () => { clearTimeout(hideTimer); ctl.classList.remove('hide') })
     video.addEventListener('emptied', () => { clearTimeout(hideTimer); ctl.classList.remove('hide') })
-    return { shown: () => !ctl.classList.contains('hide'), poke }
+    // A new post or the modal closing: the decoded keyframes go (the reel
+    // itself stays in the reel cache for a return).
+    const dropReel = () => {
+      if (reel && reel.canvas) reel.canvas.remove()
+      reel = null
+    }
+    return { shown: () => !ctl.classList.contains('hide'), poke, dropReel }
   }
 
   // In fullscreen the bar and side buttons hide; a single tap on an image
@@ -4898,6 +5014,7 @@
     v.playbackRate = 1
     modal.badge.hidden = true
     modal.vlcBtn.hidden = true
+    modal.controls.dropReel()
     if (!modal.root.fullscreenElement) setCleanUi(false)
     v.removeAttribute('src')
     v.load()   // hand the decoder back
@@ -4941,14 +5058,26 @@
     exit: 'M5 16h3v3h2v-5H5v2zm3-8H5v2h5V5H8v3zm6 11h2v-3h3v-2h-5v5zm2-11V5h-2v5h5V8h-3z',
   }
 
-  function setFsIcon(btn, full) {
+  // The player's other Material icons, in the same stroke.
+  const PLAYER_ICON = {
+    play: 'M8 5v14l11-7z',
+    volume: 'M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z',
+    muted: 'M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z',
+  }
+
+  // A 24x24 icon from path data, as the button's only content.
+  function setIcon(btn, d) {
     const ns = 'http://www.w3.org/2000/svg'
     const svg = document.createElementNS(ns, 'svg')
     svg.setAttribute('viewBox', '0 0 24 24')
     const path = document.createElementNS(ns, 'path')
-    path.setAttribute('d', full ? FS_ICON.exit : FS_ICON.enter)
+    path.setAttribute('d', d)
     svg.appendChild(path)
     btn.replaceChildren(svg)
+  }
+
+  function setFsIcon(btn, full) {
+    setIcon(btn, full ? FS_ICON.exit : FS_ICON.enter)
     btn.title = t(full ? 'mFullExit' : 'mFull')
   }
 
@@ -6081,6 +6210,7 @@
     body.appendChild(toggle('modalPreload', t('tPreload')))
     body.appendChild(toggle('vlcButton', t('tVlcBtn')))
     body.appendChild(toggle('copyLinkButton', t('tCopyBtn')))
+    body.appendChild(toggle('seekReel', t('tSeekReel')))
     body.appendChild(choiceSelect('modalOriginal', t('tModalOrig'), [['zoom', t('origZoom')], ['always', t('origAlways')]]))
     body.appendChild(toggle('videoCovers', t('tCovers')))
     body.appendChild(toggle('gifInline', t('tGif')))

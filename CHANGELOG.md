@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.9.0
+
+- The modal player's controls in a glass capsule floating over the bottom of
+  the video: current time, a thin seek bar (played in teal, downloaded in
+  grey, a thumb that grows while dragged), length, sound and fullscreen as
+  SVG icons in one stroke (no more 🔊 emoji), and a big ▶ in the middle of a
+  paused video
+- Seek bar preview from keyframes (`seekReel`, on): on the first drag the
+  script reads the video's index and 40 evenly spread keyframes and decodes
+  them in WebAssembly to the preview's size, so the nearest keyframe shows
+  at once wherever the finger goes; the preview video, still seeking, takes
+  over with the exact frame once it gets there. The log says how long the
+  reel took (`seek preview: wasm reel of 40 scenes in … ms`)
+
 ## 1.8.1
 
 - The site's ☰ menus (rule34's mobile layout) get a dark background of

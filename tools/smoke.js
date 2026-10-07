@@ -119,6 +119,22 @@ const logLine = (page, re, timeout = 15000) => page.waitForFunction(
         return !!host && host.style.display !== 'none'
       })
       check('modal opens', !!opened && await modalShown(), opened || 'no "modal:" log line')
+      // The video player's glass capsule: two times around the seek bar, SVG
+      // icons (no emoji), the big ▶ for a paused video, a blurred background.
+      const player = await page.evaluate(() => {
+        const root = [...document.querySelectorAll('*')].find(e => e.shadowRoot && e.shadowRoot.querySelector('.vlayer')).shadowRoot
+        const ctl = root.querySelector('.vctl')
+        return {
+          times: ctl.querySelectorAll('.vtime').length,
+          svgButtons: [...ctl.querySelectorAll('button')].filter(b => b.querySelector('svg')).length,
+          emoji: /[\u{1F300}-\u{1FAFF}]/u.test(ctl.textContent),
+          bigPlay: !!root.querySelector('.vbig svg'),
+          blur: [...root.querySelectorAll('style')].some(s => s.textContent.includes('backdrop-filter')),
+          seekReel: window.__ibh.cfg.seekReel,
+        }
+      })
+      check('player capsule', player.times === 2 && player.svgButtons >= 2 && !player.emoji && player.bigPlay && player.blur && player.seekReel === true,
+        `${player.times} times, ${player.svgButtons} SVG buttons, emoji ${player.emoji}, big play ${player.bigPlay}, blur ${player.blur}, seekReel ${player.seekReel}`)
       await page.goBack()
       await page.waitForTimeout(500)
       check('modal closes on back', !(await modalShown()), `still on ${page.url().replace(/^.*\?/, '?')}`)
