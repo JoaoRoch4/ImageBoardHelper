@@ -11,6 +11,7 @@
 //   the userscript     script_log, console, css, try_css, log_snapshot, slideshow_stats, deploy
 //   videos and WASM    video_info, reel_preview, wasm_build
 //   repo checks        check, smoke
+//   phone server       server_call, server_control: tools/phone-server.mts, natively in Termux
 //   native Termux      termux_run, termux_job: windows of a tmux session
 //                      outside proot, started by Termux's own ~/.zshrc
 //
@@ -25,7 +26,7 @@ import * as https from 'node:https'
 import * as readline from 'node:readline'
 import { execFileSync, spawn } from 'node:child_process'
 import * as ff from './ffrdp.mts'
-import { rish, shizukuUp } from './rish.mts'
+import { ROOTFS, rish, shizukuUp } from './rish.mts'
 import type { Connection, PrefAction, Tab } from './ffrdp.mts'
 
 const REPO = path.resolve(import.meta.dirname, '..')
@@ -1018,6 +1019,64 @@ async function wasmBuild({ native = true, job }: { native?: boolean; job?: strin
   return `build ${id} started inside proot (the first FFmpeg configure takes ~15 min here); wasm_build job=${id} reports it`
 }
 
+// ─── tools: the phone server (tools/phone-server.mts, natively in Termux) ───
+
+const SERVER_PORT = 8730
+const SERVER_DIR = '/data/data/com.termux/files/home/.config/ibh-server'   // token and log, in Termux's home
+const SERVER_NATIVE = `${ROOTFS}${REPO}/tools/phone-server.mts`            // the server as native Termux sees it
+
+// One request to the server, with its token: the JSON answer.
+async function serverCall({ route = 'status', body }: { route?: string; body?: Record<string, unknown> }) {
+  if (!/^[a-z_]+$/.test(route)) throw new Error('route is a name, like status, device or open')
+  let token: string
+  try { token = fs.readFileSync(path.join(SERVER_DIR, 'token'), 'utf8').trim() } catch (e) {
+    throw new Error('no token: the server never ran here (server_control action=start)', { cause: e })
+  }
+  const post = body !== undefined || route !== 'status'
+  let res: Response
+  try {
+    res = await fetch(`http://127.0.0.1:${SERVER_PORT}/${route}`, {
+      method: post ? 'POST' : 'GET',
+      headers: { authorization: `Bearer ${token}`, ...(post ? { 'content-type': 'application/json' } : {}) },
+      ...(post ? { body: JSON.stringify(body ?? {}) } : {}),
+    })
+  } catch (e) {
+    throw new Error(`the phone server is not answering on 127.0.0.1:${SERVER_PORT} (server_control action=start)`, { cause: e })
+  }
+  const answer = await res.json() as { ok?: boolean; error?: string }
+  if (!answer.ok) throw new Error(`${res.status}: ${answer.error}`)
+  return clip(JSON.stringify(answer, null, 2))
+}
+
+const serverUp = async () => { try { return JSON.parse(await serverCall({})).ok === true } catch (e) { return false } }
+
+// Starts, restarts or stops the server (window "server" of the native tmux
+// session), shows its log, or writes the Termux:Boot script.
+async function serverControl({ action = 'start', lines = 30 }: { action?: string; lines?: number }) {
+  if (action === 'log') {
+    const log = path.join(SERVER_DIR, 'server.log')
+    return fs.existsSync(log) ? tail(fs.readFileSync(log, 'utf8'), Math.min(500, Number(lines) || 30)) : 'no log yet: the server never ran'
+  }
+  if (action === 'install_boot') {
+    const r = await runAsync('node', ['tools/phone-server.mts', 'install-boot'], { timeout: 60000 })
+    if (r.code !== 0) throw new Error(r.out)
+    return r.out.trim()
+  }
+  if (action === 'stop' || action === 'restart') {
+    try { tmux('kill-window', '-t', `${SESSION}:server`) } catch (e) { /* not running */ }
+    if (action === 'stop') return 'stopped'
+    await sleep(1000)
+  } else if (action !== 'start') {
+    throw new Error('action: start, restart, stop, log or install_boot')
+  } else if (await serverUp()) {
+    return `already running\n${await serverCall({})}`
+  }
+  tmux('new-window', '-d', '-t', SESSION, '-n', 'server', `node ${shq(SERVER_NATIVE)} serve`)
+  const end = Date.now() + 15000
+  while (Date.now() < end && !await serverUp()) await sleep(500)
+  return (await serverUp()) ? `running\n${await serverCall({})}` : `did not answer in 15 s; its window: tmux attach -t ${SESSION}, then the "server" window`
+}
+
 // ─── tools: repo checks ───
 
 async function check() {
@@ -1201,6 +1260,12 @@ const TOOLS: Tool[] = [
     description: 'Decodes the keyframes a hold would show, with the userscript\'s own WebAssembly decoder (in Node here), and returns them as one contact sheet, with each keyframe\'s size and decode time.' },
   { name: 'wasm_build', run: wasmBuild, inputSchema: obj({ native: bool('in native Termux when its tmux session is up (default true; about twice as fast as proot)'), job: str('a build started before: its state, and for a native one, the result copied into wasm/') }),
     description: 'Builds wasm/h264dec.wasm (FFmpeg\'s H.264 decoder) with wasm/build.sh, in the background: natively in Termux when possible. Then commit the .wasm and point the @resource link at that commit.' },
+  { name: 'server_call', run: serverCall,
+    inputSchema: obj({ route: str('status, open, apps, notify, clipboard, toast, screenshot, record, input, run, file or device (default status)'), body: { type: 'object', description: 'the route\'s JSON body, e.g. {"url":"https://…","app":"org.mozilla.fenix"} for open, {"command":"uname -a"} for run' } }),
+    description: 'A request to the phone server (tools/phone-server.mts, natively in Termux on 127.0.0.1:8730; the token is read by itself): open links and apps, notifications (with a link that opens on the tap), clipboard, toast, screenshot, screen recording, touches and keys, a native command as uid 10307, read or write a file, device facts. open, notify, toast and input change what the user sees: only when the user asked.' },
+  { name: 'server_control', run: serverControl,
+    inputSchema: obj({ action: { type: 'string', enum: ['start', 'restart', 'stop', 'log', 'install_boot'], description: 'default start (does nothing when it already answers)' }, lines: num('log lines (default 30)') }),
+    description: 'Starts, restarts (after a change to its code) or stops the phone server, in the "server" window of the native tmux session ibh; shows its log (one line per request, never the body); or writes the Termux:Boot script that starts it when the phone boots.' },
   { name: 'check', run: check, inputSchema: obj(),
     description: 'npm run check in the repo: syntax, I18N parity, ESLint, and the TypeScript checks of the userscript and of these tools. deploy runs it first.' },
   { name: 'smoke', run: smoke, inputSchema: obj({ url: str('a Gelbooru 0.2 listing (default safebooru)') }),
@@ -1217,6 +1282,7 @@ const TOOLS: Tool[] = [
 
 const INSTRUCTIONS = 'Tools for the user\'s phone (Firefox Beta or Nightly, with Violentmonkey) where Image Board Helper is tested, and for the repo around it. ' +
   'connect app=… picks the Firefox (remembered); a Firefox in the background is frozen by Android and answers nothing until brought to the front. ' +
+  'The phone server (server_call, server_control) runs natively in Termux and is not frozen: notifications, clipboard, native commands, files. ' +
   'Each tool reconnects by itself. When Wireless debugging is off, ask the user to turn it on: never enable it with `settings put` (it kills Shizuku). ' +
   'open_url, input, firefox_pref (set/clear) and deploy change the phone: use them when the user asked, or for the deploy that follows a change they requested. ' +
   'Leave the visible tab alone; reload only hidden ones; script logs vanish on reload, so log_snapshot before (deploy does). ' +
@@ -1243,7 +1309,7 @@ async function handle(msg: RpcMessage) {
       return reply({
         protocolVersion: (msg.params && msg.params.protocolVersion) || '2025-06-18',
         capabilities: { tools: {} },
-        serverInfo: { name: 'phone', version: '2.4.0' },
+        serverInfo: { name: 'phone', version: '2.5.0' },
         instructions: INSTRUCTIONS,
       })
     case 'ping':

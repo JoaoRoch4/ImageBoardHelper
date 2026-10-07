@@ -61,7 +61,12 @@ How to read the outcomes: few keyframes and a short clip → it plays at 2×; fe
 
 ## The phone server
 
-`tools/phone-server.mts` runs natively in Termux (window `server` of the tmux session `ibh`, started at boot by Termux:Boot) on `127.0.0.1:8730`, token in Termux's home at `~/.config/ibh-server/token`. From the container, `node tools/phone-server.mts call <route> '<json>'`: `status`, `apps`, `device`, `clipboard`, `file`, `run` read or run things natively (a quick native command without a tmux window: `call run '{"command":"…"}'`), while `open`, `notify`, `toast`, `input` change what the user sees (the same rule as the MCP's: only on request). If it does not answer, `termux_run` can start it again: `tmux new-window -d -t ibh -n server 'node <rootfs>/root/ImageBoardHelper/tools/phone-server.mts serve'`.
+`tools/phone-server.mts` runs natively in Termux (window `server` of the tmux session `ibh`, started at boot by Termux:Boot) on `127.0.0.1:8730`, with its token and log in Termux's home (`~/.config/ibh-server/`). Unlike Firefox, Android does not freeze it.
+
+- `server_call route=… body={…}` sends one request (the token is read by itself). Read-only and safe anytime: `status`, `apps`, `device`, `clipboard` (reading), `file` (reading), `screenshot`, and `run` for a quick native command without a tmux window (`body={"command":"…"}`, as uid 10307, timeout ≤ 600 s). They change what the user sees: `open` (a link in a given Firefox or app), `notify` (with `url`, the tap opens it), `toast`, `input`. Use them only on request, like the MCP's own `open_url` and `input`.
+- `server_control action=start|restart|stop|log|install_boot`: `restart` after a change to its code (a running server keeps the old code); `log` is one line per request, never the body; `install_boot` writes `~/.termux/boot/ibh-server.sh`.
+- The same from a shell: `node tools/phone-server.mts call <route> '<json>'`. Its tests: `npm run -s test:tools` (a real server against stub commands, no phone).
+- Lessons from the device: Android's `/bin/df` breaks natively and netlink is denied to apps (so `device` uses Node's own `statfs` and `networkInterfaces`); Android refuses `am` to Termux (so links and apps go through rish, even a notification's tap); "do not disturb" hides notifications but they are still in the shade.
 
 ## Native Termux
 
