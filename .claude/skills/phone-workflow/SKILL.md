@@ -5,7 +5,7 @@ description: How to test, debug, measure and ship Image Board Helper on the user
 
 # Phone workflow
 
-The userscript only really runs on the user's phone: Firefox Beta with Violentmonkey, on an Oppo A5 (SM6115: four decoders at most, hardware video up to 1920×1088). This container runs on that same phone, and the `phone` MCP server (`tools/phone-mcp.js`) reaches it three ways: Shizuku (`rish`, uid shell), adb over the phone's own Wireless debugging, and Firefox's remote debugger forwarded to tcp:6000. Every tool reconnects by itself, so a dropped session costs one call, not a round of commands.
+The userscript only really runs on the user's phone: Firefox Beta with Violentmonkey, on an Oppo A5 (SM6115: four decoders at most, hardware video up to 1920×1088). This container runs on that same phone, and the `phone` MCP server (`tools/phone-mcp.mts`) reaches it three ways: Shizuku (`rish`, uid shell), adb over the phone's own Wireless debugging, and Firefox's remote debugger forwarded to tcp:6000. Every tool reconnects by itself, so a dropped session costs one call, not a round of commands.
 
 ## The rules, and why
 

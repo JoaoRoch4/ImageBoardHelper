@@ -16,17 +16,19 @@
 //
 // The protocol is JSON-RPC 2.0, one message per line on stdin/stdout:
 // initialize, tools/list, tools/call. Nothing else may go to stdout.
+// TypeScript that Node runs as it is (it strips the types); tsc -p tools checks it.
 
-'use strict'
-const fs = require('fs')
-const os = require('os')
-const path = require('path')
-const https = require('https')
-const readline = require('readline')
-const { execFileSync, spawn } = require('child_process')
-const ff = require('./ffrdp')
+import * as fs from 'node:fs'
+import * as os from 'node:os'
+import * as path from 'node:path'
+import * as https from 'node:https'
+import * as readline from 'node:readline'
+import { execFileSync, spawn } from 'node:child_process'
+import type { ChildProcessWithoutNullStreams } from 'node:child_process'
+import * as ff from './ffrdp.mts'
+import type { Connection, PrefAction, Tab } from './ffrdp.mts'
 
-const REPO = path.resolve(__dirname, '..')
+const REPO = path.resolve(import.meta.dirname, '..')
 const SCRIPT = 'image-board-helper.user.js'
 const BROWSER = 'org.mozilla.firefox_beta'
 const SCREENSHOTS = '/sdcard/Pictures/Screenshots'   // where the phone's own screenshots land
@@ -44,24 +46,33 @@ const TERM_DIR = `${TERMUX}/tmp/ibh-term`   // native jobs: script, log, exit co
 const SESSION = 'ibh'                       // the native tmux session (Termux's ~/.zshrc starts it)
 const MAX_TEXT = 30000                      // longer results are cut, to keep the reply readable
 
-const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
-const clip = s => (s.length > MAX_TEXT ? `${s.slice(0, MAX_TEXT)}\n… (${s.length - MAX_TEXT} more characters cut)` : s)
-const tail = (s, n) => String(s).trim().split('\n').slice(-n).join('\n')
-const firstLine = e => String((e && (e.stderr || e.message)) || e).trim().split('\n')[0]
-const kb = n => `${Math.round(n / 1024)} KB`
-const shq = s => `'${String(s).replace(/'/g, `'\\''`)}'`   // one shell word
-const median = a => (a.length ? [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)] : null)
+// MCP content blocks: what a tool returns when plain text is not enough.
+type Content = { type: 'text'; text: string } | { type: 'image'; data: string; mimeType: string }
 
-function run(cmd, args, opts = {}) {
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+const clip = (s: string) => (s.length > MAX_TEXT ? `${s.slice(0, MAX_TEXT)}\n… (${s.length - MAX_TEXT} more characters cut)` : s)
+const tail = (s: unknown, n: number) => String(s).trim().split('\n').slice(-n).join('\n')
+const kb = (n: number) => `${Math.round(n / 1024)} KB`
+const shq = (s: unknown) => `'${String(s).replace(/'/g, `'\\''`)}'`   // one shell word
+const median = (a: number[]) => (a.length ? [...a].sort((x, y) => x - y)[Math.floor(a.length / 2)] : null)
+
+// What a caught value says. Anything can be thrown, so catch variables are
+// unknown: an Error's message, a failed command's stderr (execFileSync puts
+// it on the error), or the value itself.
+const errMessage = (e: unknown) => (e instanceof Error ? e.message : String(e))
+const stderrOf = (e: unknown) => (typeof e === 'object' && e !== null && 'stderr' in e && e.stderr ? String(e.stderr) : '')
+const firstLine = (e: unknown) => (stderrOf(e) || errMessage(e)).trim().split('\n')[0] ?? ''
+
+function run(cmd: string, args: string[], opts: { timeout?: number } = {}): string {
   return execFileSync(cmd, args, { encoding: 'utf8', timeout: 20000, stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64e6, ...opts })
 }
 
 // For the long ones (checks, builds): the server keeps answering meanwhile.
-function runAsync(cmd, args, { cwd = REPO, timeout = 900000, env } = {}) {
-  return new Promise(resolve => {
+function runAsync(cmd: string, args: string[], { cwd = REPO, timeout = 900000, env }: { cwd?: string; timeout?: number; env?: Record<string, string> } = {}) {
+  return new Promise<{ code: number | null; out: string }>(resolve => {
     const child = spawn(cmd, args, { cwd, env: env ? { ...process.env, ...env } : process.env, stdio: ['ignore', 'pipe', 'pipe'] })
     let out = ''
-    const add = d => { out += d; if (out.length > 4e6) out = out.slice(-2e6) }
+    const add = (d: Buffer) => { out += d; if (out.length > 4e6) out = out.slice(-2e6) }
     child.stdout.on('data', add)
     child.stderr.on('data', add)
     const timer = setTimeout(() => { child.kill('SIGKILL'); out += `\n(stopped after ${timeout / 1000} s)` }, timeout)
@@ -70,9 +81,9 @@ function runAsync(cmd, args, { cwd = REPO, timeout = 900000, env } = {}) {
   })
 }
 
-function withTimeout(promise, ms, what) {
-  let timer
-  const late = new Promise((resolve, reject) => { timer = setTimeout(() => reject(new Error(`${what} timed out after ${ms} ms`)), ms) })
+function withTimeout<T>(promise: Promise<T>, ms: number, what: string): Promise<T> {
+  let timer: NodeJS.Timeout | undefined
+  const late = new Promise<never>((resolve, reject) => { timer = setTimeout(() => reject(new Error(`${what} timed out after ${ms} ms`)), ms) })
   return Promise.race([promise, late]).finally(() => clearTimeout(timer))
 }
 
@@ -85,15 +96,32 @@ function withTimeout(promise, ms, what) {
 // the exit code: the VM starts once (~4 s), then commands take ~50 ms.
 // rish mixes up its two channels (a plain echo can arrive on stderr), but
 // keeps the order: both feed one buffer, and the marker always comes last.
-let session = null
+interface RishCommand {
+  cmd: string
+  timeout: number
+  marker: string
+  resolve: (r: { out: string; code: number }) => void
+  reject: (e: Error) => void
+  timer?: NodeJS.Timeout
+}
 
-function rishSession() {
+interface RishSession {
+  child: ChildProcessWithoutNullStreams
+  buf: string
+  queue: RishCommand[]
+  busy: RishCommand | null
+  dead: boolean
+}
+
+let session: RishSession | null = null
+
+function rishSession(): RishSession {
   if (session && !session.dead) return session
-  const child = spawn(RISH, [], { stdio: ['pipe', 'pipe', 'pipe'] })
-  const s = { child, buf: '', queue: [], busy: null, dead: false }
+  const child = spawn(RISH, [], { stdio: 'pipe' })
+  const s: RishSession = { child, buf: '', queue: [], busy: null, dead: false }
   for (const stream of [child.stdout, child.stderr]) {
     stream.setEncoding('utf8')
-    stream.on('data', d => { s.buf += d; pump(s) })
+    stream.on('data', (d: string) => { s.buf += d; pump(s) })
   }
   child.stdin.on('error', () => { /* the session ended: exit below */ })
   const end = () => {
@@ -110,7 +138,7 @@ function rishSession() {
 }
 
 // The command in flight finishes at its marker; then the next one goes in.
-function pump(s) {
+function pump(s: RishSession) {
   if (s.busy) {
     const at = s.buf.indexOf(s.busy.marker)
     const eol = at < 0 ? -1 : s.buf.indexOf('\n', at)
@@ -122,16 +150,17 @@ function pump(s) {
     s.busy.resolve({ out: out.trim(), code })
     s.busy = null
   }
-  if (!s.busy && s.queue.length && !s.dead) {
-    s.busy = s.queue.shift()
-    s.busy.timer = setTimeout(() => s.child.kill(), s.busy.timeout)   // a stuck command takes the session with it
+  const next = !s.busy && !s.dead ? s.queue.shift() : undefined
+  if (next) {
+    s.busy = next
+    next.timer = setTimeout(() => s.child.kill(), next.timeout)   // a stuck command takes the session with it
     // stdin from /dev/null: a command reading it would eat the ones after.
-    s.child.stdin.write(`{ { ${s.busy.cmd}\n} </dev/null; echo "${s.busy.marker} $?"; } 2>&1\n`)
+    s.child.stdin.write(`{ { ${next.cmd}\n} </dev/null; echo "${next.marker} $?"; } 2>&1\n`)
   }
 }
 
-function rish(cmd, timeout = 20000) {
-  return new Promise((resolve, reject) => {
+function rish(cmd: string, timeout = 20000) {
+  return new Promise<{ out: string; code: number }>((resolve, reject) => {
     const s = rishSession()
     if (s.dead) { reject(new Error('rish would not start')); return }
     s.queue.push({ cmd, timeout, resolve, reject, marker: `__ibh_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}__` })
@@ -144,10 +173,10 @@ async function shizukuUp() {
   try { return (await rish('echo ok', 30000)).out.split('\n').includes('ok') } catch (e) { return false }
 }
 
-function adbSerial() {
+function adbSerial(): string | null {
   try {
     const device = run('adb', ['devices']).split('\n').slice(1).map(l => l.trim().split(/\s+/)).find(p => p[1] === 'device')
-    return device ? device[0] : null
+    return device?.[0] ?? null
   } catch (e) {
     return null
   }
@@ -155,19 +184,19 @@ function adbSerial() {
 
 // A shell command on the phone, as uid shell either way: through the rish
 // session, or adb when Shizuku is down.
-async function phoneShell(cmd, timeout = 20000) {
+async function phoneShell(cmd: string, timeout = 20000): Promise<string> {
   try {
     return (await rish(cmd, timeout)).out
   } catch (e) {
     const serial = adbSerial()
-    if (!serial) throw new Error(`Shizuku is not answering (${e.message}) and adb has no device: ask the user to start Shizuku or turn on Wireless debugging`, { cause: e })
+    if (!serial) throw new Error(`Shizuku is not answering (${errMessage(e)}) and adb has no device: ask the user to start Shizuku or turn on Wireless debugging`, { cause: e })
     return run('adb', ['-s', serial, 'shell', cmd], { timeout }).trim()
   }
 }
 
 // true on, false off, null when it cannot be read (Shizuku down). Read
 // only: turning it on with `settings put` restarts adbd and kills Shizuku.
-async function wirelessDebugging() {
+async function wirelessDebugging(): Promise<boolean | null> {
   try {
     const v = (await rish('settings get global adb_wifi_enabled')).out.split('\n').map(l => l.trim()).find(l => l === '0' || l === '1')
     return v === '1' ? true : v === '0' ? false : null
@@ -178,7 +207,7 @@ async function wirelessDebugging() {
 
 // ─── Firefox: the debugger forward, set up again when it is gone ───
 
-async function firefoxTabs() {
+async function firefoxTabs(): Promise<Tab[] | null> {
   const c = ff.connect()
   try {
     await withTimeout(c.ready, 4000, 'Firefox greeting')
@@ -190,7 +219,7 @@ async function firefoxTabs() {
   }
 }
 
-async function connectPhone(force) {
+async function connectPhone(force: boolean) {
   if (!force && await firefoxTabs()) return 'already connected'
   if (await wirelessDebugging() === false) {
     throw new Error('Wireless debugging is off. Ask the user to turn it on (Developer options → Wireless debugging); never with `settings put`, which kills Shizuku.')
@@ -199,7 +228,7 @@ async function connectPhone(force) {
   return `connected to ${serial}, forward tcp:${ff.PORT} -> ${socket}`
 }
 
-async function withFirefox(fn) {
+async function withFirefox<T>(fn: (c: Connection) => Promise<T>): Promise<T> {
   let c = ff.connect()
   try {
     await withTimeout(c.ready, 4000, 'Firefox greeting')
@@ -216,18 +245,28 @@ async function withFirefox(fn) {
   }
 }
 
-const tabKey = tab => (tab === undefined || tab === null || tab === '' ? 'rule34' : String(tab))
+const tabKey = (tab?: string | number | null) => (tab === undefined || tab === null || tab === '' ? 'rule34' : String(tab))
 const TAB_STATE = '({ hidden: document.visibilityState === "hidden", version: (window.__ibh && window.__ibh.version) || null })'
 
-// The same expression in every tab whose URL has `match`, by index.
-async function inTabs(match, expr) {
+// One tab's answer in inTabs: where it is, plus the fields of the object the
+// expression returned (page data, so untyped).
+interface TabValue {
+  index: number
+  url: string
+  title: string
+  [key: string]: any
+}
+
+// The same expression in every tab whose URL has `match`, by index. The
+// expression must return an object (or null): its fields join the tab's.
+async function inTabs(match: string, expr: string): Promise<TabValue[]> {
   return withFirefox(async c => {
     const tabs = await ff.listTabs(c)
-    const out = []
+    const out: TabValue[] = []
     for (const [i, t] of tabs.entries()) {
       if (match && !t.url.includes(match)) continue
       let value
-      try { value = JSON.parse(await ff.evaluate(c, String(i), expr, 0)) } catch (e) { value = { error: e.message } }
+      try { value = JSON.parse(await ff.evaluate(c, String(i), expr, 0)) } catch (e) { value = { error: errMessage(e) } }
       out.push({ index: i, url: t.url, title: t.title, ...value })
     }
     return out
@@ -243,7 +282,7 @@ async function inTabs(match, expr) {
 // termux-am, whose socket server this Termux build does not run, or `am`,
 // which Android refuses to apps.)
 
-function tmuxSocket() {
+function tmuxSocket(): string | null {
   try {
     const dir = fs.readdirSync(`${TERMUX}/var/run`).find(d => /^tmux-\d+$/.test(d))
     const sock = dir && `${TERMUX}/var/run/${dir}/default`
@@ -253,7 +292,7 @@ function tmuxSocket() {
   }
 }
 
-function tmux(...args) {
+function tmux(...args: string[]) {
   const sock = tmuxSocket()
   if (!sock) throw new Error(`no native tmux server: open a Termux session outside proot (its ~/.zshrc starts "tmux new -d -s ${SESSION}"), or run that command there`)
   return run(`${TERMUX}/bin/tmux`, ['-S', sock, ...args]).trim()
@@ -263,7 +302,7 @@ function nativeUp() {
   try { tmux('has-session', '-t', SESSION); return true } catch (e) { return false }
 }
 
-async function termuxRun({ command, cwd, name, keep = true, wait_s = 0 }) {
+async function termuxRun({ command = '', cwd, name, keep = true, wait_s = 0 }: { command?: string; cwd?: string; name?: string; keep?: boolean; wait_s?: number }) {
   if (!command) throw new Error('command is required')
   fs.mkdirSync(TERM_DIR, { recursive: true })
   const id = Date.now().toString(36)
@@ -289,7 +328,7 @@ async function termuxRun({ command, cwd, name, keep = true, wait_s = 0 }) {
   return termuxJob({ id })
 }
 
-function termuxJob({ id, lines = 40 } = {}) {
+function termuxJob({ id, lines = 40 }: { id?: string; lines?: number } = {}) {
   if (!id) {
     const jobs = (fs.existsSync(TERM_DIR) ? fs.readdirSync(TERM_DIR) : []).filter(f => f.endsWith('.sh'))
       .map(f => f.slice(0, -3)).sort().reverse().slice(0, 10)
@@ -309,9 +348,39 @@ function termuxJob({ id, lines = 40 } = {}) {
 
 // ─── the userscript's own code, reused: the MP4 reader and the decoder rules ───
 
-function scriptParts() {
+// What scriptParts() hands out, as the userscript defines it (mp4Boxes,
+// mp4Child, mp4VideoTrack, avcConfig, pastDecoder there). The code comes
+// from the script's text, so these types are a promise, not a check.
+interface Mp4Box {
+  type: string
+  start: number
+  body: number
+  end: number
+}
+
+interface Mp4Track {
+  timescale: number
+  duration: number
+  width: number
+  height: number
+  stsd: Uint8Array
+  sampleAt(t: number): number
+  timeOf(k: number): number
+  keyAtOrBefore(k: number): number
+  place(k: number): [number, number] | null   // [offset, size] in the file
+}
+
+interface ScriptParts {
+  mp4Boxes(b: Uint8Array, start: number, end: number): Iterable<Mp4Box>
+  mp4Child(b: Uint8Array, box: { body: number; end: number }, type: string): Mp4Box | null
+  mp4VideoTrack(b: Uint8Array, moov: { body: number; end: number }): Mp4Track | null
+  avcConfig(stsd: Uint8Array): Uint8Array | null
+  pastDecoder(w: number, h: number): boolean
+}
+
+function scriptParts(): ScriptParts {
   const src = fs.readFileSync(path.join(REPO, SCRIPT), 'utf8')
-  const cut = (from, to) => {
+  const cut = (from: string, to: string) => {
     const i = src.indexOf(from)
     const j = src.indexOf(to, i)
     if (i < 0 || j < 0) throw new Error(`cannot find "${from.trim()}" in ${SCRIPT}`)
@@ -324,12 +393,12 @@ function scriptParts() {
 }
 
 // A byte range of a file, as the site's own pages would ask for it.
-function rangeGet(url, start, end) {
-  return new Promise((resolve, reject) => {
+function rangeGet(url: string, start: number, end: number) {
+  return new Promise<{ buf: Uint8Array; total: number }>((resolve, reject) => {
     const req = https.get(url, { headers: { Range: `bytes=${start}-${end}`, Referer: SITE_REFERER, 'User-Agent': 'Mozilla/5.0 (Android 16; Mobile; rv:158.0) Gecko/158.0 Firefox/158.0' } }, res => {
       if (res.statusCode !== 206 && res.statusCode !== 200) { res.resume(); reject(new Error(`HTTP ${res.statusCode} for ${url}`)); return }
-      const chunks = []
-      res.on('data', d => chunks.push(d))
+      const chunks: Buffer[] = []
+      res.on('data', (d: Buffer) => chunks.push(d))
       res.on('end', () => {
         const buf = Buffer.concat(chunks)
         const m = /\/(\d+)$/.exec(res.headers['content-range'] || '')
@@ -342,8 +411,8 @@ function rangeGet(url, start, end) {
 }
 
 // The file of a post, from its page, read in the user's logged-in tab.
-async function postFileUrl(post) {
-  if (!/^\d+$/.test(String(post))) throw new Error('post must be a number')
+async function postFileUrl(post: string): Promise<string> {
+  if (!/^\d+$/.test(post)) throw new Error('post must be a number')
   const expr = `(async () => {
     const html = await (await fetch('/index.php?page=post&s=view&id=${post}', { credentials: 'same-origin' })).text()
     const m = html.match(/<source[^>]+src="([^"]+)"/) || html.match(/href="([^"]+)"[^>]*>\\s*Original image/i)
@@ -354,17 +423,24 @@ async function postFileUrl(post) {
   return url
 }
 
+// A video, by post id or file URL; scenes: how many a hold asks for.
+interface VideoArgs {
+  post?: string
+  url?: string
+  scenes?: number
+}
+
 // The MP4's index and video track, read the way the hold slideshow reads it.
-async function readIndex({ post, url }) {
-  let src = url || (post ? await postFileUrl(post) : null)
+async function readIndex({ post, url }: VideoArgs) {
+  let src = url || (post ? await postFileUrl(String(post)) : null)
   if (!src) throw new Error('give a post id or a file url')
   src = src.replace('://api-cdn-mp4.rule34.xxx/', '://api-cdn.rule34.xxx/')   // the fast host: rangeGet sends the Referer
   const parts = scriptParts()
   const head = await rangeGet(src, 0, (1 << 20) - 1)
   const total = head.total
-  const boxes = []
+  const boxes: string[] = []
   let p = 0
-  let moov = null
+  let moov: { at: number; size: number } | null = null
   for (let i = 0; p < total && i < 32 && !moov; i++) {
     const h = p + 16 <= head.buf.length ? head.buf.subarray(p, p + 16) : (await rangeGet(src, p, Math.min(total, p + 16) - 1)).buf
     const dv = new DataView(h.buffer, h.byteOffset, h.byteLength)
@@ -385,15 +461,17 @@ async function readIndex({ post, url }) {
   if (!track) throw new Error('no video track')
   // Sample and keyframe counts, from the same tables (stsz, stss).
   let count = 0
-  let sync = null
+  let sync: number[] | null = null
   for (const trak of parts.mp4Boxes(mb, body, mb.length)) {
     if (trak.type !== 'trak') continue
     const mdia = parts.mp4Child(mb, trak, 'mdia')
     const hdlr = mdia && parts.mp4Child(mb, mdia, 'hdlr')
-    if (!hdlr || String.fromCharCode(...mb.subarray(hdlr.body + 8, hdlr.body + 12)) !== 'vide') continue
-    const stbl = parts.mp4Child(mb, parts.mp4Child(mb, mdia, 'minf'), 'stbl')
+    if (!mdia || !hdlr || String.fromCharCode(...mb.subarray(hdlr.body + 8, hdlr.body + 12)) !== 'vide') continue
+    const minf = parts.mp4Child(mb, mdia, 'minf')
+    const stbl = minf && parts.mp4Child(mb, minf, 'stbl')
+    const stsz = stbl && parts.mp4Child(mb, stbl, 'stsz')
+    if (!stbl || !stsz) break   // not reached: mp4VideoTrack found these in this track
     const dv = new DataView(mb.buffer, mb.byteOffset, mb.byteLength)
-    const stsz = parts.mp4Child(mb, stbl, 'stsz')
     count = dv.getUint32(stsz.body + 8)
     const stss = parts.mp4Child(mb, stbl, 'stss')
     if (stss) {
@@ -410,8 +488,10 @@ async function readIndex({ post, url }) {
   }
 }
 
+type VideoIndex = Awaited<ReturnType<typeof readIndex>>
+
 // The scenes a hold would ask for: the panel's jump (slideStep), from the tab when it answers.
-async function sceneCount(scenes) {
+async function sceneCount(scenes?: number) {
   if (scenes) return Math.max(2, Math.min(40, Number(scenes)))
   try {
     const step = Number(JSON.parse(await withFirefox(c => ff.evaluate(c, 'rule34', 'window.__ibh && window.__ibh.cfg.slideStep', 0))))
@@ -421,16 +501,20 @@ async function sceneCount(scenes) {
 }
 
 // What the hold slideshow will do with this video, by the userscript's rules.
-function slidePlan(ix, n) {
+function slidePlan(ix: VideoIndex, n: number) {
   const { track, parts } = ix
   const secs = track.duration / track.timescale
-  const keys = []
+  const keys: number[] = []
   for (let i = 0; i < n; i++) {
     const k = track.keyAtOrBefore(track.sampleAt(Math.floor((i / n) * track.duration)))
     if (!keys.includes(k)) keys.push(k)
   }
   const past = parts.pastDecoder(track.width, track.height)
-  const frames = keys.map(k => track.place(k))
+  const frames = keys.map(k => {
+    const at = track.place(k)
+    if (!at) throw new Error(`keyframe ${k} is past the file's chunk table`)
+    return at
+  })
   const bytes = ix.moov.size + frames.reduce((s, f) => s + f[1], 0)
   let plan
   if (keys.length < Math.min(n, 3) && !past) {
@@ -441,14 +525,32 @@ function slidePlan(ix, n) {
   return { keys, frames, plan, past, secs }
 }
 
-let nodeDecoder = null   // the WebAssembly decoder in Node, for reel_preview
+// The decoder's exports (wasm/h264dec.c): pointers and sizes are numbers.
+interface H264 {
+  memory: WebAssembly.Memory
+  _initialize?: () => void
+  buf_alloc(n: number): number
+  buf_free(p: number): void
+  dec_open(extra: number, size: number): number
+  dec_frame(data: number, size: number, maxW: number): number
+  dec_width(): number
+  dec_height(): number
+  dec_rgba(): number
+  dec_decode_us(): number
+  dec_convert_us(): number
+}
 
-async function h264() {
+let nodeDecoder: H264 | null = null   // the WebAssembly decoder in Node, for reel_preview
+
+async function h264(): Promise<H264> {
   if (nodeDecoder) return nodeDecoder
   const mod = await WebAssembly.compile(fs.readFileSync(path.join(REPO, 'wasm', 'h264dec.wasm')))
-  let mem = null
-  const view = () => new DataView(mem.buffer)
-  const calls = {
+  let mem: WebAssembly.Memory | null = null
+  const view = () => {
+    if (!mem) throw new Error('the decoder called out before it was ready')
+    return new DataView(mem.buffer)
+  }
+  const calls: Record<string, (...args: number[]) => number> = {
     fd_write: (fd, iov, count, written) => {
       let n = 0
       for (let i = 0; i < count; i++) n += view().getUint32(iov + i * 8 + 4, true)
@@ -459,9 +561,13 @@ async function h264() {
     clock_time_get: (id, precision, out) => { view().setBigUint64(out, BigInt(Math.round(performance.now() * 1e6)), true); return 0 },
     proc_exit: code => { throw new Error(`decoder exited (${code})`) },
   }
-  const imports = {}
-  for (const imp of WebAssembly.Module.imports(mod)) (imports[imp.module] = imports[imp.module] || {})[imp.name] = calls[imp.name] || (() => 0)
-  const x = (await WebAssembly.instantiate(mod, imports)).exports
+  const imports: WebAssembly.Imports = {}
+  for (const imp of WebAssembly.Module.imports(mod)) {
+    const forModule = imports[imp.module] || {}
+    forModule[imp.name] = calls[imp.name] || (() => 0)
+    imports[imp.module] = forModule
+  }
+  const x = (await WebAssembly.instantiate(mod, imports)).exports as unknown as H264
   mem = x.memory
   if (x._initialize) x._initialize()
   nodeDecoder = x
@@ -484,14 +590,14 @@ async function status() {
   return rows.join('\n')
 }
 
-async function tabsTool({ details = true } = {}) {
-  const tabs = details ? await inTabs('', TAB_STATE) : (await withFirefox(c => ff.listTabs(c))).map((t, i) => ({ index: i, url: t.url, title: t.title }))
+async function tabsTool({ details = true }: { details?: boolean } = {}) {
+  const tabs: TabValue[] = details ? await inTabs('', TAB_STATE) : (await withFirefox(c => ff.listTabs(c))).map((t, i) => ({ index: i, url: t.url, title: t.title }))
   return tabs.map(t => `${t.index}  ${t.version ? `v${t.version} ` : ''}${t.hidden ? '(hidden) ' : t.hidden === false ? '(visible) ' : ''}${(t.title || '').slice(0, 40)}  ${t.url}`).join('\n') || 'no tabs'
 }
 
 // With `await`, the expression runs in an async function and the result is
 // collected by polling: the protocol's evaluate does not wait for promises.
-async function evalTool({ tab, expression, await: wait = false, timeout_ms = 15000 }) {
+async function evalTool({ tab, expression = '', await: wait = false, timeout_ms = 15000 }: { tab?: string | number; expression?: string; await?: boolean; timeout_ms?: number }) {
   if (!expression) throw new Error('expression is required')
   const key = tabKey(tab)
   return withFirefox(async c => {
@@ -516,7 +622,7 @@ async function evalTool({ tab, expression, await: wait = false, timeout_ms = 150
   })
 }
 
-async function reloadTabs({ match = 'rule34', only_hidden = true, except_version = null }) {
+async function reloadTabs({ match = 'rule34', only_hidden = true, except_version = null }: { match?: string; only_hidden?: boolean; except_version?: string | null }) {
   const tabs = await inTabs(match, TAB_STATE)
   if (!tabs.length) return `no tab matches "${match}"`
   const report = []
@@ -530,26 +636,26 @@ async function reloadTabs({ match = 'rule34', only_hidden = true, except_version
   return report.join('\n')
 }
 
-async function openUrl({ url, package: pkg = BROWSER }) {
-  if (!/^https?:\/\/[^\s'"\\]+$/.test(url || '')) throw new Error('url must be http(s) without spaces or quotes')
+async function openUrl({ url = '', package: pkg = BROWSER }: { url?: string; package?: string }) {
+  if (!/^https?:\/\/[^\s'"\\]+$/.test(url)) throw new Error('url must be http(s) without spaces or quotes')
   if (!/^[\w.]+$/.test(pkg)) throw new Error('bad package name')
   return phoneShell(`am start -a android.intent.action.VIEW -d '${url}' ${pkg}`)   // a promise: callers await it
 }
 
-async function firefoxPref({ name, action = 'get', value }) {
-  if (!/^[\w.@-]+$/.test(name || '')) throw new Error('name must be a preference name, like media.av1.enabled')
+async function firefoxPref({ name = '', action = 'get', value }: { name?: string; action?: PrefAction; value?: unknown }) {
+  if (!/^[\w.@-]+$/.test(name)) throw new Error('name must be a preference name, like media.av1.enabled')
   if (action === 'set' && value === undefined) throw new Error('set needs a value (boolean, number or string)')
   const r = await withFirefox(c => ff.pref(c, name, action, value))
-  const show = v => (v === null ? '(not set)' : JSON.stringify(v))
+  const show = (v: unknown) => (v === null ? '(not set)' : JSON.stringify(v))
   return action === 'get' ? `${name} = ${show(r.before)}`
     : `${name}: ${show(r.before)} → ${show(r.after)}${action === 'set' ? ' (stays across restarts; firefox_pref action=clear puts the default back)' : ''}`
 }
 
 // An image block for the reply: a JPEG through ffmpeg (a fraction of the
 // PNG), or the file as it is when ffmpeg is missing.
-function imageResult(file, label) {
+function imageResult(file: string, label: string): [Content, Content] {
   const when = new Date(fs.statSync(file).mtimeMs).toLocaleString('pt-BR')
-  let data
+  let data: Buffer
   let mimeType = 'image/jpeg'
   try {
     data = execFileSync('ffmpeg', ['-v', 'error', '-i', file, '-q:v', '4', '-f', 'image2pipe', '-c:v', 'mjpeg', '-'], { timeout: 30000, maxBuffer: 64e6 })
@@ -568,13 +674,14 @@ async function screenshot() {
 function latestScreenshot() {
   const files = fs.readdirSync(SCREENSHOTS).filter(f => /\.(png|jpe?g|webp)$/i.test(f))
     .map(f => ({ f, t: fs.statSync(path.join(SCREENSHOTS, f)).mtimeMs })).sort((a, b) => b.t - a.t)
-  if (!files.length) throw new Error(`no screenshots in ${SCREENSHOTS}`)
-  return imageResult(path.join(SCREENSHOTS, files[0].f), 'newest screenshot')
+  const newest = files[0]
+  if (!newest) throw new Error(`no screenshots in ${SCREENSHOTS}`)
+  return imageResult(path.join(SCREENSHOTS, newest.f), 'newest screenshot')
 }
 
 // A few seconds of the screen, as one contact sheet: for what moves
 // (a slideshow, a swipe, an animation), where a screenshot shows one instant.
-async function screenRecord({ seconds = 5, fps = 2 } = {}) {
+async function screenRecord({ seconds = 5, fps = 2 }: { seconds?: number; fps?: number } = {}) {
   const s = Math.max(1, Math.min(15, Math.round(Number(seconds) || 5)))
   const rate = Math.max(1, Math.min(5, Number(fps) || 2))
   await phoneShell(`screenrecord --time-limit ${s} --bit-rate 6000000 ${RECORDING}`, (s + 20) * 1000)
@@ -588,8 +695,8 @@ async function screenRecord({ seconds = 5, fps = 2 } = {}) {
 }
 
 // Touches and keys on the phone, through Android's `input`.
-async function inputTool({ action, x, y, x2, y2, ms, key, text }) {
-  const int = (v, what) => {
+async function inputTool({ action, x, y, x2, y2, ms, key = '', text }: { action?: string; x?: number; y?: number; x2?: number; y2?: number; ms?: number; key?: string; text?: string }) {
+  const int = (v: unknown, what: string) => {
     const n = Math.round(Number(v))
     if (!Number.isFinite(n) || n < 0 || n > 10000) throw new Error(`${what} must be a screen coordinate or a duration`)
     return n
@@ -599,7 +706,7 @@ async function inputTool({ action, x, y, x2, y2, ms, key, text }) {
   else if (action === 'long_press') cmd = `input swipe ${int(x, 'x')} ${int(y, 'y')} ${int(x, 'x')} ${int(y, 'y')} ${int(ms || 800, 'ms')}`
   else if (action === 'swipe') cmd = `input swipe ${int(x, 'x')} ${int(y, 'y')} ${int(x2, 'x2')} ${int(y2, 'y2')} ${int(ms || 300, 'ms')}`
   else if (action === 'key') {
-    if (!/^(KEYCODE_)?[A-Z0-9_]+$/.test(key || '')) throw new Error('key must be a key code, like BACK, HOME or KEYCODE_VOLUME_UP')
+    if (!/^(KEYCODE_)?[A-Z0-9_]+$/.test(key)) throw new Error('key must be a key code, like BACK, HOME or KEYCODE_VOLUME_UP')
     cmd = `input keyevent ${key.startsWith('KEYCODE_') ? key : `KEYCODE_${key}`}`
   } else if (action === 'text') {
     if (typeof text !== 'string' || !text) throw new Error('text is required')
@@ -609,7 +716,7 @@ async function inputTool({ action, x, y, x2, y2, ms, key, text }) {
   return `done: ${cmd} (screen size: ${(await phoneShell('wm size')).replace(/^Physical size: /, '')})`
 }
 
-async function logcat({ filter = '', lines = 80, since_s = 0 } = {}) {
+async function logcat({ filter = '', lines = 80, since_s = 0 }: { filter?: string; lines?: number; since_s?: number } = {}) {
   const re = filter ? new RegExp(filter, 'i') : null
   const now = new Date()
   const from = since_s > 0 ? now.getTime() - since_s * 1000 : 0
@@ -618,13 +725,13 @@ async function logcat({ filter = '', lines = 80, since_s = 0 } = {}) {
     if (re && !re.test(l)) return false
     if (!from) return true
     const m = /^(\d\d)-(\d\d) (\d\d):(\d\d):(\d\d)\.(\d+)/.exec(l)
-    return m ? new Date(year, m[1] - 1, m[2], m[3], m[4], m[5]).getTime() >= from : false
+    return m ? new Date(year, Number(m[1]) - 1, Number(m[2]), Number(m[3]), Number(m[4]), Number(m[5])).getTime() >= from : false
   })
   return clip(tail(out.join('\n'), Math.min(1000, Number(lines) || 80)) || '(no matching lines)')
 }
 
 // Which apps take a link (what an intent would open), or which are installed.
-async function apps({ url, mime = 'video/*', filter }) {
+async function apps({ url, mime = 'video/*', filter }: { url?: string; mime?: string; filter?: string }) {
   if (url) {
     if (!/^[a-z]+:\/\/[^\s'"]+$/i.test(url)) throw new Error('url must be a link without spaces or quotes')
     if (!/^[\w*.+/-]+$/.test(mime)) throw new Error('bad MIME type')
@@ -645,17 +752,17 @@ async function apps({ url, mime = 'video/*', filter }) {
 async function device() {
   const rows = []
   const battery = await phoneShell('dumpsys battery')
-  const get = k => ((battery.match(new RegExp(`^\\s*${k}: (.+)$`, 'm')) || [])[1] || '').trim()
+  const get = (k: string) => ((battery.match(new RegExp(`^\\s*${k}: (.+)$`, 'm')) || [])[1] || '').trim()
   rows.push(`battery: ${get('level')}%, ${Number(get('temperature')) / 10} °C, ${get('status') === '2' ? 'charging' : 'not charging'}${get('AC powered') === 'true' ? ' (AC)' : get('USB powered') === 'true' ? ' (USB)' : ''}`)
   try { rows.push(`thermal: ${(await phoneShell('dumpsys thermalservice 2>/dev/null | grep -m1 -i "thermal status"')).trim()}`) } catch (e) { /* not reported */ }
   const mem = fs.readFileSync('/proc/meminfo', 'utf8')
-  const mb = k => Math.round(Number((mem.match(new RegExp(`^${k}:\\s+(\\d+)`, 'm')) || [])[1] || 0) / 1024)
+  const mb = (k: string) => Math.round(Number((mem.match(new RegExp(`^${k}:\\s+(\\d+)`, 'm')) || [])[1] || 0) / 1024)
   rows.push(`memory: ${mb('MemAvailable')} MB free of ${mb('MemTotal')} MB`)
   try {
     // The per-process list only (the sections after it repeat the same processes).
     const all = await phoneShell('dumpsys meminfo', 60000)
     const at = all.search(/Total (PSS|RSS) by process:/)
-    const section = at < 0 ? '' : all.slice(at).split(/\n\s*\n/)[0]
+    const section = at < 0 ? '' : all.slice(at).split(/\n\s*\n/)[0] ?? ''
     const procs = section.split('\n').filter(l => l.includes(BROWSER))
       .map(l => Number(((l.match(/([\d,]+)K:/) || [])[1] || '0').replace(/,/g, '')))
     rows.push(`Firefox Beta: ${Math.round(procs.reduce((a, b) => a + b, 0) / 1024)} MB (${/PSS/.test(section) ? 'PSS' : 'RSS'}) in ${procs.length} process(es)`)
@@ -669,7 +776,7 @@ async function device() {
 
 // ─── tools: the userscript ───
 
-async function scriptLog({ tab, filter = '', levels = null, last = 40 }) {
+async function scriptLog({ tab, filter = '', levels = null, last = 40 }: { tab?: string | number; filter?: string; levels?: string[] | null; last?: number }) {
   const expr = `(() => {
     if (!window.__ibh) return null
     const re = ${JSON.stringify(filter)} ? new RegExp(${JSON.stringify(filter)}, 'i') : null
@@ -687,30 +794,36 @@ async function scriptLog({ tab, filter = '', levels = null, last = 40 }) {
 
 const KEY_LINE = /^(slideshow|download|external player|copied|keyframe decoder|storage)/
 
+// A log entry as logSnapshot saves it: [time, level, message].
+type LogEntry = [number, string, string]
+
 // Every site tab's whole log, saved to files: the log lives in the page, so
 // a reload (a deploy) wipes it.
-async function logSnapshot({ match = 'rule34' } = {}) {
+async function logSnapshot({ match = 'rule34' }: { match?: string } = {}) {
   const tabs = await inTabs(match, 'window.__ibh ? { v: window.__ibh.version, log: window.__ibh.log().map(e => [e.t, e.level, e.msg]) } : null')
   fs.mkdirSync(LOGS, { recursive: true })
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)
   const out = []
   for (const t of tabs) {
     if (!t.log) continue
+    const log: LogEntry[] = t.log
     const file = path.join(LOGS, `${stamp}-tab${t.index}-v${t.v}.log`)
-    const line = ([ts, level, msg]) => `${new Date(ts).toTimeString().slice(0, 8)} ${level.padEnd(5)} ${msg}`
-    fs.writeFileSync(file, `${t.url}\n${t.log.map(line).join('\n')}\n`)
-    const key = t.log.filter(([, level, msg]) => level === 'error' || level === 'warn' || KEY_LINE.test(msg)).slice(-10)
-    out.push(`tab ${t.index} v${t.v}: ${t.log.length} lines → ${file}${key.length ? `\n  ${key.map(line).join('\n  ')}` : ''}`)
+    const line = ([ts, level, msg]: LogEntry) => `${new Date(ts).toTimeString().slice(0, 8)} ${level.padEnd(5)} ${msg}`
+    fs.writeFileSync(file, `${t.url}\n${log.map(line).join('\n')}\n`)
+    const key = log.filter(([, level, msg]) => level === 'error' || level === 'warn' || KEY_LINE.test(msg)).slice(-10)
+    out.push(`tab ${t.index} v${t.v}: ${log.length} lines → ${file}${key.length ? `\n  ${key.map(line).join('\n  ')}` : ''}`)
   }
   return out.length ? out.join('\n') : `no tab matching "${match}" runs the script`
 }
 
 // The `slideshow (…)` log lines as a table, with medians per method.
-async function slideshowStats({ match = 'rule34', saved = false } = {}) {
-  const lines = new Set()
+async function slideshowStats({ match = 'rule34', saved = false }: { match?: string; saved?: boolean } = {}) {
+  const lines = new Set<string>()
   try {
-    const tabs = await inTabs(match, 'window.__ibh ? window.__ibh.log().filter(e => /^slideshow \\(/.test(e.msg)).map(e => new Date(e.t).toTimeString().slice(0, 8) + " " + e.msg) : []')
-    for (const t of tabs) for (const l of Array.isArray(t) ? t : Object.values(t).filter(Array.isArray).flat()) lines.add(l)
+    // In an object: inTabs spreads the answer into the tab's fields, and a
+    // spread array would come apart into numbered keys.
+    const tabs = await inTabs(match, '({ slides: window.__ibh ? window.__ibh.log().filter(e => /^slideshow \\(/.test(e.msg)).map(e => new Date(e.t).toTimeString().slice(0, 8) + " " + e.msg) : [] })')
+    for (const t of tabs) for (const l of t.slides || []) lines.add(l)
   } catch (e) { if (!saved) throw e }
   if (saved && fs.existsSync(LOGS)) {
     for (const f of fs.readdirSync(LOGS)) {
@@ -721,10 +834,10 @@ async function slideshowStats({ match = 'rule34', saved = false } = {}) {
     }
   }
   if (!lines.size) return 'no slideshow lines (hold a video thumbnail first)'
-  const num = (s, re) => { const m = re.exec(s); return m ? Number(m[1]) : null }
+  const num = (s: string, re: RegExp) => { const m = re.exec(s); return m ? Number(m[1]) : null }
   const rows = [...lines].sort().map(l => ({
     time: l.slice(0, 8),
-    method: (/slideshow \(([^)]+)\)/.exec(l) || [])[1],
+    method: (/slideshow \(([^)]+)\)/.exec(l) || [])[1] ?? '?',
     post: num(l, /post (\d+)/),
     first: num(l, /first after (\d+) ms/) ?? num(l, /playing after (\d+) ms/),
     none: num(l, /no scene in (\d+) ms/),
@@ -741,12 +854,12 @@ async function slideshowStats({ match = 'rule34', saved = false } = {}) {
     r.none !== null ? `lifted ${r.none} ms` : `first ${r.first} ms${r.kept ? ' (kept)' : ''}`,
     r.gap ? `gap ${r.gap}` : '', r.late ? `${r.late} late` : '', r.size, r.keys ? `${r.keys} keys` : '',
     r.read ? `read ${r.read}` : '', r.decode ? `dec ${r.decode}` : '', r.note].filter(Boolean).join('  ')).join('\n')
-  const by = {}
+  const by: Record<string, typeof rows> = {}
   for (const r of rows) (by[r.method] = by[r.method] || []).push(r)
   const summary = Object.entries(by).map(([m, rs]) => {
-    const fresh = rs.filter(r => r.first !== null && !r.kept).map(r => r.first)
-    const kept = rs.filter(r => r.first !== null && r.kept).map(r => r.first)
-    const gaps = rs.filter(r => r.gap).map(r => r.gap)
+    const fresh = rs.flatMap(r => (r.first !== null && !r.kept ? [r.first] : []))
+    const kept = rs.flatMap(r => (r.first !== null && r.kept ? [r.first] : []))
+    const gaps = rs.flatMap(r => (r.gap ? [r.gap] : []))
     const lifted = rs.filter(r => r.none !== null).length
     return `${m}: ${rs.length} hold(s)${lifted ? `, ${lifted} lifted before the first scene` : ''}` +
       `${fresh.length ? `, first scene median ${median(fresh)} ms` : ''}${kept.length ? ` (kept reels ${median(kept)} ms)` : ''}` +
@@ -757,13 +870,13 @@ async function slideshowStats({ match = 'rule34', saved = false } = {}) {
 
 // ─── tools: videos and WebAssembly ───
 
-async function videoInfo({ post, url, scenes } = {}) {
+async function videoInfo({ post, url, scenes }: VideoArgs = {}) {
   const ix = await readIndex({ post, url })
   const { track } = ix
   const n = await sceneCount(scenes)
   const plan = slidePlan(ix, n)
   const times = ix.sync.map(k => track.timeOf(k) / track.timescale)
-  const gaps = times.slice(1).map((t, i) => t - times[i])
+  const gaps = times.slice(1).map((t, i) => t - times[i]!)   // times[i]: the one before t
   const avgGap = gaps.length ? gaps.reduce((a, b) => a + b, 0) / gaps.length : plan.secs
   return [
     `${post ? `post ${post} → ` : ''}${ix.src}`,
@@ -778,16 +891,17 @@ async function videoInfo({ post, url, scenes } = {}) {
 
 // What a hold would show: the scene keyframes, decoded by the userscript's
 // WebAssembly decoder here in Node, as one contact sheet.
-async function reelPreview({ post, url, scenes, width = 360 } = {}) {
+async function reelPreview({ post, url, scenes, width = 360 }: VideoArgs & { width?: number } = {}): Promise<Content[]> {
   const ix = await readIndex({ post, url })
-  if (!ix.avcC) throw new Error(`${ix.entry} is not H.264: the WebAssembly decoder takes avc1/avc3 only`)
+  const avcC = ix.avcC
+  if (!avcC) throw new Error(`${ix.entry} is not H.264: the WebAssembly decoder takes avc1/avc3 only`)
   const n = await sceneCount(scenes)
   const plan = slidePlan(ix, n)
   const frames = await Promise.all(plan.frames.map(([off, size]) => rangeGet(ix.src, off, off + size - 1).then(r => r.buf)))
   const x = await h264()
-  const put = bytes => { const p = x.buf_alloc(bytes.length); new Uint8Array(x.memory.buffer, p, bytes.length).set(bytes); return p }
-  const cfg = put(ix.avcC)
-  const opened = x.dec_open(cfg, ix.avcC.length)
+  const put = (bytes: Uint8Array) => { const p = x.buf_alloc(bytes.length); new Uint8Array(x.memory.buffer, p, bytes.length).set(bytes); return p }
+  const cfg = put(avcC)
+  const opened = x.dec_open(cfg, avcC.length)
   x.buf_free(cfg)
   if (opened !== 0) throw new Error(`the decoder refused the stream (${opened})`)
   const dir = path.join(WORK, 'reel')
@@ -803,9 +917,10 @@ async function reelPreview({ post, url, scenes, width = 360 } = {}) {
     const h = x.dec_height()
     const px = new Uint8Array(x.memory.buffer, x.dec_rgba(), w * h * 4)
     const rgb = Buffer.alloc(w * h * 3)
-    for (let j = 0, o = 0; j < px.length; j += 4) { rgb[o++] = px[j]; rgb[o++] = px[j + 1]; rgb[o++] = px[j + 2] }
+    // RGBA to RGB; j stays inside px, so px[j + …]! is never undefined.
+    for (let j = 0, o = 0; j < px.length; j += 4) { rgb[o++] = px[j]!; rgb[o++] = px[j + 1]!; rgb[o++] = px[j + 2]! }
     fs.writeFileSync(path.join(dir, `f${String(i).padStart(2, '0')}.ppm`), Buffer.concat([Buffer.from(`P6\n${w} ${h}\n255\n`), rgb]))
-    times.push(`${(ix.track.timeOf(plan.keys[i]) / ix.track.timescale).toFixed(1)} s: ${kb(bytes.length)}, decode ${(x.dec_decode_us() / 1000).toFixed(0)} ms + convert ${(x.dec_convert_us() / 1000).toFixed(0)} ms`)
+    times.push(`${(ix.track.timeOf(plan.keys[i]!) / ix.track.timescale).toFixed(1)} s: ${kb(bytes.length)}, decode ${(x.dec_decode_us() / 1000).toFixed(0)} ms + convert ${(x.dec_convert_us() / 1000).toFixed(0)} ms`)
   }
   const cols = Math.min(5, frames.length)
   const sheet = path.join(WORK, 'reel.jpg')
@@ -819,7 +934,7 @@ async function reelPreview({ post, url, scenes, width = 360 } = {}) {
 // (the first build took 12 min there, Emscripten's one-time cache included,
 // against ~25 in proot; the .wasm came out byte-identical), else here.
 // `job` asks after a build; a native one is copied into wasm/ once done.
-async function wasmBuild({ native = true, job } = {}) {
+async function wasmBuild({ native = true, job }: { native?: boolean; job?: string } = {}) {
   const stage = `${TERMUX}/tmp/ibh-wasm`
   if (job) {
     if (job.startsWith('proot-')) {
@@ -860,15 +975,15 @@ async function check() {
   return `npm run check passed\n${tail(r.out, 5)}`
 }
 
-async function smoke({ url } = {}) {
+async function smoke({ url }: { url?: string } = {}) {
   const r = await runAsync('node', ['tools/smoke.js', ...(url ? [url] : [])], { timeout: 600000 })
   return clip(`${r.code === 0 ? 'smoke test passed' : `smoke test FAILED (exit ${r.code})`}\n${tail(r.out, 30)}`)
 }
 
 // ─── deploy ───
 
-function httpsGet(url) {
-  return new Promise((resolve, reject) => {
+function httpsGet(url: string) {
+  return new Promise<string>((resolve, reject) => {
     https.get(url, res => {
       let body = ''
       res.setEncoding('utf8')
@@ -892,14 +1007,14 @@ const CLICK_INSTALL = `(() => {
 // Downloads, the commit-pinned raw link (no CDN or browser cache in the way)
 // opened in Firefox Beta, Violentmonkey watched, then every site tab's log
 // saved before the hidden ones reload.
-async function deploy({ confirm = false, dry_run = false, wait_s = 60, match = 'rule34', skip_check = false }) {
+async function deploy({ confirm = false, dry_run = false, wait_s = 60, match = 'rule34', skip_check = false }: { confirm?: boolean; dry_run?: boolean; wait_s?: number; match?: string; skip_check?: boolean }) {
   const steps = []
-  const git = (...args) => run('git', ['-C', REPO, ...args]).trim()
+  const git = (...args: string[]) => run('git', ['-C', REPO, ...args]).trim()
   const sha = git('rev-parse', 'HEAD')
   if (git('status', '--porcelain', '--', SCRIPT)) steps.push(`warning: ${SCRIPT} has uncommitted changes; the committed version is what ships`)
   try { git('fetch', '-q', 'origin') } catch (e) { steps.push(`warning: git fetch failed (${firstLine(e)})`) }
   if (!git('branch', '-r', '--contains', sha)) throw new Error(`HEAD ${sha.slice(0, 7)} is not on the remote: push first (the raw link serves pushed commits only)`)
-  if (!skip_check) steps.push(await check().then(r => r.split('\n')[0]))
+  if (!skip_check) steps.push(await check().then(r => r.split('\n')[0] ?? ''))
   const code = git('show', `HEAD:${SCRIPT}`) + '\n'
   const version = (code.match(/@version\s+(\S+)/) || [])[1]
   const repo = git('remote', 'get-url', 'origin').match(/github\.com[:/]([^/]+)\/([^/]+?)(?:\.git)?$/)
@@ -962,17 +1077,26 @@ async function deploy({ confirm = false, dry_run = false, wait_s = 60, match = '
 
 // ─── the tool list ───
 
-const str = description => ({ type: 'string', description })
-const num = description => ({ type: 'number', description })
-const bool = description => ({ type: 'boolean', description })
-const obj = (properties = {}, required) => ({ type: 'object', properties, ...(required ? { required } : {}) })
+interface Tool {
+  name: string
+  description: string
+  inputSchema: object
+  // The arguments arrive as JSON: each tool's parameter type documents them,
+  // nothing checks them on the way in.
+  run: (args: any) => unknown
+}
+
+const str = (description: string) => ({ type: 'string', description })
+const num = (description: string) => ({ type: 'number', description })
+const bool = (description: string) => ({ type: 'boolean', description })
+const obj = (properties: Record<string, object> = {}, required?: string[]) => ({ type: 'object', properties, ...(required ? { required } : {}) })
 const TAB = str('tab index or URL substring (default "rule34")')
 const VIDEO = { post: str('rule34 post id (its file is read through the logged-in tab)'), url: str('or the file URL') }
 
-const TOOLS = [
+const TOOLS: Tool[] = [
   { name: 'status', run: status, inputSchema: obj(),
     description: 'Phone connection status: Shizuku, Wireless debugging, adb, the Firefox debugger forward, the native Termux tmux session. Read only.' },
-  { name: 'connect', run: ({ force = false }) => connectPhone(force), inputSchema: obj({ force: bool('set up again even if Firefox answers') }),
+  { name: 'connect', run: ({ force = false }: { force?: boolean }) => connectPhone(force), inputSchema: obj({ force: bool('set up again even if Firefox answers') }),
     description: 'Connects adb over Wireless debugging and forwards Firefox Beta\'s debugger to tcp:6000. Other tools call it by themselves. Fails with what to ask the user when Wireless debugging is off.' },
   { name: 'tabs', run: tabsTool, inputSchema: obj({ details: bool('read version and visibility in each tab (default true)') }),
     description: 'Firefox tabs on the phone: index, script version (window.__ibh), visible or hidden, title, URL.' },
@@ -1016,7 +1140,7 @@ const TOOLS = [
   { name: 'wasm_build', run: wasmBuild, inputSchema: obj({ native: bool('in native Termux when its tmux session is up (default true; about twice as fast as proot)'), job: str('a build started before: its state, and for a native one, the result copied into wasm/') }),
     description: 'Builds wasm/h264dec.wasm (FFmpeg\'s H.264 decoder) with wasm/build.sh, in the background: natively in Termux when possible. Then commit the .wasm and point the @resource link at that commit.' },
   { name: 'check', run: check, inputSchema: obj(),
-    description: 'npm run check in the repo: syntax, I18N parity, ESLint and the TypeScript check. deploy runs it first.' },
+    description: 'npm run check in the repo: syntax, I18N parity, ESLint, and the TypeScript checks of the userscript and of these tools. deploy runs it first.' },
   { name: 'smoke', run: smoke, inputSchema: obj({ url: str('a Gelbooru 0.2 listing (default safebooru)') }),
     description: 'The Playwright smoke test (headless Firefox, the script injected): boot, panel, search bar, eye button, feed, modal, autopager. About a minute, and heavy on the phone\'s memory (Firefox\'s tabs may unload).' },
   { name: 'termux_run', run: termuxRun,
@@ -1037,18 +1161,25 @@ const INSTRUCTIONS = 'Tools for the user\'s phone (Firefox Beta with Violentmonk
 
 // ─── JSON-RPC over stdio ───
 
-const send = msg => process.stdout.write(`${JSON.stringify(msg)}\n`)
+// A JSON-RPC message from the client: a request (with an id) or a notification.
+interface RpcMessage {
+  id?: number | string | null
+  method?: string
+  params?: any
+}
 
-async function handle(msg) {
+const send = (msg: object) => process.stdout.write(`${JSON.stringify(msg)}\n`)
+
+async function handle(msg: RpcMessage) {
   if (msg.id === undefined || msg.id === null) return   // a notification: nothing to answer
-  const reply = result => send({ jsonrpc: '2.0', id: msg.id, result })
-  const fail = (code, message) => send({ jsonrpc: '2.0', id: msg.id, error: { code, message } })
+  const reply = (result: object) => send({ jsonrpc: '2.0', id: msg.id, result })
+  const fail = (code: number, message: string) => send({ jsonrpc: '2.0', id: msg.id, error: { code, message } })
   switch (msg.method) {
     case 'initialize':
       return reply({
         protocolVersion: (msg.params && msg.params.protocolVersion) || '2025-06-18',
         capabilities: { tools: {} },
-        serverInfo: { name: 'phone', version: '2.0.0' },
+        serverInfo: { name: 'phone', version: '2.1.0' },
         instructions: INSTRUCTIONS,
       })
     case 'ping':
@@ -1063,7 +1194,7 @@ async function handle(msg) {
         return reply({ content: Array.isArray(out) ? out : [{ type: 'text', text: String(out) }] })
       } catch (e) {
         // A command's failure carries its stderr; one of ours, its message (a check's output).
-        const text = e && e.stderr ? firstLine(e) : clip(String((e && e.message) || e))
+        const text = stderrOf(e) ? firstLine(e) : clip(errMessage(e))
         return reply({ content: [{ type: 'text', text: text || 'failed' }], isError: true })
       }
     }
@@ -1074,7 +1205,7 @@ async function handle(msg) {
 
 readline.createInterface({ input: process.stdin }).on('line', line => {
   if (!line.trim()) return
-  let msg
+  let msg: RpcMessage
   try { msg = JSON.parse(line) } catch (e) { send({ jsonrpc: '2.0', id: null, error: { code: -32700, message: 'parse error' } }); return }
   handle(msg).catch(e => console.error(e))
 }).on('close', () => process.exit(0))

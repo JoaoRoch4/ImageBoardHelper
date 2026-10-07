@@ -2,7 +2,7 @@
   "mcpServers": {
     "phone": {
       "command": "node",
-      "args": ["tools/phone-mcp.js"]
+      "args": ["tools/phone-mcp.mts"]
     },
     "browser": {
       "command": "npx",

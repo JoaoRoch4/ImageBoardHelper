@@ -5,43 +5,73 @@
 // userscript can be inspected on the real device: list tabs, evaluate JS in a
 // tab (e.g. `window.__ibh.log()`), without the desktop DevTools.
 //
-//   node tools/ffrdp.js setup                 adb connect + forward tcp:6000
-//   node tools/ffrdp.js tabs                  list open tabs
-//   node tools/ffrdp.js eval <tab> '<expr>'   evaluate in a tab
-//   node tools/ffrdp.js pref <name> [value|clear]   read, set or reset a Firefox preference
+//   node tools/ffrdp.mts setup                 adb connect + forward tcp:6000
+//   node tools/ffrdp.mts tabs                  list open tabs
+//   node tools/ffrdp.mts eval <tab> '<expr>'   evaluate in a tab
+//   node tools/ffrdp.mts pref <name> [value|clear]   read, set or reset a Firefox preference
 //
 // <tab> is the index printed by `tabs` or any substring of the tab URL.
 // The result is passed through JSON.stringify, so objects print in full.
-// Also a module: tools/phone-mcp.js builds on the functions exported below.
+// Also a module: tools/phone-mcp.mts builds on the functions exported below.
+// TypeScript that Node runs as it is (it strips the types); tsc -p tools checks it.
 //
 // Requires: Firefox "Remote debugging via USB" on, and adb already paired with
 // the phone's own Wireless debugging (one-time `adb pair`).
 
-'use strict'
-const net = require('net')
-const { execFileSync } = require('child_process')
+import * as net from 'node:net'
+import { execFileSync } from 'node:child_process'
 
-const PORT = +(process.env.FFRDP_PORT || 6000)
+export const PORT = +(process.env.FFRDP_PORT || 6000)
 const DEBUG = !!process.env.FFRDP_DEBUG  // print every packet to stderr
+
+// A protocol packet, both ways: replies come from the actor asked, events
+// also carry a type. The rest depends on the actor, so it stays loose.
+export interface Packet {
+  from: string
+  type?: string
+  error?: string
+  message?: string
+  [key: string]: any
+}
+
+export interface Tab {
+  actor: string
+  url: string
+  title: string
+}
+
+export interface Connection {
+  sock: net.Socket
+  waitFor(match: (p: Packet) => boolean): Promise<Packet>
+  request(to: string, type: string, extra?: object): Promise<Packet>
+  ready: Promise<Packet>
+}
+
+interface Waiter {
+  match: (p: Packet) => boolean
+  resolve: (p: Packet) => void
+  reject: (e: Error) => void
+}
 
 // ─── setup: find the wireless debugging port and forward the Firefox socket ───
 
-function adb(...args) {
+export function adb(...args: string[]): string {
   return execFileSync('adb', args, { encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 }
 
 // Connects adb to the phone's Wireless debugging and forwards Firefox's
 // debugger socket to tcp:PORT. Returns { serial, socket }.
-function setup() {
+export function setup(): { serial: string; socket: string } {
   // The connect port changes every time Wireless debugging restarts; mDNS has
   // it. A record can outlive the service, so try each one, on the loopback
   // address first (the phone talking to itself) and then the one advertised.
   const records = adb('mdns', 'services').split('\n').filter(l => l.includes('_adb-tls-connect'))
   if (!records.length) throw new Error('Wireless debugging not advertised; is it on?')
-  let serial = null
+  let serial: string | null = null
   for (const line of records) {
-    const addr = line.trim().split(/\s+/).pop()
+    const addr = line.trim().split(/\s+/).pop() || ''
     const port = addr.split(':')[1]
+    if (!port) continue
     for (const candidate of [`127.0.0.1:${port}`, addr]) {
       const out = adb('connect', candidate)
       if (/connected to/.test(out)) { serial = candidate; break }
@@ -51,61 +81,61 @@ function setup() {
   if (!serial) throw new Error('Wireless debugging advertised but refusing connections (stale record?); is it on?')
 
   // Firefox and Firefox Beta use different socket names; take whichever exists.
-  const sockets = adb('-s', serial, 'shell', 'cat /proc/net/unix')
-    .match(/@org\.mozilla\.[\w.]+\/firefox-debugger-socket/g)
-  if (!sockets) throw new Error('No Firefox debugger socket; enable "Remote debugging via USB" and open Firefox')
-  const socket = sockets[0].slice(1)
+  const found = adb('-s', serial, 'shell', 'cat /proc/net/unix')
+    .match(/@org\.mozilla\.[\w.]+\/firefox-debugger-socket/)
+  if (!found) throw new Error('No Firefox debugger socket; enable "Remote debugging via USB" and open Firefox')
+  const socket = found[0].slice(1)
   adb('-s', serial, 'forward', `tcp:${PORT}`, `localabstract:${socket}`)
   return { serial, socket }
 }
 
 // ─── protocol: packets are "<byte length>:<json>" in both directions ───
 
-function connect() {
+export function connect(): Connection {
   const sock = net.connect(PORT, '127.0.0.1')
-  let buf = Buffer.alloc(0)
-  const waiters = []
-  let failure = null
+  let buf: Buffer = Buffer.alloc(0)
+  const waiters: Waiter[] = []
+  let failure: Error | null = null
 
   // A dropped connection fails whatever still waits, instead of hanging it.
-  const fail = e => {
+  const fail = (e: Error) => {
     failure = failure || e
     for (const w of waiters.splice(0)) w.reject(failure)
   }
   sock.on('error', fail)
   sock.on('close', () => fail(new Error('connection to Firefox closed')))
 
-  sock.on('data', chunk => {
+  sock.on('data', (chunk: Buffer) => {
     buf = Buffer.concat([buf, chunk])
     for (;;) {
       const colon = buf.indexOf(0x3a)  // ':'
       if (colon < 0) return
       const len = +buf.subarray(0, colon).toString()
       if (buf.length < colon + 1 + len) return  // packet not complete yet
-      const packet = JSON.parse(buf.subarray(colon + 1, colon + 1 + len).toString())
+      const packet: Packet = JSON.parse(buf.subarray(colon + 1, colon + 1 + len).toString())
       buf = buf.subarray(colon + 1 + len)
       if (DEBUG) console.error('<-', JSON.stringify(packet).slice(0, 300))
       // Hand the packet to the first waiter that wants it; unsolicited events
       // nobody waits for (tab list changes, etc.) are dropped.
       const i = waiters.findIndex(w => w.match(packet))
-      if (i >= 0) waiters.splice(i, 1)[0].resolve(packet)
+      if (i >= 0) waiters.splice(i, 1)[0]?.resolve(packet)
     }
   })
 
-  const waitFor = match => new Promise((resolve, reject) => {
+  const waitFor = (match: (p: Packet) => boolean) => new Promise<Packet>((resolve, reject) => {
     if (failure) reject(failure)
     else waiters.push({ match, resolve, reject })
   })
 
-  function send(msg) {
+  function send(msg: object) {
     const body = Buffer.from(JSON.stringify(msg))
     if (DEBUG) console.error('->', body.toString().slice(0, 300))
     sock.write(Buffer.concat([Buffer.from(body.length + ':'), body]))
   }
 
   // A reply comes from the actor we asked and has no `type`; events do.
-  async function request(to, type, extra = {}) {
-    const reply = waitFor(p => p.from === to && (!p.type || p.error))
+  async function request(to: string, type: string, extra: object = {}): Promise<Packet> {
+    const reply = waitFor(p => p.from === to && (!p.type || !!p.error))
     send({ to, type, ...extra })
     const p = await reply
     if (p.error) throw new Error(`${type}: ${p.error} ${p.message || ''}`)
@@ -113,31 +143,32 @@ function connect() {
   }
 
   // The greeting, or the connection error (no forward: run setup).
-  const ready = waitFor(p => p.from === 'root' && p.applicationType)
+  const ready = waitFor(p => p.from === 'root' && !!p.applicationType)
   return { sock, waitFor, request, ready }
 }
 
-// Strings over ~10k chars arrive as a handle; fetch the full text.
-async function fullString(c, grip) {
+// Strings over ~10k chars arrive as a handle (a grip); fetch the full text.
+// Grips are whatever the debugger sends, so they stay untyped.
+async function fullString(c: Connection, grip: any): Promise<any> {
   if (grip?.type !== 'longString') return grip
   const r = await c.request(grip.actor, 'substring', { start: 0, end: grip.length })
   return r.substring
 }
 
-async function listTabs(c) {
+export async function listTabs(c: Connection): Promise<Tab[]> {
   return (await c.request('root', 'listTabs')).tabs
 }
 
-async function pickTab(c, key) {
+export async function pickTab(c: Connection, key: string): Promise<Tab> {
   const tabs = await listTabs(c)
-  const tab = /^\d+$/.test(String(key)) ? tabs[+key] : tabs.find(t => t.url.includes(key))
+  const tab = /^\d+$/.test(key) ? tabs[+key] : tabs.find(t => t.url.includes(key))
   if (!tab) throw new Error(`no tab matches "${key}"`)
   return tab
 }
 
 // Evaluates an expression in a tab and returns it as JSON text ('undefined'
 // for undefined). Throws with the page's exception message.
-async function evaluate(c, key, expr, indent = 2) {
+export async function evaluate(c: Connection, key: string, expr: string, indent = 2): Promise<string> {
   const tab = await pickTab(c, key)
   // The tab descriptor hands out the target, which owns the console actor.
   const { frame } = await c.request(tab.actor, 'getTarget')
@@ -155,10 +186,12 @@ async function evaluate(c, key, expr, indent = 2) {
   return out?.type === 'undefined' ? 'undefined' : out
 }
 
+export type PrefAction = 'get' | 'set' | 'clear'
+
 // A Firefox preference (what about:config shows, reachable here even where
 // about:config is locked): get, set (boolean, number or string, by the
 // value's type) or clear back to the default. Returns { before, after }.
-async function pref(c, name, action = 'get', value) {
+export async function pref(c: Connection, name: string, action: PrefAction = 'get', value?: unknown): Promise<{ before: unknown; after: unknown }> {
   const actor = (await c.request('root', 'getRoot')).preferenceActor
   const read = async () => {
     for (const kind of ['Bool', 'Int', 'Char']) {
@@ -191,19 +224,19 @@ async function main() {
       const tabs = await listTabs(c)
       tabs.forEach((t, i) => console.log(`${i}  ${(t.title || '').slice(0, 40).padEnd(40)}  ${t.url}`))
     } else if (cmd === 'eval' && args.length === 2) {
-      console.log(await evaluate(c, args[0], args[1]))
+      const [tab = '', expr = ''] = args
+      console.log(await evaluate(c, tab, expr))
     } else if (cmd === 'pref' && args.length >= 1) {
-      const [name, v] = args
+      const [name = '', v] = args
       const value = v === 'true' ? true : v === 'false' ? false : /^-?\d+$/.test(v || '') ? Number(v) : v
       console.log(JSON.stringify(await pref(c, name, v === undefined ? 'get' : v === 'clear' ? 'clear' : 'set', value)))
     } else {
-      console.log('usage: ffrdp.js setup | tabs | eval <tab> <expr> | pref <name> [value|clear]')
+      console.log('usage: ffrdp.mts setup | tabs | eval <tab> <expr> | pref <name> [value|clear]')
     }
   } finally {
     c.sock.end()
   }
 }
 
-module.exports = { PORT, adb, setup, connect, listTabs, pickTab, evaluate, pref }
-
-if (require.main === module) main().catch(e => { console.error(e.message); process.exit(1) })
+// Run as a command (node tools/ffrdp.mts …), not when imported.
+if (import.meta.main) main().catch(e => { console.error(e.message); process.exit(1) })

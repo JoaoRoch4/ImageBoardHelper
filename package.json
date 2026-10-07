@@ -3,13 +3,14 @@
   "private": true,
   "description": "Development tools only: the userscript itself has no dependencies and no build",
   "scripts": {
-    "check": "node --check image-board-helper.user.js && node tools/check-i18n.js && eslint && tsc -p .",
+    "check": "node --check image-board-helper.user.js && node tools/check-i18n.js && eslint && tsc -p . && tsc -p tools",
     "lint": "eslint",
-    "typecheck": "tsc -p .",
+    "typecheck": "tsc -p . && tsc -p tools",
     "smoke": "node tools/smoke.js"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@types/node": "^24.19.1",
     "eslint": "^10.12.0",
     "globals": "^17.13.0",
     "playwright": "^1.63.0",
