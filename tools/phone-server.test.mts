@@ -21,7 +21,7 @@ const callsLog = path.join(dir, 'calls.log')
 const fakeRish = path.join(dir, 'rish')
 fs.mkdirSync(stubs)
 fs.mkdirSync(termuxBin)
-fs.writeFileSync(fakeRish, `#!/bin/sh\nPATH="${stubs}:$PATH" exec sh\n`, { mode: 0o755 })
+fs.writeFileSync(fakeRish, `#!/bin/sh\nPATH="${stubs}:$PATH" exec sh "$@"\n`, { mode: 0o755 })   // no arguments: the session; -c: one command
 
 // A stub that records its name and arguments (one line), then runs `extra`.
 export function stub(folder: string, name: string, extra = '') {
@@ -203,7 +203,8 @@ test('device', async () => {
 
 // ─── open, apps, screenshot, record, input (through the fake rish) ───
 
-for (const name of ['am', 'monkey', 'cmd', 'input', 'screenrecord']) stub(stubs, name)
+for (const name of ['am', 'monkey', 'cmd', 'screenrecord']) stub(stubs, name)
+stub(stubs, 'input', 'case "$*" in *KEYCODE_FAIL*) exit 1;; esac')   // a phone command that fails
 stub(stubs, 'pm', 'echo package:org.videolan.vlc')
 stub(stubs, 'screencap', `for last; do :; done; printf '\\211PNG\\r\\n\\032\\n' > "$last"`)   // a PNG signature into its last argument
 
@@ -251,16 +252,16 @@ test('Shizuku down: 503', async () => {
 
 // ─── notify, clipboard, toast (through the fake Termux:API) ───
 
-stub(termuxBin, 'termux-notification')
+stub(termuxBin, 'termux-notification', 'while [ $# -gt 0 ]; do [ "$1" = --action ] && act="$2"; shift; done; [ -n "$act" ] && sh -c "$act"')   // runs its --action, as a tap would
 stub(termuxBin, 'termux-toast')
 stub(termuxBin, 'termux-clipboard-set', `cat >> "${callsLog}"; echo >> "${callsLog}"`)   // its stdin, on the next line
 stub(termuxBin, 'termux-clipboard-get', 'printf "copied text"')
 
 test('notify with a link', async () => {
   await req('notify', { title: 'Deploy', text: 'v1.9 ok', url: 'https://rule34.xxx/', id: 'deploy' })
-  const call = lastCall() ?? ''
-  assert.match(call, /^termux-notification --title Deploy --content v1\.9 ok --id deploy --action /)
-  assert.match(call, /am start -a android\.intent\.action\.VIEW -d 'https:\/\/rule34\.xxx\/'/)
+  const [note, tap] = calls().slice(-2)
+  assert.match(note ?? '', /^termux-notification --title Deploy --content v1\.9 ok --id deploy --action /)
+  assert.equal(tap, 'am start -a android.intent.action.VIEW -d https://rule34.xxx/')   // what the tap ran
 })
 
 test('notify refuses a link with quotes', async () => assert.equal((await req('notify', { title: 't', text: 'x', url: "https://x/'" })).status, 400))
@@ -287,7 +288,7 @@ test('Termux:API missing: 503', async () => {
 
 test('install-boot writes the Termux:Boot script', async () => {
   const home = fs.mkdtempSync(path.join(dir, 'home-'))
-  const r = await cli(['install-boot'], { HOME: home })
+  const r = await cli(['install-boot'], { IBH_TERMUX_HOME: home })
   assert.equal(r.code, 0)
   const file = path.join(home, '.termux', 'boot', 'ibh-server.sh')
   assert.equal(fs.statSync(file).mode & 0o777, 0o755)
@@ -305,4 +306,38 @@ test('the default folder is in Termux\'s home, the same from the container and n
   process.env.IBH_SERVER_DIR = saved
   const termuxHome = '/data/data/com.termux/files/home'
   assert.equal(serverDir(), fs.existsSync(termuxHome) ? `${termuxHome}/.config/ibh-server` : path.join(os.homedir(), '.config', 'ibh-server'))
+})
+
+// ─── final review fixes ───
+
+test('a notify link reaches the tap literally: no $ or backtick expansion', async () => {
+  const url = 'https://x/?a=$HOME&b=`id`'
+  await req('notify', { title: 't', text: 'x', url })
+  assert.equal(lastCall(), `am start -a android.intent.action.VIEW -d ${url}`)
+})
+
+test('a phone command that fails is not ok', async () => assert.equal((await req('input', { action: 'key', key: 'FAIL' })).status, 500))
+
+test('install-boot defaults to Termux\'s home, also from the container', async () => {
+  const saved = process.env.IBH_TERMUX_HOME
+  delete process.env.IBH_TERMUX_HOME
+  const fresh = './phone-server.mts?boot-file'
+  const { bootFile } = await import(fresh) as typeof import('./phone-server.mts')
+  if (saved !== undefined) process.env.IBH_TERMUX_HOME = saved
+  const termuxHome = '/data/data/com.termux/files/home'
+  assert.equal(bootFile(), path.join(fs.existsSync(termuxHome) ? termuxHome : os.homedir(), '.termux', 'boot', 'ibh-server.sh'))
+})
+
+test('a Termux:API command that exits early or hangs neither kills nor stalls the server', async () => {
+  const broken = path.join(dir, 'termux-broken')
+  fs.mkdirSync(broken)
+  fs.writeFileSync(path.join(broken, 'termux-clipboard-set'), '#!/bin/sh\nexit 0\n', { mode: 0o755 })   // never reads its stdin
+  fs.writeFileSync(path.join(broken, 'termux-toast'), '#!/bin/sh\nsleep 60\n', { mode: 0o755 })         // the app missing: it hangs
+  const p4 = await freePort()
+  await startServer({ IBH_SERVER_PORT: String(p4), IBH_TERMUX_BIN: `${broken}/`, IBH_TERMUX_TIMEOUT_MS: '1000' })
+  await req('clipboard', { set: 'x'.repeat(200000) }, TOKEN, undefined, p4)
+  assert.equal((await req('status', undefined, TOKEN, undefined, p4)).status, 200)   // still alive
+  const t0 = Date.now()
+  assert.equal((await req('toast', { text: 'oi' }, TOKEN, undefined, p4)).status, 503)
+  assert.ok(Date.now() - t0 < 5000)
 })

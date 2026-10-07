@@ -34,6 +34,7 @@ const DIR = process.env.IBH_SERVER_DIR || path.join(fs.existsSync(TERMUX_HOME) ?
 const PORT = Number(process.env.IBH_SERVER_PORT || 8730)
 const TERMUX_BIN = process.env.IBH_TERMUX_BIN || ''   // a folder ending in /, or empty: termux-* from PATH
 const MEDIA = process.env.IBH_SERVER_MEDIA || '/sdcard/Download'   // screenshots and recordings
+const TERMUX_TIMEOUT = Number(process.env.IBH_TERMUX_TIMEOUT_MS || 20000)   // termux-* hang when the Termux:API app is missing
 const MAX_BODY = 30 * 1024 * 1024                     // a 20 MB file as base64, with room to spare
 const LOG_MAX = 1024 * 1024
 const started = Date.now()
@@ -75,12 +76,24 @@ export function termux(name: string, args: string[], input?: string): Promise<st
     const child = spawn(termuxPath(name), args)
     let out = ''
     let err = ''
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL')
+      reject(new HttpError(503, `${name} did not answer in ${TERMUX_TIMEOUT / 1000} s: is the Termux:API app installed?`))
+    }, TERMUX_TIMEOUT)
     child.stdout.on('data', d => { out += d })
     child.stderr.on('data', d => { err += d })
-    child.on('error', (e: NodeJS.ErrnoException) => reject(e.code === 'ENOENT'
-      ? new HttpError(503, `Termux:API is not installed (${name} is missing): pkg install termux-api, and the Termux:API app`)
-      : e))
-    child.on('close', code => (code === 0 ? resolve(out) : reject(new HttpError(500, `${name} failed (${code}): ${err.trim()}`))))
+    child.on('error', (e: NodeJS.ErrnoException) => {
+      clearTimeout(timer)
+      reject(e.code === 'ENOENT' ? new HttpError(503, `Termux:API is not installed (${name} is missing): pkg install termux-api, and the Termux:API app`) : e)
+    })
+    child.on('close', code => {
+      clearTimeout(timer)
+      if (code === 0) resolve(out)
+      else reject(new HttpError(500, `${name} failed (${code}): ${err.trim()}`))
+    })
+    // A command that exits without reading its stdin breaks the pipe (EPIPE):
+    // unhandled, that error would take the whole server down.
+    child.stdin.on('error', () => { /* its exit code tells what happened */ })
     child.stdin.end(input ?? '')
   })
 }
@@ -144,6 +157,13 @@ async function shell(cmd: string, timeout?: number) {
   }
 }
 
+// The same, failing with the command's output when it exits nonzero.
+async function shellOk(cmd: string, timeout?: number) {
+  const r = await shell(cmd, timeout)
+  if (r.code !== 0) throw new HttpError(500, r.out || `exit ${r.code}`)
+  return r
+}
+
 // A screen coordinate or a duration from the body, or 400.
 function coord(body: Record<string, unknown>, key: string, fallback?: number): number {
   const v = body[key] ?? fallback
@@ -171,8 +191,7 @@ export const ROUTES: Record<string, Handler> = {
     if (!url && !app) throw new HttpError(400, 'url or app is required')
     if (url && !LINK.test(url)) throw new HttpError(400, 'url must be a link without spaces or quotes')
     if (app && !PACKAGE.test(app)) throw new HttpError(400, 'app must be a package name, like org.mozilla.fenix')
-    const r = await shell(url ? `am start -a android.intent.action.VIEW -d '${url}'${app ? ` ${app}` : ''}` : `monkey -p ${app} -c android.intent.category.LAUNCHER 1`)
-    if (r.code !== 0) throw new HttpError(500, r.out || `exit ${r.code}`)
+    const r = await shellOk(url ? `am start -a android.intent.action.VIEW -d '${url}'${app ? ` ${app}` : ''}` : `monkey -p ${app} -c android.intent.category.LAUNCHER 1`)
     return { output: r.out }
   },
 
@@ -183,25 +202,25 @@ export const ROUTES: Record<string, Handler> = {
       const mime = optText(body, 'mime') ?? 'video/*'
       if (!LINK.test(url)) throw new HttpError(400, 'url must be a link without spaces or quotes')
       if (!/^[\w*.+/-]+$/.test(mime)) throw new HttpError(400, 'bad MIME type')
-      const r = await shell(`cmd package query-activities --brief -a android.intent.action.VIEW -c android.intent.category.BROWSABLE -d '${url}' -t '${mime}'`)
+      const r = await shellOk(`cmd package query-activities --brief -a android.intent.action.VIEW -c android.intent.category.BROWSABLE -d '${url}' -t '${mime}'`)
       return { activities: r.out.split('\n').map(l => l.trim()).filter(l => /^[\w.]+\/[\w.$]+$/.test(l)) }
     }
     const filter = optText(body, 'filter') ?? ''
     if (!/^[\w.]*$/.test(filter)) throw new HttpError(400, 'filter is part of a package name')
-    const r = await shell(`pm list packages ${filter}`)
+    const r = await shellOk(`pm list packages ${filter}`)
     return { packages: r.out.split('\n').map(l => l.replace(/^package:/, '').trim()).filter(Boolean) }
   },
 
   screenshot: async body => {
     const file = mediaFile('png')
-    await shell(`screencap -p ${shq(file)}`)
+    await shellOk(`screencap -p ${shq(file)}`)
     return { path: file, ...(body.inline ? { base64: fs.readFileSync(file).toString('base64') } : {}) }
   },
 
   record: async body => {
     const seconds = Math.max(1, Math.min(15, Math.round(Number(body.seconds) || 5)))
     const file = mediaFile('mp4')
-    await shell(`screenrecord --time-limit ${seconds} ${shq(file)}`, (seconds + 20) * 1000)
+    await shellOk(`screenrecord --time-limit ${seconds} ${shq(file)}`, (seconds + 20) * 1000)
     return { path: file, seconds }
   },
 
@@ -218,7 +237,7 @@ export const ROUTES: Record<string, Handler> = {
       cmd = `input keyevent ${key.startsWith('KEYCODE_') ? key : `KEYCODE_${key}`}`
     } else if (action === 'text') cmd = `input text ${shq(text(body, 'text').replace(/ /g, '%s'))}`
     else throw new HttpError(400, 'action: tap, long_press, swipe, key or text')
-    await shell(cmd, 30000)
+    await shellOk(cmd, 30000)
     return { done: cmd }
   },
 
@@ -228,7 +247,8 @@ export const ROUTES: Record<string, Handler> = {
     const url = optText(body, 'url')
     if (url && !LINK.test(url)) throw new HttpError(400, 'url must be a link without spaces or quotes')
     const args = ['--title', text(body, 'title'), '--content', text(body, 'text'), '--id', optText(body, 'id') ?? 'ibh']
-    if (url) args.push('--action', `${findRish()} -c "am start -a android.intent.action.VIEW -d '${url}'"`)
+    // Quoted at both layers (Termux's shell, then rish's): a $ or backtick in the link stays literal.
+    if (url) args.push('--action', `${shq(findRish())} -c ${shq(`am start -a android.intent.action.VIEW -d ${shq(url)}`)}`)
     await termux('termux-notification', args)
     return {}
   },
@@ -360,10 +380,14 @@ function serve() {
 // The Termux:Boot script: Termux's wake lock, the tmux session `ibh`, and
 // the server in a window of it. Termux:Boot runs it natively, so it names
 // this file as seen from outside proot.
+// The boot script's place: Termux's home (IBH_TERMUX_HOME for tests), also
+// when this runs in the container, where os.homedir() is /root.
+export const bootFile = () => path.join(process.env.IBH_TERMUX_HOME || (fs.existsSync(TERMUX_HOME) ? TERMUX_HOME : os.homedir()), '.termux', 'boot', 'ibh-server.sh')
+
 function installBoot() {
   const here = path.join(import.meta.dirname, 'phone-server.mts')
   const native = here.startsWith(ROOTFS) ? here : `${ROOTFS}${here}`
-  const file = path.join(os.homedir(), '.termux', 'boot', 'ibh-server.sh')
+  const file = bootFile()
   fs.mkdirSync(path.dirname(file), { recursive: true })
   fs.writeFileSync(file, [
     '#!/data/data/com.termux/files/usr/bin/sh',
