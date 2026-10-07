@@ -1359,7 +1359,7 @@
     if (ev.pointerType === 'mouse' && ev.button !== 0) return
     const card = ev.target.closest && ev.target.closest('[data-ibh-video]')
     if (!card || card.dataset.ibhKind === 'gif') return
-    scrub = { card, id: ev.pointerId, x0: ev.clientX, y0: ev.clientY, on: false }
+    scrub = { card, id: ev.pointerId, x0: ev.clientX, y0: ev.clientY, on: false, holdTimer: 0 }
     // Hold mode: a still finger for HOLD_MS starts the slideshow.
     if (CFG.scrubMode === 'hold') scrub.holdTimer = setTimeout(startSlideshow, HOLD_MS)
   }
@@ -1951,6 +1951,7 @@
           random_get: (buf, len) => { crypto.getRandomValues(new Uint8Array(mem.buffer, buf, len)); return 0 },
           proc_exit: code => { throw new Error(`decoder exited (${code})`) },
         }
+        /** @type {WebAssembly.Imports} */
         const imports = {}
         for (const imp of WebAssembly.Module.imports(mod)) {
           (imports[imp.module] = imports[imp.module] || {})[imp.name] = calls[imp.name] || (() => 0)
@@ -3720,7 +3721,7 @@
     const hit = rawTarget(ev.target)
     if (!hit) return
     const touch = ev.touches[0]
-    rawHold = { ...hit, x: touch.clientX, y: touch.clientY, scrollY: window.scrollY, fired: false }
+    rawHold = { ...hit, x: touch.clientX, y: touch.clientY, scrollY: window.scrollY, fired: false, timer: 0 }
     rawHold.timer = setTimeout(() => {
       const h = rawHold
       if (!h || Math.abs(window.scrollY - h.scrollY) > 12) return   // the page scrolled: not a hold
@@ -4095,12 +4096,12 @@
     ;(document.getElementById('ibh-favmore') || document.querySelector('.image-list')).after(sentinel)
     sentinel.addEventListener('click', () => { if (pager && !pager.done) favPagerNext() })   // retry after a failure
     const next = pageTarget(1)
-    pager = { next, busy: false, done: !next, page: 1, sentinel }
-    if (!next) sentinel.textContent = t('pagerEnd')
-    pager.io = new IntersectionObserver(entries => {
+    const io = new IntersectionObserver(entries => {
       if (entries.some(e => e.isIntersecting)) favPagerNext()
     }, { rootMargin: '1500px 0px' })
-    pager.io.observe(sentinel)
+    pager = { next, busy: false, done: !next, page: 1, sentinel, io }
+    if (!next) sentinel.textContent = t('pagerEnd')
+    io.observe(sentinel)
     dbg(`autopager: watching the bottom of the page${next ? '' : ' (last page)'}`)
   }
 
@@ -4606,7 +4607,7 @@
       cancel()
       if (img.hidden || ev.touches.length !== 1 || !modal.sheet.hidden) return
       const touch = ev.touches[0]
-      hold = { x: touch.clientX, y: touch.clientY, scale: zoom.scale }
+      hold = { x: touch.clientX, y: touch.clientY, scale: zoom.scale, timer: 0 }
       hold.timer = setTimeout(() => {
         if (!hold || zoom.scale !== hold.scale) { hold = null; return }   // it became a pinch
         hold = null
@@ -4750,7 +4751,7 @@
     layer.addEventListener('pointerdown', ev => {
       if (press) return
       const fx = viewerX(ev)
-      press = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, t: Date.now(), fx, rate: video.playbackRate || 1 }
+      press = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, t: Date.now(), fx, rate: video.playbackRate || 1, timer: 0 }
       dbg(`modal: video press at ${Math.round(fx * 100)}%`)
       press.timer = setTimeout(() => {
         if (!press) return
@@ -4795,7 +4796,7 @@
         return
       }
       // A single tap plays or pauses, once it is clear no second tap follows.
-      tap = { t: Date.now(), side }
+      tap = { t: Date.now(), side, timer: 0 }
       tap.timer = setTimeout(() => {
         tap = null
         // Controls hidden: the tap only brings them back.
@@ -6254,12 +6255,12 @@
     // each column. Next: the nearest post starting below the top edge.
     // Previous: the nearest starting above it (inside a long post that is its
     // own start, at a post's start it is the one before).
-    const tops = posts.map(p => p.getBoundingClientRect().top)
     let target = null
     let best = dir > 0 ? Infinity : -Infinity
-    tops.forEach((top, i) => {
-      if (dir > 0 ? top > 8 && top < best : top < -8 && top > best) { best = top; target = posts[i] }
-    })
+    for (const post of posts) {
+      const top = post.getBoundingClientRect().top
+      if (dir > 0 ? top > 8 && top < best : top < -8 && top > best) { best = top; target = post }
+    }
     if (!target) return
     // Instant, not smooth: smooth-scrolling past a 7000px comic takes ages.
     window.scrollTo({ top: target.getBoundingClientRect().top + window.scrollY, behavior: 'auto' })

@@ -43,3 +43,9 @@ interface EventTarget {
 interface Window {
   __ibh: unknown
 }
+
+// Screen orientation lock: Firefox for Android has it (in fullscreen), but
+// TypeScript 5's DOM types dropped it, and the LSP runs TypeScript 5.
+interface ScreenOrientation {
+  lock(orientation: string): Promise<void>
+}
