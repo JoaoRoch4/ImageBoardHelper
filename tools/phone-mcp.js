@@ -78,19 +78,70 @@ function withTimeout(promise, ms, what) {
 
 // ─── the phone: Shizuku (rish) first, the adb connection as a fallback ───
 
-// rish's output lines: warnings can come before or after the answer.
-const rishLines = cmd => run(RISH, ['-c', cmd]).split('\n').map(l => l.trim())
+// rish starts a Java VM (app_process) for every call: seconds each on this
+// phone, and the first call after ColorOS froze Shizuku's idle process can
+// come back empty. So one rish stays open for the whole server, and every
+// command goes through its stdin, followed by a random marker that carries
+// the exit code: the VM starts once (~4 s), then commands take ~50 ms.
+// rish mixes up its two channels (a plain echo can arrive on stderr), but
+// keeps the order: both feed one buffer, and the marker always comes last.
+let session = null
 
-// When rish last answered: no need to ask again for a while.
-let rishOkAt = 0
-
-// Asked twice before giving up: ColorOS freezes Shizuku's idle process, and
-// the first call after that can stumble.
-function shizukuUp() {
-  for (let i = 0; i < 2; i++) {
-    try { if (rishLines('echo ok').includes('ok')) { rishOkAt = Date.now(); return true } } catch (e) { /* once more */ }
+function rishSession() {
+  if (session && !session.dead) return session
+  const child = spawn(RISH, [], { stdio: ['pipe', 'pipe', 'pipe'] })
+  const s = { child, buf: '', queue: [], busy: null, dead: false }
+  for (const stream of [child.stdout, child.stderr]) {
+    stream.setEncoding('utf8')
+    stream.on('data', d => { s.buf += d; pump(s) })
   }
-  return false
+  child.stdin.on('error', () => { /* the session ended: exit below */ })
+  const end = () => {
+    if (s.dead) return
+    s.dead = true
+    const err = new Error('the rish session ended (Shizuku down?)')
+    if (s.busy) { clearTimeout(s.busy.timer); s.busy.reject(err) }
+    for (const q of s.queue.splice(0)) q.reject(err)
+  }
+  child.on('exit', end)
+  child.on('error', end)
+  session = s
+  return s
+}
+
+// The command in flight finishes at its marker; then the next one goes in.
+function pump(s) {
+  if (s.busy) {
+    const at = s.buf.indexOf(s.busy.marker)
+    const eol = at < 0 ? -1 : s.buf.indexOf('\n', at)
+    if (eol < 0) return
+    const code = Number(s.buf.slice(at + s.busy.marker.length, eol).trim())
+    const out = s.buf.slice(0, at)
+    s.buf = s.buf.slice(eol + 1)
+    clearTimeout(s.busy.timer)
+    s.busy.resolve({ out: out.trim(), code })
+    s.busy = null
+  }
+  if (!s.busy && s.queue.length && !s.dead) {
+    s.busy = s.queue.shift()
+    s.busy.timer = setTimeout(() => s.child.kill(), s.busy.timeout)   // a stuck command takes the session with it
+    // stdin from /dev/null: a command reading it would eat the ones after.
+    s.child.stdin.write(`{ { ${s.busy.cmd}\n} </dev/null; echo "${s.busy.marker} $?"; } 2>&1\n`)
+  }
+}
+
+function rish(cmd, timeout = 20000) {
+  return new Promise((resolve, reject) => {
+    const s = rishSession()
+    if (s.dead) { reject(new Error('rish would not start')); return }
+    s.queue.push({ cmd, timeout, resolve, reject, marker: `__ibh_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 8)}__` })
+    pump(s)
+  })
+}
+
+// The first command also starts the session, so it gets time for the VM.
+async function shizukuUp() {
+  try { return (await rish('echo ok', 30000)).out.split('\n').includes('ok') } catch (e) { return false }
 }
 
 function adbSerial() {
@@ -102,32 +153,23 @@ function adbSerial() {
   }
 }
 
-// A shell command on the phone, as uid shell either way. A command that
-// should print something and printed nothing runs once more: a Shizuku
-// just woken from its freeze can answer empty.
-function phoneShell(cmd, timeout = 20000, { expectOutput = true } = {}) {
-  if (Date.now() - rishOkAt < 30000 || shizukuUp()) {
-    try {
-      let out = run(RISH, ['-c', cmd], { timeout }).trim()
-      if (!out && expectOutput) out = run(RISH, ['-c', cmd], { timeout }).trim()
-      rishOkAt = Date.now()
-      return out
-    } catch (e) {
-      rishOkAt = 0
-      if (!adbSerial()) throw e
-    }
+// A shell command on the phone, as uid shell either way: through the rish
+// session, or adb when Shizuku is down.
+async function phoneShell(cmd, timeout = 20000) {
+  try {
+    return (await rish(cmd, timeout)).out
+  } catch (e) {
+    const serial = adbSerial()
+    if (!serial) throw new Error(`Shizuku is not answering (${e.message}) and adb has no device: ask the user to start Shizuku or turn on Wireless debugging`, { cause: e })
+    return run('adb', ['-s', serial, 'shell', cmd], { timeout }).trim()
   }
-  const serial = adbSerial()
-  if (!serial) throw new Error('Shizuku is not running and adb has no device: ask the user to start Shizuku or turn on Wireless debugging')
-  return run('adb', ['-s', serial, 'shell', cmd], { timeout }).trim()
 }
 
-// true on, false off, null when it cannot be read (Shizuku down or
-// answering something else: then adb gets its try). Read only: turning it
-// on with `settings put` restarts adbd and kills Shizuku.
-function wirelessDebugging() {
+// true on, false off, null when it cannot be read (Shizuku down). Read
+// only: turning it on with `settings put` restarts adbd and kills Shizuku.
+async function wirelessDebugging() {
   try {
-    const v = rishLines('settings get global adb_wifi_enabled').find(l => l === '0' || l === '1')
+    const v = (await rish('settings get global adb_wifi_enabled')).out.split('\n').map(l => l.trim()).find(l => l === '0' || l === '1')
     return v === '1' ? true : v === '0' ? false : null
   } catch (e) {
     return null
@@ -150,7 +192,7 @@ async function firefoxTabs() {
 
 async function connectPhone(force) {
   if (!force && await firefoxTabs()) return 'already connected'
-  if (wirelessDebugging() === false) {
+  if (await wirelessDebugging() === false) {
     throw new Error('Wireless debugging is off. Ask the user to turn it on (Developer options → Wireless debugging); never with `settings put`, which kills Shizuku.')
   }
   const { serial, socket } = ff.setup()
@@ -430,9 +472,9 @@ async function h264() {
 
 async function status() {
   const rows = []
-  const shizuku = shizukuUp()
-  rows.push(`Shizuku (rish): ${shizuku ? 'running' : 'not running (the user starts it in the Shizuku app; adb still works if connected)'}`)
-  const wifi = shizuku ? wirelessDebugging() : null
+  const shizuku = await shizukuUp()
+  rows.push(`Shizuku (rish): ${shizuku ? 'running (one session kept open)' : 'not running (the user starts it in the Shizuku app; adb still works if connected)'}`)
+  const wifi = shizuku ? await wirelessDebugging() : null
   rows.push(`Wireless debugging: ${wifi === null ? 'unknown (needs Shizuku)' : wifi ? 'on' : 'off (ask the user to turn it on; never with settings put)'}`)
   const serial = adbSerial()
   rows.push(`adb: ${serial ? `connected (${serial})` : 'no device'}`)
@@ -488,10 +530,10 @@ async function reloadTabs({ match = 'rule34', only_hidden = true, except_version
   return report.join('\n')
 }
 
-function openUrl({ url, package: pkg = BROWSER }) {
+async function openUrl({ url, package: pkg = BROWSER }) {
   if (!/^https?:\/\/[^\s'"\\]+$/.test(url || '')) throw new Error('url must be http(s) without spaces or quotes')
   if (!/^[\w.]+$/.test(pkg)) throw new Error('bad package name')
-  return phoneShell(`am start -a android.intent.action.VIEW -d '${url}' ${pkg}`)
+  return phoneShell(`am start -a android.intent.action.VIEW -d '${url}' ${pkg}`)   // a promise: callers await it
 }
 
 async function firefoxPref({ name, action = 'get', value }) {
@@ -518,8 +560,8 @@ function imageResult(file, label) {
   return [{ type: 'text', text: `${label}: ${file} (${when})` }, { type: 'image', data: data.toString('base64'), mimeType }]
 }
 
-function screenshot() {
-  phoneShell(`screencap -p ${SHOT}`, 20000, { expectOutput: false })
+async function screenshot() {
+  await phoneShell(`screencap -p ${SHOT}`)
   return imageResult(SHOT, 'screen now')
 }
 
@@ -532,10 +574,10 @@ function latestScreenshot() {
 
 // A few seconds of the screen, as one contact sheet: for what moves
 // (a slideshow, a swipe, an animation), where a screenshot shows one instant.
-function screenRecord({ seconds = 5, fps = 2 } = {}) {
+async function screenRecord({ seconds = 5, fps = 2 } = {}) {
   const s = Math.max(1, Math.min(15, Math.round(Number(seconds) || 5)))
   const rate = Math.max(1, Math.min(5, Number(fps) || 2))
-  phoneShell(`screenrecord --time-limit ${s} --bit-rate 6000000 ${RECORDING}`, (s + 20) * 1000, { expectOutput: false })
+  await phoneShell(`screenrecord --time-limit ${s} --bit-rate 6000000 ${RECORDING}`, (s + 20) * 1000)
   fs.mkdirSync(WORK, { recursive: true })
   const sheet = path.join(WORK, 'recording.jpg')
   const n = s * rate
@@ -546,7 +588,7 @@ function screenRecord({ seconds = 5, fps = 2 } = {}) {
 }
 
 // Touches and keys on the phone, through Android's `input`.
-function inputTool({ action, x, y, x2, y2, ms, key, text }) {
+async function inputTool({ action, x, y, x2, y2, ms, key, text }) {
   const int = (v, what) => {
     const n = Math.round(Number(v))
     if (!Number.isFinite(n) || n < 0 || n > 10000) throw new Error(`${what} must be a screen coordinate or a duration`)
@@ -563,16 +605,16 @@ function inputTool({ action, x, y, x2, y2, ms, key, text }) {
     if (typeof text !== 'string' || !text) throw new Error('text is required')
     cmd = `input text ${shq(text.replace(/ /g, '%s'))}`
   } else throw new Error('action: tap, long_press, swipe, key or text')
-  phoneShell(cmd, 30000, { expectOutput: false })
-  return `done: ${cmd} (screen size: ${phoneShell('wm size').replace(/^Physical size: /, '')})`
+  await phoneShell(cmd, 30000)
+  return `done: ${cmd} (screen size: ${(await phoneShell('wm size')).replace(/^Physical size: /, '')})`
 }
 
-function logcat({ filter = '', lines = 80, since_s = 0 } = {}) {
+async function logcat({ filter = '', lines = 80, since_s = 0 } = {}) {
   const re = filter ? new RegExp(filter, 'i') : null
   const now = new Date()
   const from = since_s > 0 ? now.getTime() - since_s * 1000 : 0
   const year = now.getFullYear()
-  const out = phoneShell('logcat -d -t 20000', 60000).split('\n').filter(l => {
+  const out = (await phoneShell('logcat -d -t 20000', 60000)).split('\n').filter(l => {
     if (re && !re.test(l)) return false
     if (!from) return true
     const m = /^(\d\d)-(\d\d) (\d\d):(\d\d):(\d\d)\.(\d+)/.exec(l)
@@ -582,34 +624,36 @@ function logcat({ filter = '', lines = 80, since_s = 0 } = {}) {
 }
 
 // Which apps take a link (what an intent would open), or which are installed.
-function apps({ url, mime = 'video/*', filter }) {
+async function apps({ url, mime = 'video/*', filter }) {
   if (url) {
     if (!/^[a-z]+:\/\/[^\s'"]+$/i.test(url)) throw new Error('url must be a link without spaces or quotes')
     if (!/^[\w*.+/-]+$/.test(mime)) throw new Error('bad MIME type')
-    const out = phoneShell(`cmd package query-activities --brief -a android.intent.action.VIEW -c android.intent.category.BROWSABLE -d '${url}' -t '${mime}'`)
+    const out = await phoneShell(`cmd package query-activities --brief -a android.intent.action.VIEW -c android.intent.category.BROWSABLE -d '${url}' -t '${mime}'`)
     const found = out.split('\n').map(l => l.trim()).filter(l => /^[\w.]+\/[\w.$]+$/.test(l))
     return found.length ? `${found.length} app(s) open ${mime} links like this:\n${found.join('\n')}` : out
   }
-  const list = phoneShell(`pm list packages ${filter ? shq(filter) : ''}`).split('\n').map(l => l.replace(/^package:/, '').trim()).filter(Boolean)
-  return list.slice(0, 30).map(p => {
+  const list = (await phoneShell(`pm list packages ${filter ? shq(filter) : ''}`)).split('\n').map(l => l.replace(/^package:/, '').trim()).filter(Boolean)
+  const rows = []
+  for (const p of list.slice(0, 30)) {
     let version = ''
-    try { version = (phoneShell(`dumpsys package ${p} | grep -m1 versionName`).split('=')[1] || '').trim() } catch (e) { /* none */ }
-    return `${p}${version ? `  ${version}` : ''}`
-  }).join('\n') + (list.length > 30 ? `\n… and ${list.length - 30} more` : '')
+    try { version = ((await phoneShell(`dumpsys package ${p} 2>/dev/null | grep -m1 versionName`)).split('=')[1] || '').trim() } catch (e) { /* none */ }
+    rows.push(`${p}${version ? `  ${version}` : ''}`)
+  }
+  return rows.join('\n') + (list.length > 30 ? `\n… and ${list.length - 30} more` : '')
 }
 
-function device() {
+async function device() {
   const rows = []
-  const battery = phoneShell('dumpsys battery')
+  const battery = await phoneShell('dumpsys battery')
   const get = k => ((battery.match(new RegExp(`^\\s*${k}: (.+)$`, 'm')) || [])[1] || '').trim()
   rows.push(`battery: ${get('level')}%, ${Number(get('temperature')) / 10} °C, ${get('status') === '2' ? 'charging' : 'not charging'}${get('AC powered') === 'true' ? ' (AC)' : get('USB powered') === 'true' ? ' (USB)' : ''}`)
-  try { rows.push(`thermal: ${phoneShell('dumpsys thermalservice | grep -m1 -i "thermal status"').trim()}`) } catch (e) { /* not reported */ }
+  try { rows.push(`thermal: ${(await phoneShell('dumpsys thermalservice 2>/dev/null | grep -m1 -i "thermal status"')).trim()}`) } catch (e) { /* not reported */ }
   const mem = fs.readFileSync('/proc/meminfo', 'utf8')
   const mb = k => Math.round(Number((mem.match(new RegExp(`^${k}:\\s+(\\d+)`, 'm')) || [])[1] || 0) / 1024)
   rows.push(`memory: ${mb('MemAvailable')} MB free of ${mb('MemTotal')} MB`)
   try {
     // The per-process list only (the sections after it repeat the same processes).
-    const all = phoneShell('dumpsys meminfo', 60000)
+    const all = await phoneShell('dumpsys meminfo', 60000)
     const at = all.search(/Total (PSS|RSS) by process:/)
     const section = at < 0 ? '' : all.slice(at).split(/\n\s*\n/)[0]
     const procs = section.split('\n').filter(l => l.includes(BROWSER))
@@ -772,7 +816,8 @@ async function reelPreview({ post, url, scenes, width = 360 } = {}) {
 }
 
 // Builds wasm/h264dec.wasm: natively in Termux when its tmux session is up
-// (proot makes FFmpeg's configure crawl: ~15 min against ~2), else here.
+// (the first build took 12 min there, Emscripten's one-time cache included,
+// against ~25 in proot; the .wasm came out byte-identical), else here.
 // `job` asks after a build; a native one is copied into wasm/ once done.
 async function wasmBuild({ native = true, job } = {}) {
   const stage = `${TERMUX}/tmp/ibh-wasm`
@@ -870,7 +915,7 @@ async function deploy({ confirm = false, dry_run = false, wait_s = 60, match = '
   try { steps.push(`logs saved before the update:\n${await logSnapshot({ match })}`) } catch (e) { steps.push(`warning: logs not saved (${firstLine(e)})`) }
   fs.writeFileSync(`/sdcard/Download/${SCRIPT}`, code)
   steps.push(`copied v${version} to /sdcard/Download/${SCRIPT}`)
-  openUrl({ url })
+  await openUrl({ url })
   steps.push('opened the raw link in Firefox Beta')
 
   // Violentmonkey shows its confirm page on every install and closes it by
@@ -968,7 +1013,7 @@ const TOOLS = [
     description: 'A post\'s video, from its MP4 index alone (a few Range reads, as the slideshow does): codec, size, frames and fps, bitrate, where the index sits, keyframe count and spacing, whether it fits the hardware decoder, and what the hold slideshow will do with it (reel, play or seek).' },
   { name: 'reel_preview', run: reelPreview, inputSchema: obj({ ...VIDEO, scenes: num('scenes (default: from the panel\'s jump)'), width: num('picture width to decode down to (default 360)') }),
     description: 'Decodes the keyframes a hold would show, with the userscript\'s own WebAssembly decoder (in Node here), and returns them as one contact sheet, with each keyframe\'s size and decode time.' },
-  { name: 'wasm_build', run: wasmBuild, inputSchema: obj({ native: bool('in native Termux when its tmux session is up (default true; much faster than proot)'), job: str('a build started before: its state, and for a native one, the result copied into wasm/') }),
+  { name: 'wasm_build', run: wasmBuild, inputSchema: obj({ native: bool('in native Termux when its tmux session is up (default true; about twice as fast as proot)'), job: str('a build started before: its state, and for a native one, the result copied into wasm/') }),
     description: 'Builds wasm/h264dec.wasm (FFmpeg\'s H.264 decoder) with wasm/build.sh, in the background: natively in Termux when possible. Then commit the .wasm and point the @resource link at that commit.' },
   { name: 'check', run: check, inputSchema: obj(),
     description: 'npm run check in the repo: syntax, I18N parity, ESLint and the TypeScript check. deploy runs it first.' },
@@ -976,7 +1021,7 @@ const TOOLS = [
     description: 'The Playwright smoke test (headless Firefox, the script injected): boot, panel, search bar, eye button, feed, modal, autopager. About a minute, and heavy on the phone\'s memory (Firefox\'s tabs may unload).' },
   { name: 'termux_run', run: termuxRun,
     inputSchema: obj({ command: str('shell command (bash, Termux\'s environment)'), cwd: str('folder (default Termux\'s home)'), name: str('window name'), keep: bool('leave a shell open in the window after it ends (default true)'), wait_s: num('wait up to N seconds for it to end and return its output') }, ['command']),
-    description: 'Runs a command natively in Termux, outside proot (much faster for builds; Termux\'s own packages, emcc included), in a new window of the native tmux session "ibh": the user watches it with `tmux attach -t ibh` in a Termux session. Output and exit code through termux_job.' },
+    description: 'Runs a command natively in Termux, outside proot (faster for builds, each compiler process ~1 s against ~3.6 s; Termux\'s own packages, emcc included), in a new window of the native tmux session "ibh": the user watches it with `tmux attach -t ibh` in a Termux session. Output and exit code through termux_job.' },
   { name: 'termux_job', run: termuxJob, inputSchema: obj({ id: str('job id (none: the recent jobs)'), lines: num('output lines (default 40)') }),
     description: 'A native Termux job\'s state and last output lines, or the list of recent jobs.' },
   { name: 'deploy', run: deploy,

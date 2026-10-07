@@ -24,7 +24,7 @@ Start with `status`; it reads everything without changing anything.
 |---|---|---|
 | Wireless debugging off / not advertised | the user's toggle is off, or Android turned it off | ask the user to turn it on, then retry |
 | Shizuku not running | Shizuku's server died | ask the user to start it in the Shizuku app; adb still works meanwhile |
-| a first `rish` call fails, the next works | ColorOS froze Shizuku's idle process ("Async freezing" in logcat) | nothing: the tools already ask twice |
+| the first phone call of a session takes ~4 s | the MCP starts its one rish session (a Java VM); later commands take ~50 ms | nothing |
 | Firefox debugger not reachable | the forward is gone | any Firefox tool redoes it; `connect force=true` to insist |
 | no tabs | Firefox unloaded its tabs (memory) or is closed | ask the user to open the site; the log of unloaded tabs is lost |
 
@@ -59,7 +59,7 @@ How to read the outcomes: few keyframes and a short clip → it plays at 2×; fe
 
 ## Native Termux
 
-proot traces every process, which makes heavy builds crawl: FFmpeg's `configure` takes about 15 minutes in proot and a fraction of that natively. Termux's `~/.zshrc` starts a detached tmux session `ibh` in every native shell, and its socket is shared with the container.
+proot traces every process, which makes builds slow: each compiler process takes ~3.6 s in proot against ~1 s natively, and the first WebAssembly build took ~25 min in proot against 12 natively (Emscripten's one-time cache included), with a byte-identical result. Termux's `~/.zshrc` starts a detached tmux session `ibh` in every native shell, and its socket is shared with the container.
 
 - `termux_run command=… name=…` runs it natively in a new window of that session (Termux's own packages on PATH, `emcc` included); `wait_s` waits for short ones. `termux_job id=…` gives the state and output; no id lists recent jobs. The user can watch with `tmux attach -t ibh` in a Termux session.
 - `status` says whether the session is up; if not, any new native Termux session starts it (or the user runs `tmux new -d -s ibh` there).
