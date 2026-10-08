@@ -29,11 +29,14 @@ const START = process.argv[2] || 'https://safebooru.org/index.php?page=post&s=li
 // come from (allowed by blockAds).
 const PROFILES = [
   // knownErrors: the site's own page errors, which happen without the script too.
+  // adSlots: the site's ad boxes, which must end up hidden; accent: the theme's link colour there.
   { host: /(^|\.)gelbooru\.com$/, list: '.thumbnail-container', thumb: 'article.thumbnail-preview', inHtml: /class="thumbnail-preview"/g, scriptHosts: ['ajax.googleapis.com'],
-    knownErrors: [/^\$ is not defined$/] },   // an inline script of theirs runs before their jQuery
+    knownErrors: [/^\$ is not defined$/],   // an inline script of theirs runs before their jQuery
+    adSlots: ['[id^="__clb-spot_"]', '.footerAd2', 'a[href*="realxxx."]'], accent: 'rgb(90, 169, 255)' },
 ]
 const SITE = PROFILES.find(p => p.host.test(new URL(START).hostname)) ||
-  { list: '.image-list', thumb: 'span.thumb', inHtml: /class="thumb"/g, scriptHosts: [], knownErrors: [] }   // Gelbooru 0.2
+  { list: '.image-list', thumb: 'span.thumb', inHtml: /class="thumb"/g, scriptHosts: [], knownErrors: [],   // Gelbooru 0.2
+    adSlots: ['.a_list', 'ins[data-zoneid]'], accent: 'rgb(94, 234, 212)' }
 
 // What Violentmonkey would provide, in memory, and the feed switched on as
 // the phone has it. @noframes by hand: init scripts run in every frame.
@@ -99,6 +102,11 @@ const logLine = (page, re, timeout = 15000) => page.waitForFunction(
     // A script high in the <head> can be asked for before the policy is in
     // place (the parser reached it first); then it must at least be blocked.
     const unblocked = outside.filter(o => !(adLine || '').includes(o.split(' ')[1]))
+    // The ad boxes take no room, and the theme's links wear the site's accent.
+    const boxes = await page.evaluate(sels => sels.map(sel => [...document.querySelectorAll(sel)].filter(e => e.getBoundingClientRect().height > 0).length), SITE.adSlots)
+    check('ad boxes hidden', boxes.every(n => n === 0), SITE.adSlots.map((sel, i) => `${sel}: ${boxes[i]} visible`).join(', '))
+    const linkColor = await page.evaluate(list => { const a = [...document.querySelectorAll('a')].find(x => !x.closest(list) && x.getBoundingClientRect().height > 0); return a ? getComputedStyle(a).color : null }, SITE.list)
+    check('theme accent', linkColor === SITE.accent, `links ${linkColor}, expected ${SITE.accent}`)
     check('ads blocked', !unblocked.length && !/replaced/.test(ads.queue) && ads.wasm === 'compiles',
       `${adLine || 'no "ads:" log line'}; asked from other hosts: ${outside.join(', ') || 'nothing'}${outside.length ? ` (blocked: ${outside.length - unblocked.length})` : ''}; ExoClick queue ${ads.queue}; WebAssembly ${ads.wasm}`)
     // The console helpers return text (an on-phone console shows only that).

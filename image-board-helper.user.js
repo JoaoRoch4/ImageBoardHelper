@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.10.0
+// @version      1.10.1
 // @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -68,7 +68,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.10.0'
+  const VERSION = '1.10.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // The site's thumbnail list. Gelbooru 0.2 sites (rule34, safebooru, xbooru)
@@ -77,11 +77,20 @@
   // the card's <a> around an <img> with the tags in title or alt, the
   // paginator's a[alt="next"], the file layout. scriptHosts: other hosts the
   // site's own scripts come from, which blockAds lets through (gelbooru's
-  // jQuery).
+  // jQuery); adSlots: the site's own ad boxes, hidden with the shared ones;
+  // colors: the theme's accent (links, buttons), its lines, and two darker
+  // tones (a selected item's background, the text selection).
+  const TEAL = { accent: '#5eead4', line: '#39ff14', dark: '#1d3b38', mid: '#2f7d72' }
   const SITE_PROFILES = {
-    'gelbooru.com': { list: '.thumbnail-container', card: 'article.thumbnail-preview', scriptHosts: ['https://ajax.googleapis.com'] },
+    'gelbooru.com': {
+      list: '.thumbnail-container', card: 'article.thumbnail-preview', scriptHosts: ['https://ajax.googleapis.com'],
+      // Clickadu's 300x250 spots (in fixed-size wrappers), the footer one, ExoClick's video slider.
+      adSlots: ['center:has([id^="__clb-spot_"])', 'div:has(> [id^="__clb-spot_"])', '[id^="__clb-spot_"]', '.footerAd2', '.exo_wrapper', '[id$="-msg-video-slider-content"]'],
+      colors: { accent: '#5aa9ff', line: '#2f8cff', dark: '#1b3552', mid: '#2f5f9e' },   // the site's own blue
+    },
   }
-  const PROFILE = SITE_PROFILES[SITE] || { list: '.image-list', card: 'span.thumb', scriptHosts: [] }
+  const PROFILE = { list: '.image-list', card: 'span.thumb', scriptHosts: [], adSlots: [], colors: TEAL, ...SITE_PROFILES[SITE] }
+  const { accent: ACCENT, line: LINE, dark: ACCENT_DARK, mid: ACCENT_MID } = PROFILE.colors
   const LIST = PROFILE.list                 // the list of thumbnails
   const CARD = PROFILE.card                 // one thumbnail's wrapper, a child of the list
   const THUMB = `${LIST} ${CARD}`           // a card inside the list
@@ -2201,7 +2210,7 @@
     // over them otherwise (it did on site pages, where every video has one).
     s.bar = document.createElement('div')
     s.bar.style.cssText =
-      'position:absolute;left:0;bottom:0;height:4px;width:0;background:#5eead4;pointer-events:none;z-index:3'
+      `position:absolute;left:0;bottom:0;height:4px;width:0;background:${ACCENT};pointer-events:none;z-index:3`
     s.label = document.createElement('div')
     s.label.style.cssText =
       'position:absolute;left:4px;bottom:8px;padding:1px 6px;border-radius:3px;font:12px/1.4 ' +
@@ -2508,8 +2517,8 @@
     .vseek { flex: 1; min-width: 0; height: 24px; margin: 0; background: transparent; -moz-appearance: none; appearance: none; --buf: 0%; }
     .vseek::-moz-range-track { height: 4px; border-radius: 2px;
       background: linear-gradient(to right, rgba(255, 255, 255, .45) var(--buf), rgba(255, 255, 255, .16) var(--buf)); }
-    .vseek::-moz-range-progress { height: 4px; border-radius: 2px; background: #5eead4; }
-    .vseek::-moz-range-thumb { width: 12px; height: 12px; border: none; border-radius: 50%; background: #5eead4; transition: transform .15s; }
+    .vseek::-moz-range-progress { height: 4px; border-radius: 2px; background: ${ACCENT}; }
+    .vseek::-moz-range-thumb { width: 12px; height: 12px; border: none; border-radius: 50%; background: ${ACCENT}; transition: transform .15s; }
     .vseek:active::-moz-range-thumb { transform: scale(1.6); }
     /* The big ▶ in the middle of a paused video. */
     .vbig {
@@ -2545,17 +2554,17 @@
     .status { position: absolute; left: 0; right: 0; top: 50%; text-align: center; color: #a8b8bb; font-size: 14px; pointer-events: none; }
     button, a.btn {
       width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center;
-      border: 1px solid #2a3a3f; background: rgba(15, 20, 23, .85); color: #5eead4;
+      border: 1px solid #2a3a3f; background: rgba(15, 20, 23, .85); color: ${ACCENT};
       font-size: 20px; line-height: 1; text-decoration: none; padding: 0;
     }
     .side { position: absolute; top: 50%; transform: translateY(-50%); font-size: 26px; padding-bottom: 3px; }
     .prev { left: 6px; } .next { right: 6px; }
-    button.on { background: #5eead4; color: #0f1417; border-color: #5eead4; }
+    button.on { background: ${ACCENT}; color: #0f1417; border-color: ${ACCENT}; }
     button.up { width: auto; min-width: 42px; padding: 0 12px; border-radius: 21px; gap: 6px; display: flex; font-size: 16px; }
     .score { font-size: 13px; }
     .badge {
       position: absolute; left: 50%; top: 64px; transform: translateX(-50%);
-      padding: 6px 14px; border-radius: 16px; background: rgba(15, 20, 23, .9); color: #5eead4;
+      padding: 6px 14px; border-radius: 16px; background: rgba(15, 20, 23, .9); color: ${ACCENT};
       font-size: 15px; font-weight: 600; pointer-events: none;
     }
     .sheet {
@@ -2579,22 +2588,22 @@
     button.t-character { color: #3fb950; border-color: #1f5a2a; }
     button.t-copyright { color: #c678dd; border-color: #5a3566; }
     button.t-metadata { color: #e5534b; border-color: #66282a; }
-    button.tag.copied { background: #5eead4; color: #0f1417; border-color: #5eead4; }
-    button.tag.held { background: #1d3b38; border-color: #5eead4; }
+    button.tag.copied { background: ${ACCENT}; color: #0f1417; border-color: ${ACCENT}; }
+    button.tag.held { background: ${ACCENT_DARK}; border-color: ${ACCENT}; }
     button.tag { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
     .sheet .none { color: #4e6469; font-size: 13px; }
     button.quality { position: absolute; left: 12px; bottom: 16px; width: auto; height: 32px; padding: 0 12px;
       border-radius: 16px; font-size: 12px; font-weight: 700; letter-spacing: .5px; }
-    button.quality.raw { background: #2f7d72; color: #fff; border-color: #2f7d72; }
+    button.quality.raw { background: ${ACCENT_MID}; color: #fff; border-color: ${ACCENT_MID}; }
     .m.clean button.quality { opacity: 0; pointer-events: none; }
     .tabs { display: flex; gap: 6px; margin-bottom: 10px; }
     button.tab { width: auto; height: 32px; border-radius: 16px; padding: 0 16px; font-size: 13px; }
-    button.tab.on { background: #5eead4; color: #0f1417; border-color: #5eead4; }
+    button.tab.on { background: ${ACCENT}; color: #0f1417; border-color: ${ACCENT}; }
     .infolist { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 13px; color: #d7dee0; }
     .infolist[hidden], .commentlist[hidden] { display: none; }
     .commentlist { display: flex; flex-direction: column; gap: 12px; font-size: 13px; color: #d7dee0; }
     .commentlist .h { color: #7f9aa0; font-size: 12px; margin-bottom: 3px; }
-    .commentlist .h b, .commentlist .h a.who { color: #5eead4; font-weight: 600; text-decoration: none; }
+    .commentlist .h b, .commentlist .h a.who { color: ${ACCENT}; font-weight: 600; text-decoration: none; }
     .commentlist button.cvote { width: auto; height: 24px; padding: 0 9px; border-radius: 12px; font-size: 12px;
       display: inline-flex; vertical-align: middle; margin-left: 4px; }
     .commentlist .b { white-space: pre-wrap; word-break: break-word; line-height: 1.4; }
@@ -2602,7 +2611,7 @@
     .infolist .k { color: #7f9aa0; white-space: nowrap; }
     .infolist .v { word-break: break-word; }
     .infolist .v.warn { color: #f2ac08; }
-    .infolist a { color: #5eead4; }
+    .infolist a { color: ${ACCENT}; }
     .tagsbox[hidden] { display: none; }
     /* Watch later: a grid of the saved posts over the modal. */
     .laterview { display: none; position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain;
@@ -2618,7 +2627,7 @@
       border-radius: 10px; padding: 1px 7px; pointer-events: none; }
     .tile button.rm { position: absolute; top: 4px; right: 4px; width: 28px; height: 28px; font-size: 14px; }
     .laternote { color: #4e6469; font-size: 12px; margin-top: 14px; text-align: center; }
-    .laternote a { color: #5eead4; }
+    .laternote a { color: ${ACCENT}; }
     .latergrid .none { grid-column: 1 / -1; color: #7f9aa0; font-size: 14px; text-align: center; padding: 30px 10px; }
     .toast {
       position: absolute; left: 50%; bottom: 84px; transform: translateX(-50%);
@@ -3875,7 +3884,7 @@
         }
         pic.set(probe.src)
         img.dataset.ibhRaw = '1'
-        bulkBadge(link, 'RAW', '#2f7d72', 'ibh-rawbadge')
+        bulkBadge(link, 'RAW', ACCENT_MID, 'ibh-rawbadge')
         info(`raw: post ${postId(link)} shows its original (${probe.src.split('/').pop()})`)
       })
     }, () => {
@@ -5927,7 +5936,7 @@
     .fab {
       position: fixed; left: 12px; bottom: 12px; z-index: 2147483000;
       width: 40px; height: 40px; border-radius: 50%;
-      border: 1px solid #2a3a3f; background: #0f1417; color: #5eead4;
+      border: 1px solid #2a3a3f; background: #0f1417; color: ${ACCENT};
       font-size: 17px; line-height: 1; display: grid; place-items: center;
       box-shadow: 0 4px 14px rgba(0,0,0,.5);
     }
@@ -5940,12 +5949,12 @@
     .feednav .row { display: flex; gap: 8px; }
     .feednav button {
       width: 44px; height: 44px; border-radius: 50%;
-      border: 1px solid #2a3a3f; background: rgba(15, 20, 23, .8); color: #5eead4;
+      border: 1px solid #2a3a3f; background: rgba(15, 20, 23, .8); color: ${ACCENT};
       font-size: 26px; line-height: 1; display: grid; place-items: center;
       padding: 0 0 3px; box-shadow: 0 4px 14px rgba(0,0,0,.5);
     }
     .feednav button:active { background: #16211f; }
-    .feednav button.on { background: #5eead4; color: #0f1417; border-color: #5eead4; }
+    .feednav button.on { background: ${ACCENT}; color: #0f1417; border-color: ${ACCENT}; }
     .feednav button.trash { display: grid; place-items: center; padding: 0; }
     .feednav button.trash svg { width: 20px; height: 20px; fill: currentColor; }
     /* Top right, against the top edge (lower, they covered the site's
@@ -5953,7 +5962,7 @@
     .laterfab {
       position: fixed; top: 6px; right: 12px; z-index: 2147483000;
       width: 44px; height: 44px; border-radius: 50%; padding: 0; display: grid; place-items: center;
-      border: 1px solid #2a3a3f; background: rgba(15, 20, 23, .8); color: #5eead4;
+      border: 1px solid #2a3a3f; background: rgba(15, 20, 23, .8); color: ${ACCENT};
       box-shadow: 0 4px 14px rgba(0,0,0,.5);
     }
     .laterfab:active { background: #16211f; }
@@ -5961,12 +5970,12 @@
     .laterfab.bulkfab { right: 64px; }
     .laterfab.favsfab { right: 116px; }
     .feednav.pagenav { top: 6px; bottom: auto; right: auto; left: 12px; }
-    .laterfab.on { background: #5eead4; color: #0f1417; border-color: #5eead4; }
+    .laterfab.on { background: ${ACCENT}; color: #0f1417; border-color: ${ACCENT}; }
     /* 👁: bottom left, beside ◐; in its place when the panel is off. */
     .eyefab {
       position: fixed; left: 60px; bottom: 12px; z-index: 2147483000;
       width: 40px; height: 40px; border-radius: 50%; padding: 0; display: grid; place-items: center;
-      border: 1px solid #2a3a3f; background: rgba(15, 20, 23, .8); color: #5eead4;
+      border: 1px solid #2a3a3f; background: rgba(15, 20, 23, .8); color: ${ACCENT};
       box-shadow: 0 4px 14px rgba(0,0,0,.5);
     }
     .eyefab.solo { left: 12px; }
@@ -6025,7 +6034,7 @@
     }
 
     label.tog { display: flex; align-items: center; gap: 10px; padding: 7px 12px; }
-    label.tog input { accent-color: #5eead4; width: 16px; height: 16px; }
+    label.tog input { accent-color: ${ACCENT}; width: 16px; height: 16px; }
     label.tog .note { margin-left: auto; color: #4e6469; font-size: 10px; }
 
     .lang { padding: 4px 12px 8px; }
@@ -6039,7 +6048,7 @@
     .acts { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px 12px; }
     .acts button {
       flex: 1 1 auto; padding: 7px 10px;
-      background: #16211f; color: #5eead4;
+      background: #16211f; color: ${ACCENT};
       border: 1px solid #234a45; border-radius: 6px; font-size: 12px;
     }
 
@@ -6680,37 +6689,37 @@
   const THEME_CSS = `
     html.ibh-theme, html.ibh-theme body { background: #182125 !important; color: #e6eef0 !important; }
     html.ibh-theme body *:not(img):not(video):not(canvas):not(iframe):not(svg):not(path):not([data-ibh-ui]) {
-      background-color: transparent !important; border-color: #39ff14 !important; }
+      background-color: transparent !important; border-color: ${LINE} !important; }
     html.ibh-theme body *:not(a):not(img):not(video):not(svg):not(path):not([data-ibh-ui]) { color: #e6eef0 !important; }
-    html.ibh-theme a, html.ibh-theme a:visited, html.ibh-theme summary { color: #5eead4 !important; }
+    html.ibh-theme a, html.ibh-theme a:visited, html.ibh-theme summary { color: ${ACCENT} !important; }
     html.ibh-theme a:hover { color: #99f6e4 !important; }
     html.ibh-theme li[class*="tag-type-artist"] a { color: #f2ac08 !important; }
     html.ibh-theme li[class*="tag-type-character"] a { color: #3fb950 !important; }
     html.ibh-theme li[class*="tag-type-copyright"] a { color: #c678dd !important; }
     html.ibh-theme li[class*="tag-type-metadata"] a { color: #e5534b !important; }
-    /* Lines in neon green (#39ff14); controls stand on a lighter surface,
+    /* Lines in neon green (${LINE}); controls stand on a lighter surface,
        teal text for the ones that act. */
     html.ibh-theme input, html.ibh-theme select, html.ibh-theme textarea, html.ibh-theme button {
       background-color: #26363c !important; color: #e6eef0 !important;
-      border: 1px solid #39ff14 !important; border-radius: 8px !important; }
+      border: 1px solid ${LINE} !important; border-radius: 8px !important; }
     html.ibh-theme input:focus, html.ibh-theme select:focus, html.ibh-theme textarea:focus {
-      border-color: #39ff14 !important; outline: none !important; box-shadow: 0 0 0 2px rgba(57, 255, 20, .35) !important; }
+      border-color: ${LINE} !important; outline: none !important; box-shadow: 0 0 0 2px rgba(57, 255, 20, .35) !important; }
     html.ibh-theme input[type="submit"], html.ibh-theme input[type="button"], html.ibh-theme button {
-      background-color: #1d3b38 !important; color: #5eead4 !important; border-color: #39ff14 !important; font-weight: 600; }
+      background-color: ${ACCENT_DARK} !important; color: ${ACCENT} !important; border-color: ${LINE} !important; font-weight: 600; }
     html.ibh-theme ::placeholder { color: #7f9aa0 !important; }
     html.ibh-theme #paginator a, html.ibh-theme #paginator b, html.ibh-theme .pagination a, html.ibh-theme .pagination b {
       display: inline-block; padding: 3px 9px; margin: 2px; border-radius: 8px;
-      background-color: #26363c !important; border: 1px solid #39ff14 !important; }
+      background-color: #26363c !important; border: 1px solid ${LINE} !important; }
     html.ibh-theme #paginator b, html.ibh-theme .pagination b {
-      background-color: #5eead4 !important; color: #0f1417 !important; border-color: #5eead4 !important; }
+      background-color: ${ACCENT} !important; color: #0f1417 !important; border-color: ${ACCENT} !important; }
     html.ibh-theme .awesomplete > ul, html.ibh-theme .awesomplete > ul * { background-color: #26363c !important; }
-    html.ibh-theme .awesomplete > ul [aria-selected="true"] { background-color: #1d3b38 !important; }
+    html.ibh-theme .awesomplete > ul [aria-selected="true"] { background-color: ${ACCENT_DARK} !important; }
     /* The mobile layout's ☰ menus float over the page (position: absolute);
        made transparent above, an open one would lay its links over the posts. */
     html.ibh-theme #navbar, html.ibh-theme #subnavbar { background-color: #26363c !important; box-shadow: 0 8px 18px rgba(0, 0, 0, .55); }
     html.ibh-theme #navbar li, html.ibh-theme #subnavbar li { border-color: #2f4a4f !important; }
-    html.ibh-theme ::selection { background: #2f7d72; }
-    html.ibh-theme hr { border: none !important; border-top: 1px solid #39ff14 !important; }
+    html.ibh-theme ::selection { background: ${ACCENT_MID}; }
+    html.ibh-theme hr { border: none !important; border-top: 1px solid ${LINE} !important; }
   `
 
   let themeOn = null
@@ -6730,7 +6739,8 @@
   // site's own scripts and onclick handlers, eval for WebAssembly too (the
   // keyframe decoder), moz-extension: for devtools extensions such as Eruda.
   const AD_POLICY = `script-src ${OWN_HOSTS} ${PROFILE.scriptHosts.join(' ')} 'unsafe-inline' 'unsafe-eval' blob: moz-extension:; frame-src ${OWN_HOSTS} blob:`
-  const AD_SLOTS = '.a_list, #nativemlist, #nativempost, ins[data-zoneid]'
+  // The sponsored link to an AI site sits in rule34's menu and above gelbooru's posts.
+  const AD_SLOTS = ['.a_list', '#nativemlist', '#nativempost', 'ins[data-zoneid]', 'li:has(> a[href*="realxxx."])', 'a[href*="realxxx."]', ...PROFILE.adSlots].join(', ')
   const ADS_CSS = `${AD_SLOTS} { display: none !important; }`
   const adBlocked = new Map()   // host -> loads the policy stopped
   let adPolicyOn = false

@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.10.1
+
+- gelbooru.com: its ad boxes no longer take room. The scripts were blocked,
+  but Clickadu's 300x250 spots (in fixed-size wrappers), the footer one and
+  ExoClick's video slider stayed as empty or black boxes; each site's profile
+  now lists its own ad boxes next to the shared ones. The sponsored link to an
+  AI site (rule34's menu, the top of gelbooru) is hidden everywhere
+- gelbooru.com wears its own blue as the accent (links, buttons, lines, the
+  panel and the player) instead of the teal and neon green: the colours come
+  from the site's profile
+
 ## 1.10.0
 
 - gelbooru.com: the feed, the modal player, sharp thumbnails, covers, the
