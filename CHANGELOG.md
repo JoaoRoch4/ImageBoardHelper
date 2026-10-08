@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.10.0
+
+- gelbooru.com: the feed, the modal player, sharp thumbnails, covers, the
+  search bar, the autopager, the hold slideshow and blockAds work there too.
+  Its list is `.thumbnail-container > article.thumbnail-preview` instead of
+  `.image-list > span.thumb`, so every selector the script used for the list
+  now comes from one site profile (`LIST`, `CARD`); on the Gelbooru 0.2 sites
+  nothing changes. blockAds lets through the one outside host its own scripts
+  need (its jQuery, on ajax.googleapis.com). Videos there are WebM, so a hold
+  seeks the file instead of the keyframe reel; favorites, votes, 🔖 and the
+  favorites search stay rule34 only
+
 ## 1.9.0
 
 - The modal player's controls in a glass capsule floating over the bottom of

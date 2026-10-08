@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.9.0
-// @description  For the phone, on Gelbooru 0.2 boards (rule34.xxx and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
+// @version      1.10.0
+// @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
 // @supportURL   https://github.com/JoaoRoch4/ImageBoardHelper/issues
@@ -11,6 +11,7 @@
 // @match        https://rule34.xxx/*
 // @match        https://safebooru.org/*
 // @match        https://xbooru.com/*
+// @match        https://gelbooru.com/*
 // @run-at       document-start
 // @grant        GM_getValue
 // @grant        GM_setValue
@@ -26,7 +27,8 @@
 /*
  * Image Board Helper: a standalone layer over the pages of Gelbooru 0.2
  * boards (rule34.xxx, safebooru, xbooru), aimed at phones.
- * It works on the site's own markup (.image-list > span.thumb > a > img) and
+ * It works on the site's own markup (.image-list > span.thumb > a > img, or
+ * gelbooru.com's .thumbnail-container > article.thumbnail-preview) and
  * calls only the site's own endpoints.
  *
  *   A. VIDEO COVERS AND GIFS
@@ -66,8 +68,23 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.9.0'
+  const VERSION = '1.10.0'
   const SITE = location.hostname.replace(/^www\./, '')
+
+  // The site's thumbnail list. Gelbooru 0.2 sites (rule34, safebooru, xbooru)
+  // put their thumbnails in .image-list > span.thumb; gelbooru.com itself in
+  // .thumbnail-container > article.thumbnail-preview. The rest is the same:
+  // the card's <a> around an <img> with the tags in title or alt, the
+  // paginator's a[alt="next"], the file layout. scriptHosts: other hosts the
+  // site's own scripts come from, which blockAds lets through (gelbooru's
+  // jQuery).
+  const SITE_PROFILES = {
+    'gelbooru.com': { list: '.thumbnail-container', card: 'article.thumbnail-preview', scriptHosts: ['https://ajax.googleapis.com'] },
+  }
+  const PROFILE = SITE_PROFILES[SITE] || { list: '.image-list', card: 'span.thumb', scriptHosts: [] }
+  const LIST = PROFILE.list                 // the list of thumbnails
+  const CARD = PROFILE.card                 // one thumbnail's wrapper, a child of the list
+  const THUMB = `${LIST} ${CARD}`           // a card inside the list
 
   // ═══════════════════════════════════════════════════════════
   // Persisted configuration
@@ -1011,7 +1028,7 @@
   }
 
   // On site pages the link around each thumbnail plays the part of the card.
-  const NATIVE_THUMB = '.image-list span.thumb img'
+  const NATIVE_THUMB = `${THUMB} img`
 
   function scanCards(root) {
     if (!root || !root.querySelectorAll) return
@@ -1049,7 +1066,7 @@
   // In the one-column feed a 150 px thumbnail is stretched to the screen width.
   // The sample (about 850 px) is already sharp there and far lighter than the
   // original; posts too small to have a sample fall through to the original.
-  const inFeed = el => CFG.nativeFeed && !!el.closest('.image-list')
+  const inFeed = el => CFG.nativeFeed && !!el.closest(LIST)
 
   function sampleCandidates(src) {
     const p = thumbParts(src)
@@ -1073,7 +1090,7 @@
   const SAMPLE_WIDTH = 850
 
   function displayPixels(el) {
-    const box = el.closest('.image-list span.thumb') || el
+    const box = el.closest(THUMB) || el
     return (box.clientWidth || el.clientWidth || 0) * (window.devicePixelRatio || 1)
   }
 
@@ -2449,7 +2466,7 @@
   // close. Own Shadow DOM host, so it works with the panel off.
   // ═══════════════════════════════════════════════════════════
 
-  const SITE_LINK = '.image-list span.thumb a'
+  const SITE_LINK = `${THUMB} a`
   const SWIPE_MIN = 60        // px sideways to change post
   const CONTROLS_BAND = 64    // bottom strip of the video: the player's own controls (the capsule and its margin)
   let modal = null
@@ -3360,7 +3377,7 @@
   // thumbnail, tags, score) is read once from the favorites pages and kept
   // with the lists; later visits only read the first pages, until they
   // reach favorites already known (the site lists the newest first). Results
-  // go into the page's own .image-list as the site's own thumbnails, so the
+  // go into the page's own thumbnail list (LIST) as the site's own thumbnails, so the
   // feed, covers, the modal and its swipe all work on them as on any page.
   // (Another script with this feature empties the whole page to show its
   // results and clears localStorage on reset, which broke this one.)
@@ -3538,7 +3555,7 @@
   }
 
   function showFavResults(items) {
-    const list = document.querySelector('.image-list')
+    const list = document.querySelector(LIST)
     if (!list) return
     if (!favPage) favPage = [...list.childNodes]   // put back on Clear
     favResults = items
@@ -3550,7 +3567,7 @@
   }
 
   function showMoreFavs() {
-    const list = document.querySelector('.image-list')
+    const list = document.querySelector(LIST)
     if (!list) return
     const next = favResults.slice(favShown, favShown + FAV_SHOW)
     list.append(...next.map(favThumb))
@@ -3562,7 +3579,7 @@
   }
 
   function clearFavSearch() {
-    const list = document.querySelector('.image-list')
+    const list = document.querySelector(LIST)
     if (list && favPage) list.replaceChildren(...favPage)
     favPage = null
     favResults = []
@@ -3589,10 +3606,10 @@
   // Idempotent: the observer calls it on every change of the page.
   function ensureFavSearch() {
     const bar = document.getElementById('ibh-favsearch')
-    const want = CFG.favSearch && SITE === 'rule34.xxx' && onOwnFavorites() && !!document.querySelector('.image-list')
+    const want = CFG.favSearch && SITE === 'rule34.xxx' && onOwnFavorites() && !!document.querySelector(LIST)
     if (!want) { if (bar) { clearFavSearch(); bar.remove(); document.getElementById('ibh-favmore')?.remove() } return }
     if (bar) return
-    const list = document.querySelector('.image-list')
+    const list = document.querySelector(LIST)
     const input = el('input', { type: 'search', placeholder: t('favPlaceholder'), enterkeyhint: 'search' })
     input.setAttribute('autocapitalize', 'off')
     input.setAttribute('autocomplete', 'off')
@@ -4053,7 +4070,7 @@
   function ensureSiteSearch() {
     const bar = document.getElementById('ibh-sitesearch')
     const home = homeSearchForm()
-    const listing = new URLSearchParams(location.search).get('page') === 'post' && !!document.querySelector('.image-list')
+    const listing = new URLSearchParams(location.search).get('page') === 'post' && !!document.querySelector(LIST)
     const want = CFG.siteSearch && !onFavoritesPage() && (listing || !!home)
     if (!want) {
       if (bar) bar.remove()
@@ -4087,7 +4104,7 @@
       home.before(box)
       home.style.display = 'none'
     } else {
-      document.querySelector('.image-list').before(box)
+      document.querySelector(LIST).before(box)
     }
     recordSiteSearch(read()).then(saved.reload)
     input.addEventListener('input', saved.sync)
@@ -4127,14 +4144,14 @@
   // Idempotent: the observer calls it on every change of the page.
   function ensureFavPager() {
     const want = CFG.favAutopager && (onFavoritesPage() || onListPage()) &&
-      !!document.querySelector('.image-list')
+      !!document.querySelector(LIST)
     if (!want) {
       if (pager) { pager.io.disconnect(); pager.sentinel.remove(); pager = null }
       return
     }
     if (pager && pager.sentinel.isConnected) return
     const sentinel = el('div', { id: 'ibh-pager' })
-    ;(document.getElementById('ibh-favmore') || document.querySelector('.image-list')).after(sentinel)
+    ;(document.getElementById('ibh-favmore') || document.querySelector(LIST)).after(sentinel)
     sentinel.addEventListener('click', () => { if (pager && !pager.done) favPagerNext() })   // retry after a failure
     const next = pageTarget(1)
     const io = new IntersectionObserver(entries => {
@@ -4157,9 +4174,9 @@
       const res = await fetch(url, { credentials: 'same-origin' })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const doc = new DOMParser().parseFromString(await res.text(), 'text/html')
-      const src = doc.querySelector('.image-list')
+      const src = doc.querySelector(LIST)
       const items = src ? [...src.children].filter(node => node.querySelector && node.querySelector('img')) : []
-      const list = document.querySelector('.image-list')
+      const list = document.querySelector(LIST)
       if (!items.length || !list) {
         p.done = true
         p.sentinel.textContent = t('pagerEnd')
@@ -6382,7 +6399,7 @@
 
   // ‹ › buttons for the one-column feed: jump to the start of the previous or
   // next post, e.g. to skip a long comic without scrolling through it.
-  const FEED_POST = '.image-list span.thumb'
+  const FEED_POST = THUMB
 
   function jumpPost(dir) {
     const posts = [...document.querySelectorAll(FEED_POST)]
@@ -6590,37 +6607,37 @@
     const cols = CFG.feedColumns
     const auto = cols === 'auto'
     const common = `
-      .image-list span.thumb a { display: block !important; position: relative; }
-      .image-list > br { display: none !important; }
+      ${THUMB} a { display: block !important; position: relative; }
+      ${LIST} > br { display: none !important; }
       /* Post page: the image carries width="850" and the video a fixed box. */
       #image, #gelcomVideoPlayer { max-width: 100% !important; height: auto !important; }`
     if (!auto && Number(cols) <= 1) return `
-      .image-list { display: flex !important; flex-direction: column !important;
+      ${LIST} { display: flex !important; flex-direction: column !important;
         flex-wrap: nowrap !important; align-items: stretch !important; gap: 14px !important; }
-      .image-list > span { display: block !important; width: 100% !important; max-width: none !important;
+      ${LIST} > ${CARD} { display: block !important; width: 100% !important; max-width: none !important;
         height: auto !important; max-height: none !important; }
-      .image-list span.thumb { display: block !important; width: 100vw !important; height: auto !important;
+      ${THUMB} { display: block !important; width: 100vw !important; height: auto !important;
         max-width: none !important; max-height: none !important; min-height: 0 !important;
         margin: 0 calc(50% - 50vw) !important; }
-      .image-list span.thumb img { display: block; width: 100% !important; height: auto !important;
+      ${THUMB} img { display: block; width: 100% !important; height: auto !important;
         max-width: none !important; max-height: none !important; }` + common
     const item = `
-      .image-list > span { display: block !important; width: 100% !important; max-width: none !important;
+      ${LIST} > ${CARD} { display: block !important; width: 100% !important; max-width: none !important;
         height: auto !important; max-height: none !important; margin: 0 !important; }
-      .image-list span.thumb { display: block !important; width: 100% !important; height: auto !important;
+      ${THUMB} { display: block !important; width: 100% !important; height: auto !important;
         max-width: none !important; max-height: none !important; min-height: 0 !important; margin: 0 !important; }`
     if (CFG.feedLayout === 'grid') return `
-      .image-list { display: grid !important; gap: 6px !important; grid-template-columns: ${auto
+      ${LIST} { display: grid !important; gap: 6px !important; grid-template-columns: ${auto
         ? `repeat(auto-fill, minmax(${FEED_COL_MIN}px, 1fr))` : `repeat(${Number(cols)}, minmax(0, 1fr))`} !important; }
       ${item}
-      .image-list span.thumb img { display: block; width: 100% !important; height: auto !important;
+      ${THUMB} img { display: block; width: 100% !important; height: auto !important;
         aspect-ratio: 1 / 1; object-fit: cover; max-width: none !important; max-height: none !important; }` + common
     return `
-      .image-list { display: block !important; column-gap: 6px !important;
+      ${LIST} { display: block !important; column-gap: 6px !important;
         ${auto ? `column-width: ${FEED_COL_MIN}px` : `column-count: ${Number(cols)}`} !important; }
       ${item}
-      .image-list > span { break-inside: avoid !important; margin-bottom: 6px !important; }
-      .image-list span.thumb img { display: block; width: 100% !important; height: auto !important;
+      ${LIST} > ${CARD} { break-inside: avoid !important; margin-bottom: 6px !important; }
+      ${THUMB} img { display: block; width: 100% !important; height: auto !important;
         max-width: none !important; max-height: none !important; }` + common
   }
 
@@ -6645,7 +6662,7 @@
   // at the top of the screen in place, and start the sharp images the feed
   // shows (scanThumbs skips what it already watches).
   function switchFeed() {
-    const anchor = [...document.querySelectorAll('.image-list span.thumb')]
+    const anchor = [...document.querySelectorAll(THUMB)]
       .find(el => el.getBoundingClientRect().bottom > 0)
     applyFeed()
     if (anchor) anchor.scrollIntoView({ block: 'start' })
@@ -6712,7 +6729,7 @@
   // One policy, no nonce (a nonce would turn 'unsafe-inline' off): inline for the
   // site's own scripts and onclick handlers, eval for WebAssembly too (the
   // keyframe decoder), moz-extension: for devtools extensions such as Eruda.
-  const AD_POLICY = `script-src ${OWN_HOSTS} 'unsafe-inline' 'unsafe-eval' blob: moz-extension:; frame-src ${OWN_HOSTS} blob:`
+  const AD_POLICY = `script-src ${OWN_HOSTS} ${PROFILE.scriptHosts.join(' ')} 'unsafe-inline' 'unsafe-eval' blob: moz-extension:; frame-src ${OWN_HOSTS} blob:`
   const AD_SLOTS = '.a_list, #nativemlist, #nativempost, ins[data-zoneid]'
   const ADS_CSS = `${AD_SLOTS} { display: none !important; }`
   const adBlocked = new Map()   // host -> loads the policy stopped
@@ -6756,7 +6773,7 @@
 
   // The site's own video frame, repeated so it also applies on pages whose
   // stylesheet lacks it (favorites), where the mark is added back.
-  const NATIVE_MARK_CSS = '.image-list img.webm-thumb { border: 3px solid rgb(0, 0, 255); box-sizing: border-box; }'
+  const NATIVE_MARK_CSS = `${LIST} img.webm-thumb { border: 3px solid rgb(0, 0, 255); box-sizing: border-box; }`
 
   const FAVSEARCH_CSS = `
     .ibh-search { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0 12px; }
@@ -6773,12 +6790,12 @@
       border-radius: 13px; color: #fff; font: 600 15px/26px system-ui, sans-serif; text-align: center; pointer-events: none;
       box-shadow: 0 2px 8px rgba(0,0,0,.5); }
     .ibh-rawbadge { right: auto; left: 6px; font-size: 12px; }
-    .image-list a img { -webkit-touch-callout: none; }
+    ${LIST} a img { -webkit-touch-callout: none; }
   `
 
   // Two quick taps on a thumbnail are a double tap for the script, never the
   // browser's double-tap zoom (video cards set their own touch-action).
-  const TAP_CSS = '.image-list span.thumb a:not([data-ibh-video]) { touch-action: manipulation; }'
+  const TAP_CSS = `${THUMB} a:not([data-ibh-video]) { touch-action: manipulation; }`
 
   // The site's title, centred: on the left it sat under the « » page buttons
   // in the top-left corner (two IDs outrank the site's own #site-title rule).

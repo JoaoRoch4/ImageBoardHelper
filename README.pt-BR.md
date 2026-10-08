@@ -2,7 +2,7 @@
 
 **Português** · [English](README.md)
 
-Userscript para celular nos boorus Gelbooru 0.2 — rule34.xxx, safebooru e xbooru: visualizador de post dentro da página, feed nítido com colunas, capa real de vídeo e prévia de cenas, GIF animado na listagem, barras de busca com buscas salvas, busca nos seus favoritos, autopager, Ver depois e downloads, tudo de olho na memória do celular.
+Userscript para celular nos boorus Gelbooru — rule34.xxx, gelbooru.com, safebooru e xbooru: visualizador de post dentro da página, feed nítido com colunas, capa real de vídeo e prévia de cenas, GIF animado na listagem, barras de busca com buscas salvas, busca nos seus favoritos, autopager, Ver depois e downloads, tudo de olho na memória do celular.
 
 Funciona nas páginas do próprio site e só chama os endpoints do próprio site. Até a 0.64 era um complemento do [Yande.re Masonry](https://github.com/asadahimeka/yandere-masonry); essa versão continua na branch [`masonry-companion`](https://github.com/JoaoRoch4/ImageBoardHelper/tree/masonry-companion).
 
@@ -73,7 +73,7 @@ Todas ficam no painel e são gravadas em `localStorage` sob a chave `IBH_CFG`.
 | `gifMaxLive` | `3` | com o `gifInline`, quantos GIFs animam ao mesmo tempo (1 a 10); os outros esperam como imagem parada e começam, os mais perto do centro da tela primeiro, quando outros saem da tela. Vale na hora |
 | `originalThumbs` | **desligado** | troca as miniaturas visíveis pelo arquivo original, só onde a imagem aparece mais larga que o sample de 850 px em pixels do aparelho (tela de PC), porque o sample já é tão nítido quanto o celular mostra (uma página de quadrinho: 705 KB contra 51 MB do original) (requer recarregar) |
 | `holdRaw` | ligado | nas páginas do site, segurar uma miniatura de imagem por meio segundo carrega o arquivo original (raw) no lugar do sample, com um selo RAW (segurar de novo volta ao sample); soltar não abre nada, rolar ou fazer pinça cancela. O menu do toque longo do navegador fica desligado nas miniaturas de imagem enquanto ela estiver ligada |
-| `nativeFeed` | **desligado** | nas páginas do próprio site (rule34, safebooru, xbooru e outros Gelbooru 0.2): um feed com as colunas e o layout abaixo (por padrão, uma imagem por linha na largura toda da tela), trocada pelo sample (ou pelo original quando não houver) (vale na hora) |
+| `nativeFeed` | **desligado** | nas páginas do próprio site (rule34, gelbooru.com, safebooru, xbooru e outros Gelbooru 0.2): um feed com as colunas e o layout abaixo (por padrão, uma imagem por linha na largura toda da tela), trocada pelo sample (ou pelo original quando não houver) (vale na hora) |
 | `feedColumns` | `1` | com o `nativeFeed`: `auto` (quantas colunas de 170px couberem na tela) ou de 1 a 4. Vale na hora |
 | `feedLayout` | `masonry` | com o `nativeFeed` e mais de uma coluna: `masonry` mantém cada imagem inteira, em colunas; `grid` faz quadros quadrados iguais, cortados para preencher. Vale na hora |
 | `feedNav` | ligado | com o `nativeFeed`, botões redondos no canto inferior direito, em duas fileiras: ⤒ topo, ‹ › post anterior/próximo (por exemplo para passar um comic longo), ⤓ fim da página; « » (canto superior esquerdo) página anterior/próxima pela paginação do próprio site (requer recarregar) |

@@ -23,6 +23,18 @@ const { firefox } = require('playwright')
 const SCRIPT = fs.readFileSync(path.join(__dirname, '..', 'image-board-helper.user.js'), 'utf8')
 const START = process.argv[2] || 'https://safebooru.org/index.php?page=post&s=list&tags=all'
 
+// What each site's page holds, written down here apart from the script so
+// the test does not trust the code it tests: the thumbnail list, one card,
+// how a card shows in the raw HTML, and the other hosts its own scripts
+// come from (allowed by blockAds).
+const PROFILES = [
+  // knownErrors: the site's own page errors, which happen without the script too.
+  { host: /(^|\.)gelbooru\.com$/, list: '.thumbnail-container', thumb: 'article.thumbnail-preview', inHtml: /class="thumbnail-preview"/g, scriptHosts: ['ajax.googleapis.com'],
+    knownErrors: [/^\$ is not defined$/] },   // an inline script of theirs runs before their jQuery
+]
+const SITE = PROFILES.find(p => p.host.test(new URL(START).hostname)) ||
+  { list: '.image-list', thumb: 'span.thumb', inHtml: /class="thumb"/g, scriptHosts: [], knownErrors: [] }   // Gelbooru 0.2
+
 // What Violentmonkey would provide, in memory, and the feed switched on as
 // the phone has it. @noframes by hand: init scripts run in every frame.
 const INJECT = `if (window.top === window) {
@@ -52,21 +64,21 @@ const logLine = (page, re, timeout = 15000) => page.waitForFunction(
   await context.addInitScript({ content: INJECT })
   const page = await context.newPage()
   const pageErrors = []
-  page.on('pageerror', e => pageErrors.push(e.message))
+  page.on('pageerror', e => { if (!SITE.knownErrors.some(re => re.test(e.message))) pageErrors.push(e.message) })
   // Scripts and frames asked from other hosts: with blockAds, none should be.
   const domain = new URL(START).hostname.split('.').slice(-2).join('.')
   const outside = []
   page.on('request', r => {
     const kind = r.resourceType() === 'script' ? 'script' : r.isNavigationRequest() && r.frame() !== page.mainFrame() ? 'frame' : null
     const host = new URL(r.url()).hostname
-    if (kind && host !== domain && !host.endsWith(`.${domain}`)) outside.push(`${kind} ${host}`)
+    if (kind && host !== domain && !host.endsWith(`.${domain}`) && !SITE.scriptHosts.includes(host)) outside.push(`${kind} ${host}`)
   })
 
   try {
     const res = await page.goto(START, { waitUntil: 'domcontentloaded', timeout: 60000 })
     // The first page's own size, from the HTML: the autopager may have added
     // the next one before the first look (a one-column feed starts short).
-    const firstPage = ((await res.text()).match(/class="thumb"/g) || []).length
+    const firstPage = ((await res.text()).match(SITE.inHtml) || []).length
     const version = await page.waitForFunction(() => window.__ibh && window.__ibh.version, null, { timeout: 15000 })
       .then(h => h.jsonValue(), () => null)
     check('script boots', !!version, version ? `v${version} on ${new URL(START).hostname}` : 'no window.__ibh')
@@ -84,8 +96,11 @@ const logLine = (page, re, timeout = 15000) => page.waitForFunction(
       wasm: await WebAssembly.compile(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])).then(() => 'compiles', e => e.message),
     }))
     const adLine = await logLine(page, /^ads: blocked/, 5000)
-    check('ads blocked', !outside.length && !/replaced/.test(ads.queue) && ads.wasm === 'compiles',
-      `${adLine || 'no "ads:" log line'}; asked from other hosts: ${outside.join(', ') || 'nothing'}; ExoClick queue ${ads.queue}; WebAssembly ${ads.wasm}`)
+    // A script high in the <head> can be asked for before the policy is in
+    // place (the parser reached it first); then it must at least be blocked.
+    const unblocked = outside.filter(o => !(adLine || '').includes(o.split(' ')[1]))
+    check('ads blocked', !unblocked.length && !/replaced/.test(ads.queue) && ads.wasm === 'compiles',
+      `${adLine || 'no "ads:" log line'}; asked from other hosts: ${outside.join(', ') || 'nothing'}${outside.length ? ` (blocked: ${outside.length - unblocked.length})` : ''}; ExoClick queue ${ads.queue}; WebAssembly ${ads.wasm}`)
     // The console helpers return text (an on-phone console shows only that).
     const consoleHelp = await page.evaluate(() => ({ help: window.__ibh.help(), tail: window.__ibh.tail(3).split('\n').length, none: window.__ibh.tail(5, '^no such line$') }))
     check('console help() and tail()', consoleHelp.help.includes('tail(n, filter)') && consoleHelp.tail === 3 && consoleHelp.none === '(no matching lines)',
@@ -103,16 +118,16 @@ const logLine = (page, re, timeout = 15000) => page.waitForFunction(
     const back = (await fabShown()) === true
     check('eye button', hidden && back, `${hidden ? 'hid' : 'did not hide'} the other buttons, ${back ? 'brought them back' : 'left them hidden'}`)
 
-    // Everything below works on the site's .image-list (Gelbooru 0.2 markup).
-    if (!(await page.locator('.image-list').count())) {
-      check('thumbnail list', false, 'no .image-list here: this site lays out its thumbnails another way')
+    // Everything below works on the site's thumbnail list.
+    if (!(await page.locator(SITE.list).count())) {
+      check('thumbnail list', false, `no ${SITE.list} here: this site lays out its thumbnails another way`)
     } else {
-      const thumbs = await page.locator('.image-list span.thumb').count()
-      const layout = await page.evaluate(() => getComputedStyle(document.querySelector('.image-list')).flexDirection)
-      check('feed laid out', layout === 'column', `${thumbs} thumbnails, .image-list flex-direction: ${layout}`)
+      const thumbs = await page.locator(`${SITE.list} ${SITE.thumb}`).count()
+      const layout = await page.evaluate(list => getComputedStyle(document.querySelector(list)).flexDirection, SITE.list)
+      check('feed laid out', layout === 'column', `${thumbs} thumbnails, ${SITE.list} flex-direction: ${layout}`)
 
       // A tap on a thumbnail opens the post over the page; back closes it.
-      await page.locator('.image-list span.thumb a').first().click()
+      await page.locator(`${SITE.list} ${SITE.thumb} a`).first().click()
       const opened = await logLine(page, /^modal: \w+ post \d+/)
       const modalShown = () => page.evaluate(() => {
         const host = [...document.querySelectorAll('*')].find(e => e.shadowRoot && e.shadowRoot.querySelector('.vlayer'))
@@ -142,7 +157,7 @@ const logLine = (page, re, timeout = 15000) => page.waitForFunction(
       // Near the bottom, the next page is added under this one.
       await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
       const added = await logLine(page, /^autopager: page \d+ added/, 30000)
-      const after = await page.locator('.image-list span.thumb').count()
+      const after = await page.locator(`${SITE.list} ${SITE.thumb}`).count()
       check('autopager', !!added && after > firstPage, `${added || 'no autopager line'}; first page ${firstPage}, now ${after} thumbnails`)
     }
 

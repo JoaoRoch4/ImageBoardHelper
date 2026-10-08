@@ -2,7 +2,7 @@
 
 [Português](README.pt-BR.md) · **English**
 
-A userscript for phones on Gelbooru 0.2 boards — rule34.xxx, safebooru and xbooru: an in-page post viewer, a sharp feed with columns, real video covers and scene previews, inline GIFs, search bars with saved searches, a search across your favorites, an autopager, Watch later and downloads, all with an eye on the phone's memory.
+A userscript for phones on Gelbooru boards — rule34.xxx, gelbooru.com, safebooru and xbooru: an in-page post viewer, a sharp feed with columns, real video covers and scene previews, inline GIFs, search bars with saved searches, a search across your favorites, an autopager, Watch later and downloads, all with an eye on the phone's memory.
 
 It works on the site's own pages and calls only the site's own endpoints. Up to 0.64 it was a companion to [Yande.re Masonry](https://github.com/asadahimeka/yandere-masonry); that version lives on in the [`masonry-companion`](https://github.com/JoaoRoch4/ImageBoardHelper/tree/masonry-companion) branch.
 
@@ -73,7 +73,7 @@ All of them live in the panel and are stored in `localStorage` under `IBH_CFG`.
 | `gifMaxLive` | `3` | with `gifInline`, how many GIFs animate at once (1 to 10); the rest wait as stills and start, nearest the middle of the screen first, as others scroll away. Applies at once |
 | `originalThumbs` | **off** | swaps visible thumbnails for the original file, only where the image shows wider than the 850 px sample in device pixels (a desktop screen), since the sample is as sharp as a phone can show (a comic page: 705 KB against a 51 MB original) (needs reload) |
 | `holdRaw` | on | on site pages, holding an image thumbnail half a second loads its original (raw) file in place of the sample, with a RAW badge (holding again goes back to the sample); the release opens nothing, scrolling or pinching cancels. The browser's long-press menu is off on image thumbnails while it is on |
-| `nativeFeed` | **off** | on the site's own pages (rule34, safebooru, xbooru and other Gelbooru 0.2 sites): a feed with the columns and layout below (one image per row at the full screen width by default), upgraded to the sample (or the original when there is none) (applies at once) |
+| `nativeFeed` | **off** | on the site's own pages (rule34, gelbooru.com, safebooru, xbooru and other Gelbooru 0.2 sites): a feed with the columns and layout below (one image per row at the full screen width by default), upgraded to the sample (or the original when there is none) (applies at once) |
 | `feedColumns` | `1` | with `nativeFeed`: `auto` (as many 170px columns as the screen holds) or 1 to 4. Applies at once |
 | `feedLayout` | `masonry` | with `nativeFeed` and more than one column: `masonry` keeps each image whole, in columns; `grid` makes even square tiles, cropped to fill. Applies at once |
 | `feedNav` | on | with `nativeFeed`, round buttons in the bottom-right corner, in two rows: ⤒ top, ‹ › previous/next post (e.g. to skip a long comic), ⤓ bottom; « » (top left) previous/next page through the site's own pagination (needs reload) |
