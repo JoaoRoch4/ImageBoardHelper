@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.11.0
+// @version      1.11.1
 // @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -68,12 +68,14 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.11.0'
+  const VERSION = '1.11.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // The site's thumbnail list. Gelbooru 0.2 sites (rule34, safebooru, xbooru)
   // put their thumbnails in .image-list > span.thumb; gelbooru.com itself in
-  // .thumbnail-container > article.thumbnail-preview. The rest is the same:
+  // .thumbnail-container > article.thumbnail-preview. item: the list's own
+  // children, a card or what holds one (on the Gelbooru 0.2 favorites, a bare
+  // span around span.thumb and its Remove link). The rest is the same:
   // the card's <a> around an <img> with the tags in title or alt, the
   // paginator's a[alt="next"], the file layout. scriptHosts: other hosts the
   // site's own scripts come from, which blockAds lets through (gelbooru's
@@ -86,7 +88,7 @@
   const TEAL = { accent: '#5eead4', line: '#39ff14', dark: '#1d3b38', mid: '#2f7d72' }
   const SITE_PROFILES = {
     'gelbooru.com': {
-      list: '.thumbnail-container', card: 'article.thumbnail-preview', scriptHosts: ['https://ajax.googleapis.com'],
+      list: '.thumbnail-container', card: 'article.thumbnail-preview', item: 'article', scriptHosts: ['https://ajax.googleapis.com'],
       // Clickadu's 300x250 spots (in fixed-size wrappers), the footer one, ExoClick's video slider.
       adSlots: ['center:has([id^="__clb-spot_"])', 'div:has(> [id^="__clb-spot_"])', '[id^="__clb-spot_"]', '.footerAd2', '.exo_wrapper', '[id$="-msg-video-slider-content"]'],
       colors: { accent: '#5aa9ff', line: '#2f8cff', dark: '#1b3552', mid: '#2f5f9e' },   // the site's own blue
@@ -94,12 +96,13 @@
     },
     'safebooru.org': { suggest: '/autocomplete.php?q=' },
   }
-  const PROFILE = { list: '.image-list', card: 'span.thumb', scriptHosts: [], adSlots: [], colors: TEAL,
+  const PROFILE = { list: '.image-list', card: 'span.thumb', item: 'span', scriptHosts: [], adSlots: [], colors: TEAL,
     suggest: '/public/autocomplete.php?q=', ...SITE_PROFILES[SITE] }   // suggest: rule34's and xbooru's
   const { accent: ACCENT, line: LINE, dark: ACCENT_DARK, mid: ACCENT_MID } = PROFILE.colors
   const LIST = PROFILE.list                 // the list of thumbnails
   const CARD = PROFILE.card                 // one thumbnail's wrapper, a child of the list
   const THUMB = `${LIST} ${CARD}`           // a card inside the list
+  const ITEM = `${LIST} > ${PROFILE.item}`  // a child of the list: a card, or the span around one
 
   // ═══════════════════════════════════════════════════════════
   // Persisted configuration
@@ -3698,7 +3701,8 @@
   // While a word is typed, the site's own suggestion endpoint (PROFILE.suggest,
   // the one its search box uses) is asked for it, through the page's fetch
   // with the login; a list under the field shows the tags with their post
-  // counts, in their kind's colour, and a tap swaps the word for the tag. The
+  // counts, in their kind's colour, and a tap swaps the word for the tag (a
+  // drag scrolls the list instead, and the page stays put under it). The
   // list's elements carry data-ibh-ui, so the dark theme's broad rules,
   // which clear every background, leave them alone.
   const SUGGEST_MS = 200
@@ -3752,15 +3756,43 @@
         }, e => { if (mine === seq) { dbg(`search: no suggestions for "${term}" (${describeError(e)})`); close() } })
       }, SUGGEST_MS)
     })
-    // pointerdown, not click: before the field loses its focus (and the list with it).
-    box.addEventListener('pointerdown', ev => {
-      const li = ev.target.closest && ev.target.closest('li')
-      if (!li) return
-      ev.preventDefault()
+    const pick = li => {
       const { token, prefix } = word()
       input.value = `${input.value.slice(0, input.value.length - token.length)}${prefix}${li.dataset.value} `
       close()
       input.focus()
+      dbg(`search: suggestion "${li.dataset.value}" picked`)
+    }
+    const itemAt = ev => ev.target.closest && ev.target.closest('li')
+    // A finger on the list may be scrolling it, so the tag goes in when the
+    // finger lifts, and only if it stayed nearly still and the list did not
+    // scroll. Measured on touch events, as in chipGestures: Firefox for
+    // Android cancels the pointer as soon as the list starts to scroll.
+    let touch = null
+    let touchedAt = 0
+    box.addEventListener('touchstart', ev => {
+      const t = ev.touches[0]
+      touchedAt = Date.now()
+      touch = ev.touches.length === 1 ? { x: t.clientX, y: t.clientY, top: box.scrollTop } : null
+    }, { passive: true })
+    box.addEventListener('touchmove', ev => {
+      const t = ev.touches[0]
+      if (touch && Math.hypot(t.clientX - touch.x, t.clientY - touch.y) > HOLD_SLOP) touch = null   // a scroll
+    }, { passive: true })
+    box.addEventListener('touchcancel', () => { touch = null })
+    box.addEventListener('touchend', ev => {
+      const li = itemAt(ev)
+      const still = touch && Math.abs(box.scrollTop - touch.top) < HOLD_SLOP
+      touch = null
+      if (!li || !still) return
+      ev.preventDefault()   // no mouse events or click after it: the list is gone, and they would land on what was under it
+      pick(li)
+    })
+    // The mouse: mousedown would move the focus out of the field; click picks.
+    box.addEventListener('mousedown', ev => ev.preventDefault())
+    box.addEventListener('click', ev => {
+      const li = itemAt(ev)
+      if (li && Date.now() - touchedAt > 800) pick(li)   // a click that follows a touch was the touch's
     })
     input.addEventListener('blur', () => setTimeout(close, 150))
     input.addEventListener('keydown', ev => { if (ev.key === 'Escape') close() })
@@ -6706,7 +6738,7 @@
     if (!auto && Number(cols) <= 1) return `
       ${LIST} { display: flex !important; flex-direction: column !important;
         flex-wrap: nowrap !important; align-items: stretch !important; gap: 14px !important; }
-      ${LIST} > ${CARD} { display: block !important; width: 100% !important; max-width: none !important;
+      ${ITEM} { display: block !important; width: 100% !important; max-width: none !important;
         height: auto !important; max-height: none !important; }
       ${THUMB} { display: block !important; width: 100vw !important; height: auto !important;
         max-width: none !important; max-height: none !important; min-height: 0 !important;
@@ -6714,7 +6746,7 @@
       ${THUMB} img { display: block; width: 100% !important; height: auto !important;
         max-width: none !important; max-height: none !important; }` + common
     const item = `
-      ${LIST} > ${CARD} { display: block !important; width: 100% !important; max-width: none !important;
+      ${ITEM} { display: block !important; width: 100% !important; max-width: none !important;
         height: auto !important; max-height: none !important; margin: 0 !important; }
       ${THUMB} { display: block !important; width: 100% !important; height: auto !important;
         max-width: none !important; max-height: none !important; min-height: 0 !important; margin: 0 !important; }`
@@ -6728,7 +6760,7 @@
       ${LIST} { display: block !important; column-gap: 6px !important;
         ${auto ? `column-width: ${FEED_COL_MIN}px` : `column-count: ${Number(cols)}`} !important; }
       ${item}
-      ${LIST} > ${CARD} { break-inside: avoid !important; margin-bottom: 6px !important; }
+      ${ITEM} { break-inside: avoid !important; margin-bottom: 6px !important; }
       ${THUMB} img { display: block; width: 100% !important; height: auto !important;
         max-width: none !important; max-height: none !important; }` + common
   }
@@ -6876,7 +6908,8 @@
   const FAVSEARCH_CSS = `
     .ibh-search { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0 12px; position: relative; }
     .ibh-suggest { position: absolute; z-index: 30; margin: 0 !important; padding: 4px 0 !important; list-style: none;
-      max-height: 50vh; overflow-y: auto; background: #1f2b30 !important; border: 1px solid ${LINE} !important;
+      max-height: 50vh; overflow-y: auto; overscroll-behavior: contain; user-select: none; -webkit-touch-callout: none;
+      background: #1f2b30 !important; border: 1px solid ${LINE} !important;
       border-radius: 8px; box-shadow: 0 8px 18px rgba(0, 0, 0, .5); }
     .ibh-suggest[hidden] { display: none; }
     .ibh-suggest li { display: flex !important; justify-content: space-between; gap: 12px; padding: 9px 12px !important;

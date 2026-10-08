@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.11.1
+
+- The one-column feed on the favorites pages takes the full width again:
+  since 1.10.0 its rule caught only `.image-list > span.thumb`, and the
+  favorites put each card in a bare span (with its Remove link), so the
+  posts came out half as wide and cut on the left. The site profile now
+  names the list's own children (`item`)
+- The tag suggestion list scrolls under the finger: a tag goes in when the
+  finger lifts without having moved (a tap or a hold), not as soon as it
+  touches the list. The page no longer scrolls along at the list's ends,
+  and a hold does not select the text
+
 ## 1.11.0
 
 - Tag suggestions in the script's search bars (`searchSuggest`, on): while a

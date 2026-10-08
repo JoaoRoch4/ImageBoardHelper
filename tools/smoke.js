@@ -98,13 +98,37 @@ const logLine = (page, re, timeout = 15000) => page.waitForFunction(
     const listed = await page.waitForSelector('.ibh-suggest li', { timeout: 10000 }).then(() => true, () => false)
     let suggestion = ''
     let typed = ''
+    // A drag on the list scrolls it: lifting the finger after it picks nothing.
+    const dragged = listed && await page.evaluate(() => {
+      const li = document.querySelector('.ibh-suggest li')
+      const r = li.getBoundingClientRect()
+      const at = (type, dy) => {
+        const touch = new Touch({ identifier: 1, target: li, clientX: r.left + 20, clientY: r.top + 10 + dy })
+        const touches = type === 'touchend' ? [] : [touch]
+        li.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches, targetTouches: touches, changedTouches: [touch] }))
+      }
+      at('touchstart', 0); at('touchmove', 40); at('touchend', 40)
+      return { value: document.querySelector('#ibh-sitesearch input[type="search"]').value, open: !document.querySelector('.ibh-suggest').hidden }
+    })
+    check('suggestion list drags without picking', !!dragged && dragged.value === 'red_eyes blo' && dragged.open, JSON.stringify(dragged))
+    // A tap picks when the finger lifts; the mouse picks on click.
     if (listed) {
       const first = page.locator('.ibh-suggest li').first()
       suggestion = await first.getAttribute('data-value') || ''
-      await first.click()
+      await first.tap()
       typed = await bar.inputValue()
     }
-    check('search suggestions', listed && typed === `red_eyes ${suggestion} `, listed ? `picked "${suggestion}": "${typed}"` : 'no suggestion list')
+    check('search suggestions', listed && typed === `red_eyes ${suggestion} `, listed ? `tapped "${suggestion}": "${typed}"` : 'no suggestion list')
+    let clicked = ''
+    if (listed) {
+      await page.waitForTimeout(900)   // a click right after a touch counts as the touch's
+      await bar.type('bl', { delay: 60 })
+      const next = await page.waitForSelector('.ibh-suggest:not([hidden]) li', { timeout: 10000 }).catch(() => null)
+      const tag = next && await next.getAttribute('data-value')
+      if (next) await next.click()
+      clicked = tag && (await bar.inputValue()).endsWith(` ${tag} `) ? tag : `none: "${await bar.inputValue()}"`
+    }
+    check('suggestion picked by mouse', listed && !clicked.startsWith('none'), clicked)
     await bar.fill('')
     // The theme gives the sites' own suggestion lists a background (it clears every other one).
     const lists = await page.evaluate(() => {
@@ -160,6 +184,21 @@ const logLine = (page, re, timeout = 15000) => page.waitForFunction(
       const thumbs = await page.locator(`${SITE.list} ${SITE.thumb}`).count()
       const layout = await page.evaluate(list => getComputedStyle(document.querySelector(list)).flexDirection, SITE.list)
       check('feed laid out', layout === 'column', `${thumbs} thumbnails, ${SITE.list} flex-direction: ${layout}`)
+      // The Gelbooru 0.2 favorites put each card in a bare span (with its Remove link). The feed has to
+      // size that span too: with no width of its own there, the post came out half as wide (1.10.0–1.11.0).
+      if (SITE.thumb === 'span.thumb') {
+        const sized = await page.evaluate(list => {
+          const span = document.createElement('span')
+          span.append(document.querySelector(`${list} span.thumb`).cloneNode(true))
+          document.querySelector(list).append(span)
+          const feed = document.querySelector('style[data-ibh-feed]')
+          const rules = feed ? [...feed.sheet.cssRules] : []
+          const hits = rules.filter(r => r.selectorText && span.matches(r.selectorText) && r.style.width === '100%').map(r => r.selectorText)
+          span.remove()
+          return hits
+        }, SITE.list)
+        check('favorites wrapper sized by the feed', sized.length > 0, sized.join(', ') || 'no feed rule gives the bare span a width')
+      }
 
       // A tap on a thumbnail opens the post over the page; back closes it.
       await page.locator(`${SITE.list} ${SITE.thumb} a`).first().click()

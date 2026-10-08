@@ -38,7 +38,7 @@ Fatos verificados no rule34 (via `ffrdp` e XHR síncrono na aba logada). Se algu
 
 | Ponto de contato | Detalhe |
 |---|---|
-| Listagem | `.image-list > span.thumb > a > img`; tags no `title` (favoritos) ou no `alt` (listagem). O `<a>` faz o papel de card para capa e GIF. Vídeo: `img.webm-thumb` ou tag de vídeo; GIF por tag (`NATIVE_GIF`). Troque a imagem só via `imgPicture()`/`cardPicture()`. |
+| Listagem | `.image-list > span.thumb > a > img`; nos favoritos cada `span.thumb` vem dentro de um `<span>` sem classe, junto do link Remover (o `item` do perfil é esse filho direto da lista: `span` no padrão; sem largura nele, o `calc(50% - 50vw)` do feed vira −180 px e o post sai pela metade, como na 1.10.0–1.11.0). Tags no `title` (favoritos) ou no `alt` (listagem). O `<a>` faz o papel de card para capa e GIF. Vídeo: `img.webm-thumb` ou tag de vídeo; GIF por tag (`NATIVE_GIF`). Troque a imagem só via `imgPicture()`/`cardPicture()`. |
 | CSS do site | O site injeta `.thumb { width; max-height: <tamanho da conta> !important }`: o feed (`feedCss`) precisa anular os dois, senão a imagem vaza sobre o post seguinte. |
 | Paginação | Listagem: link `>` com `alt="next"`. Favoritos: `index.php?page=favorites&s=view&id=USER&pid=N`, 50 por página, mais novos primeiro; o paginador deles não tem links de verdade (por isso as extensões de autopager falham), e o `pageTarget` monta o endereço. |
 | Favoritar | `/public/addfav.php?id=ID` responde `3` adicionado, `1` já estava, `2` deslogado; com `&toggle=1` remove e responde `4`. O coração do site também vota. |
@@ -122,7 +122,7 @@ Não sugira estas de novo sem um motivo novo.
 - Toda função nova que mexe no DOM da página precisa ser idempotente: o `MutationObserver` reprocessa o mesmo nó várias vezes. Use `WeakSet` ou `dataset`.
 - Todo recurso novo entra com uma chave em `DEFAULTS`, uma entrada no painel, uma linha de log e uma linha na tabela de opções dos dois READMEs. Se só vale no carregamento da página, a chave entra também em `NEEDS_RELOAD`.
 - A versão vive em dois lugares — `@version` no cabeçalho e `const VERSION` — e os dois sobem junto com uma entrada no `CHANGELOG.md`.
-- Site novo precisa de uma linha `@match` no cabeçalho e da marcação Gelbooru (o card `<a>` com `<img>` e as tags no `title`/`alt`, o `a[alt="next"]`, os arquivos em `thumbnails/`, `samples/`, `images/`). Se a lista não for `.image-list > span.thumb`, o site ganha uma linha em `SITE_PROFILES` (`list`, `card` e, se os scripts legítimos dele vierem de outro host, `scriptHosts` para o `blockAds`), e uma linha igual em `PROFILES` no `tools/smoke.js`, que precisa passar com `node tools/smoke.js '<listagem>'`.
+- Site novo precisa de uma linha `@match` no cabeçalho e da marcação Gelbooru (o card `<a>` com `<img>` e as tags no `title`/`alt`, o `a[alt="next"]`, os arquivos em `thumbnails/`, `samples/`, `images/`). Se a lista não for `.image-list > span.thumb`, o site ganha uma linha em `SITE_PROFILES` (`list`, `card`, `item` — o filho direto da lista — e, se os scripts legítimos dele vierem de outro host, `scriptHosts` para o `blockAds`), e uma linha igual em `PROFILES` no `tools/smoke.js`, que precisa passar com `node tools/smoke.js '<listagem>'`.
 - Todo texto novo de painel ou modal entra nas duas tabelas de `I18N`. Texto de log é escrito direto, em inglês.
 - Código e comentários em inglês no repositório. Comigo, no chat, fale português.
 - Erro e aviso sempre vão ao console; `debug` só espelha o resto.
