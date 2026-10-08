@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.11.0
+
+- Tag suggestions in the script's search bars (`searchSuggest`, on): while a
+  word is typed, the site's own suggestion list (the one its search box
+  uses: `/public/autocomplete.php` on rule34 and xbooru, `/autocomplete.php`
+  on safebooru, `page=autocomplete2` on gelbooru) gives up to 10 tags under
+  the field, with post counts and the kind's colour; a tap swaps the word,
+  keeping its `-` or `~`. On the home page the bar had replaced the site's
+  box and its suggestions with it
+- The sites' own suggestion lists (rule34's Awesomplete, gelbooru's jQuery UI)
+  get a background under the dark theme: they floated over the page see-through.
+  The old fix for rule34's never worked, since a class rule loses to the
+  theme's broad one; `:not(#ibh)` gives the new rules an ID's weight
+
 ## 1.10.1
 
 - gelbooru.com: its ad boxes no longer take room. The scripts were blocked,

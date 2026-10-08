@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.10.1
+// @version      1.11.0
 // @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -68,7 +68,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.10.1'
+  const VERSION = '1.11.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // The site's thumbnail list. Gelbooru 0.2 sites (rule34, safebooru, xbooru)
@@ -79,7 +79,10 @@
   // site's own scripts come from, which blockAds lets through (gelbooru's
   // jQuery); adSlots: the site's own ad boxes, hidden with the shared ones;
   // colors: the theme's accent (links, buttons), its lines, and two darker
-  // tones (a selected item's background, the text selection).
+  // tones (a selected item's background, the text selection). suggest: where
+  // the site's own search box gets its tag suggestions, the typed word
+  // appended (JSON: [{label: "tag (count)", value, type}], or gelbooru's
+  // [{value, post_count, category}]).
   const TEAL = { accent: '#5eead4', line: '#39ff14', dark: '#1d3b38', mid: '#2f7d72' }
   const SITE_PROFILES = {
     'gelbooru.com': {
@@ -87,9 +90,12 @@
       // Clickadu's 300x250 spots (in fixed-size wrappers), the footer one, ExoClick's video slider.
       adSlots: ['center:has([id^="__clb-spot_"])', 'div:has(> [id^="__clb-spot_"])', '[id^="__clb-spot_"]', '.footerAd2', '.exo_wrapper', '[id$="-msg-video-slider-content"]'],
       colors: { accent: '#5aa9ff', line: '#2f8cff', dark: '#1b3552', mid: '#2f5f9e' },   // the site's own blue
+      suggest: '/index.php?page=autocomplete2&type=tag_query&limit=10&term=',
     },
+    'safebooru.org': { suggest: '/autocomplete.php?q=' },
   }
-  const PROFILE = { list: '.image-list', card: 'span.thumb', scriptHosts: [], adSlots: [], colors: TEAL, ...SITE_PROFILES[SITE] }
+  const PROFILE = { list: '.image-list', card: 'span.thumb', scriptHosts: [], adSlots: [], colors: TEAL,
+    suggest: '/public/autocomplete.php?q=', ...SITE_PROFILES[SITE] }   // suggest: rule34's and xbooru's
   const { accent: ACCENT, line: LINE, dark: ACCENT_DARK, mid: ACCENT_MID } = PROFILE.colors
   const LIST = PROFILE.list                 // the list of thumbnails
   const CARD = PROFILE.card                 // one thumbnail's wrapper, a child of the list
@@ -130,6 +136,7 @@
     favSearch:      true,   // search bar on your own rule34 favorites page, results in the page's own list
     favAutopager:   true,   // search listings and favorites load the next page as you near the bottom
     siteSearch:     true,   // search bar on the site's listing pages: tags, kind, order, minimum score
+    searchSuggest:  true,   // tag suggestions from the site while typing in the script's search bars
     videoModal:     true,   // open posts from site pages in an overlay: video, GIF, image (needs reload)
     rotateLandscape: true,  // in the modal player's fullscreen, lock wide videos to landscape
     modalPreload:   true,   // in the modal, have the next post loaded before the swipe
@@ -214,7 +221,7 @@
       tRedoBtn: 'Redo-thumbnails shortcut button', navRedo: 'Free memory, then redo thumbnails', tDoubleTap: 'Double tap a thumbnail: favorite + upvote',
       tEyeBtn: '👁 button: hides the other buttons', eyeHide: 'Hide the buttons', eyeShow: 'Show the buttons',
       tFreeBtn: 'Free-memory shortcut button', navFree: 'Free memory & cache',
-      tFavSearch: 'Search your favorites', tSiteSearch: 'Search bar on site pages',
+      tFavSearch: 'Search your favorites', tSiteSearch: 'Search bar on site pages', tSuggest: 'Tag suggestions while typing',
       savedPick: 'Favorite searches…', recentPick: 'Recent searches…', saveSearch: '☆ Favorite', savedSearch: '★ Favorite', savedAll: '(everything)',
       orPlaceholder: 'any of these tags (OR): tag tag tag',
       minScore: 'min. score', sitePlaceholder: 'search: tag -tag tag* ( a ~ b )', tPager: 'Autopager (searches and favorites)',
@@ -287,7 +294,7 @@
       tRedoBtn: 'Botão de atalho para refazer as miniaturas', navRedo: 'Limpar a memória e refazer as miniaturas', tDoubleTap: 'Toque duplo na miniatura: favoritar + votar',
       tEyeBtn: 'Botão 👁: oculta os outros botões', eyeHide: 'Ocultar os botões', eyeShow: 'Mostrar os botões',
       tFreeBtn: 'Botão de atalho para limpar a memória', navFree: 'Limpar memória e cache',
-      tFavSearch: 'Buscar nos seus favoritos', tSiteSearch: 'Barra de busca nas páginas do site',
+      tFavSearch: 'Buscar nos seus favoritos', tSiteSearch: 'Barra de busca nas páginas do site', tSuggest: 'Sugestões de tags ao digitar',
       savedPick: 'Buscas favoritas…', recentPick: 'Buscas recentes…', saveSearch: '☆ Favoritar', savedSearch: '★ Favorita', savedAll: '(tudo)',
       orPlaceholder: 'qualquer destas tags (OU): tag tag tag',
       minScore: 'score mín.', sitePlaceholder: 'buscar: tag -tag tag* ( a ~ b )', tPager: 'Autopager (buscas e favoritos)',
@@ -3622,6 +3629,7 @@
     const input = el('input', { type: 'search', placeholder: t('favPlaceholder'), enterkeyhint: 'search' })
     input.setAttribute('autocapitalize', 'off')
     input.setAttribute('autocomplete', 'off')
+    attachSuggest(input)
     const or = orInput()
     const kind = kindSelect()
     const sort = el('select', { class: 'sort' })
@@ -3682,7 +3690,80 @@
     const field = el('input', { class: 'or', type: 'search', placeholder: t('orPlaceholder'), enterkeyhint: 'search' })
     field.setAttribute('autocapitalize', 'off')
     field.setAttribute('autocomplete', 'off')
+    attachSuggest(field)
     return field
+  }
+
+  // ─── tag suggestions for the script's search bars (searchSuggest) ───
+  // While a word is typed, the site's own suggestion endpoint (PROFILE.suggest,
+  // the one its search box uses) is asked for it, through the page's fetch
+  // with the login; a list under the field shows the tags with their post
+  // counts, in their kind's colour, and a tap swaps the word for the tag. The
+  // list's elements carry data-ibh-ui, so the dark theme's broad rules,
+  // which clear every background, leave them alone.
+  const SUGGEST_MS = 200
+  const suggesting = new WeakSet()
+
+  async function fetchSuggestions(term) {
+    const res = await fetch(PROFILE.suggest + encodeURIComponent(term), { credentials: 'same-origin' })
+    const list = await res.json()
+    return (Array.isArray(list) ? list : []).slice(0, 10).flatMap(x => {
+      const count = /\((\d+)\)\s*$/.exec(x.label || '')   // "tag (123)" on the Gelbooru 0.2 sites
+      return x.value ? [{ value: String(x.value), count: Number(x.post_count ?? (count ? count[1] : 0)) || 0, kind: String(x.category || x.type || '') }] : []
+    })
+  }
+
+  function attachSuggest(input) {
+    if (!CFG.searchSuggest || suggesting.has(input)) return
+    suggesting.add(input)
+    const box = el('ul', { class: 'ibh-suggest', 'data-ibh-ui': '' })
+    box.hidden = true
+    let timer = 0
+    let seq = 0
+    const close = () => { seq++; box.hidden = true }
+    // The word being typed: after the last space, its - or ~ prefix apart.
+    const word = () => {
+      const token = /\S*$/.exec(input.value)?.[0] ?? ''
+      const m = /^([-~]?)(.*)$/.exec(token) ?? ['', '', '']
+      return { token, prefix: m[1] ?? '', term: (m[2] ?? '').replace(/\*+$/, '') }
+    }
+    const show = items => {
+      if (!items.length) { close(); return }
+      if (!box.isConnected) input.parentElement?.appendChild(box)
+      box.style.left = `${input.offsetLeft}px`
+      box.style.top = `${input.offsetTop + input.offsetHeight + 2}px`
+      box.style.width = `${input.offsetWidth}px`
+      box.replaceChildren(...items.map(it => el('li', { 'data-value': it.value, 'data-ibh-ui': '', class: it.kind ? `k-${it.kind}` : '' }, [
+        el('span', { text: it.value.replace(/_/g, ' '), 'data-ibh-ui': '' }),
+        el('small', { text: it.count ? it.count.toLocaleString() : '', 'data-ibh-ui': '' }),
+      ])))
+      box.hidden = false
+    }
+    input.addEventListener('input', () => {
+      clearTimeout(timer)
+      const { term } = word()
+      if (term.length < 2) { close(); return }
+      timer = setTimeout(() => {
+        const mine = ++seq
+        fetchSuggestions(term).then(items => {
+          if (mine !== seq) return   // typed on meanwhile
+          dbg(`search: ${items.length} suggestions for "${term}"`)
+          show(items)
+        }, e => { if (mine === seq) { dbg(`search: no suggestions for "${term}" (${describeError(e)})`); close() } })
+      }, SUGGEST_MS)
+    })
+    // pointerdown, not click: before the field loses its focus (and the list with it).
+    box.addEventListener('pointerdown', ev => {
+      const li = ev.target.closest && ev.target.closest('li')
+      if (!li) return
+      ev.preventDefault()
+      const { token, prefix } = word()
+      input.value = `${input.value.slice(0, input.value.length - token.length)}${prefix}${li.dataset.value} `
+      close()
+      input.focus()
+    })
+    input.addEventListener('blur', () => setTimeout(close, 150))
+    input.addEventListener('keydown', ev => { if (ev.key === 'Escape') close() })
   }
 
   const orTags = text => String(text || '').trim().split(/[\s~()]+/).filter(Boolean)
@@ -4091,6 +4172,7 @@
     const input = el('input', { type: 'search', placeholder: t('sitePlaceholder'), enterkeyhint: 'search' })
     input.setAttribute('autocapitalize', 'off')
     input.setAttribute('autocomplete', 'off')
+    attachSuggest(input)
     input.value = now.rest === 'all' ? '' : now.rest
     const or = orInput()
     or.value = now.or
@@ -6229,6 +6311,7 @@
     body.appendChild(toggle('favSearch', t('tFavSearch'), null, ensureFavSearch))
     body.appendChild(toggle('favAutopager', t('tPager'), null, ensureFavPager))
     body.appendChild(toggle('siteSearch', t('tSiteSearch'), null, ensureSiteSearch))
+    body.appendChild(toggle('searchSuggest', t('tSuggest')))
     body.appendChild(toggle('videoModal', t('tModal'), t('noteReload')))
     body.appendChild(toggle('siteTheme', t('tTheme'), null, applySiteTheme))
     body.appendChild(toggle('blockAds', t('tAds'), t('noteReload')))
@@ -6712,8 +6795,13 @@
       background-color: #26363c !important; border: 1px solid ${LINE} !important; }
     html.ibh-theme #paginator b, html.ibh-theme .pagination b {
       background-color: ${ACCENT} !important; color: #0f1417 !important; border-color: ${ACCENT} !important; }
-    html.ibh-theme .awesomplete > ul, html.ibh-theme .awesomplete > ul * { background-color: #26363c !important; }
-    html.ibh-theme .awesomplete > ul [aria-selected="true"] { background-color: ${ACCENT_DARK} !important; }
+    /* The sites' own suggestion lists (rule34's Awesomplete, gelbooru's jQuery UI) float over the page:
+       they need a background back. :not(#ibh) adds an ID's weight, to outrank the broad rule above
+       (two classes and eight :not()s); a class alone loses to it, !important or not. */
+    html.ibh-theme .awesomplete > ul:not(#ibh), html.ibh-theme .awesomplete > ul:not(#ibh) *,
+    html.ibh-theme .ui-autocomplete:not(#ibh), html.ibh-theme .ui-autocomplete:not(#ibh) * { background-color: #26363c !important; }
+    html.ibh-theme .awesomplete > ul:not(#ibh) [aria-selected="true"],
+    html.ibh-theme .ui-autocomplete:not(#ibh) .ui-state-active { background-color: ${ACCENT_DARK} !important; }
     /* The mobile layout's ☰ menus float over the page (position: absolute);
        made transparent above, an open one would lay its links over the posts. */
     html.ibh-theme #navbar, html.ibh-theme #subnavbar { background-color: #26363c !important; box-shadow: 0 8px 18px rgba(0, 0, 0, .55); }
@@ -6786,7 +6874,18 @@
   const NATIVE_MARK_CSS = `${LIST} img.webm-thumb { border: 3px solid rgb(0, 0, 255); box-sizing: border-box; }`
 
   const FAVSEARCH_CSS = `
-    .ibh-search { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0 12px; }
+    .ibh-search { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0 12px; position: relative; }
+    .ibh-suggest { position: absolute; z-index: 30; margin: 0 !important; padding: 4px 0 !important; list-style: none;
+      max-height: 50vh; overflow-y: auto; background: #1f2b30 !important; border: 1px solid ${LINE} !important;
+      border-radius: 8px; box-shadow: 0 8px 18px rgba(0, 0, 0, .5); }
+    .ibh-suggest[hidden] { display: none; }
+    .ibh-suggest li { display: flex !important; justify-content: space-between; gap: 12px; padding: 9px 12px !important;
+      font-size: 15px; color: #e6eef0 !important; background: transparent !important; }
+    .ibh-suggest li small { opacity: .65; font-size: 12px; color: inherit !important; }
+    .ibh-suggest li span { color: inherit !important; }
+    .ibh-suggest li.k-artist { color: #f2ac08 !important; }
+    .ibh-suggest li.k-character { color: #3fb950 !important; }
+    .ibh-suggest li.k-copyright { color: #c678dd !important; }
     .ibh-search input[type="search"] { flex: 1 1 100%; min-width: 0; padding: 9px 10px; font-size: 15px; box-sizing: border-box; }
     .ibh-search input.min { width: 96px; padding: 7px 8px; font-size: 14px; box-sizing: border-box; }
     .ibh-search select, .ibh-search button { padding: 7px 12px; font-size: 14px; }

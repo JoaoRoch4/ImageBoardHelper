@@ -90,6 +90,33 @@ const logLine = (page, re, timeout = 15000) => page.waitForFunction(
     const shadowHosts = await page.evaluate(() => [...document.querySelectorAll('*')].filter(e => e.shadowRoot).length)
     check('panel mounted', shadowHosts >= 1, `${shadowHosts} shadow host(s)`)
     check('site search bar', await page.locator('#ibh-sitesearch').count() === 1)
+    // Tag suggestions: typing in the bar asks the site; a tap swaps the word being typed.
+    const bar = page.locator('#ibh-sitesearch input[type="search"]').first()
+    await bar.click()
+    await bar.fill('')
+    await bar.type('red_eyes blo', { delay: 60 })
+    const listed = await page.waitForSelector('.ibh-suggest li', { timeout: 10000 }).then(() => true, () => false)
+    let suggestion = ''
+    let typed = ''
+    if (listed) {
+      const first = page.locator('.ibh-suggest li').first()
+      suggestion = await first.getAttribute('data-value') || ''
+      await first.click()
+      typed = await bar.inputValue()
+    }
+    check('search suggestions', listed && typed === `red_eyes ${suggestion} `, listed ? `picked "${suggestion}": "${typed}"` : 'no suggestion list')
+    await bar.fill('')
+    // The theme gives the sites' own suggestion lists a background (it clears every other one).
+    const lists = await page.evaluate(() => {
+      const make = html => { const d = document.createElement('div'); d.innerHTML = html; document.body.appendChild(d); return d }
+      const aw = make('<div class="awesomplete"><ul><li>x</li></ul></div>')
+      const ui = make('<ul class="ui-menu ui-autocomplete"><li class="ui-menu-item"><div class="ui-menu-item-wrapper">x</div></li></ul>')
+      const bg = e => getComputedStyle(e).backgroundColor
+      const out = { awesomplete: bg(aw.querySelector('ul')), jqueryUi: bg(ui.querySelector('ul')) }
+      aw.remove(); ui.remove()
+      return out
+    })
+    check('suggestion lists opaque', !Object.values(lists).includes('rgba(0, 0, 0, 0)'), JSON.stringify(lists))
     // Ads: no script or frame from another host was even asked for, ExoClick's
     // queue is still the page's plain array (its script never ran), and
     // WebAssembly still compiles under the policy (the keyframe decoder).
