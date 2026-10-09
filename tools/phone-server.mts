@@ -374,6 +374,8 @@ function serve() {
     res.writeHead(status, { 'content-type': 'application/json' }).end(JSON.stringify(answer))
     log(`${route} ${Date.now() - t0}ms ${status === 200 ? 'ok' : `${status} ${answer.error}`}`)
   })
+  // Stopped (tmux window closed, SIGTERM): vreduce, in its own process group, goes too.
+  for (const sig of ['SIGTERM', 'SIGINT'] as const) process.on(sig, () => { video.stop(); process.exit(0) })
   server.on('error', (e: NodeJS.ErrnoException) => {
     if (e.code !== 'EADDRINUSE') throw e
     console.error(`port ${PORT} busy (a server already running?)`)
