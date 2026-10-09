@@ -200,6 +200,12 @@ const logLine = (page, re, timeout = 15000) => page.waitForFunction(
         check('favorites wrapper sized by the feed', sized.length > 0, sized.join(', ') || 'no feed rule gives the bare span a width')
       }
 
+      // With the video reducer off (the default) the script never calls 127.0.0.1: every GM request is recorded.
+      await page.evaluate(() => {
+        const orig = window.GM_xmlhttpRequest
+        window.__gmUrls = []
+        window.GM_xmlhttpRequest = d => { window.__gmUrls.push(String(d.url)); return orig(d) }
+      })
       // A tap on a thumbnail opens the post over the page; back closes it.
       await page.locator(`${SITE.list} ${SITE.thumb} a`).first().click()
       const opened = await logLine(page, /^modal: \w+ post \d+/)
@@ -308,6 +314,8 @@ const logLine = (page, re, timeout = 15000) => page.waitForFunction(
       await page.goBack()
       await page.waitForTimeout(500)
       check('modal closes on back', !(await modalShown()), `still on ${page.url().replace(/^.*\?/, '?')}`)
+      const local = await page.evaluate(() => window.__gmUrls.filter(u => u.startsWith('http://127.0.0.1')))
+      check('reducer off: no requests to 127.0.0.1', !local.length, local.join(', '))
 
       // Near the bottom, the next page is added under this one.
       await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
@@ -337,6 +345,34 @@ const logLine = (page, re, timeout = 15000) => page.waitForFunction(
       check('order and kind wait for Search', stayed && tags.endsWith(' -animated -video -gif sort:score'), `${stayed ? 'stayed' : 'left at once'}; tags=${tags}`)
       check('OR groups', tags === '( red_eyes ~ blue_eyes ) ( smile ~ blush ) -animated -video -gif sort:score' && back === 'red_eyes blue_eyes || smile blush', `tags=${tags}; read back "${back}"`)
     }
+
+    // The video reducer's token: typed in the panel, kept with GM_setValue only, never in the site's storage.
+    const panelToken = async (pg, value) => pg.evaluate(async value => {
+      const panelRoot = () => [...document.querySelectorAll('*')].map(e => e.shadowRoot).find(r => r && r.querySelector('.panel'))
+      const label = [...panelRoot().querySelectorAll('label.tog')].find(l => l.textContent.startsWith('Convert videos past the decoder'))
+      if (!label) return { error: 'no video reducer switch in the panel' }
+      if (!label.querySelector('input').checked) label.querySelector('input').click()
+      await new Promise(r => setTimeout(r, 300))
+      const field = panelRoot().querySelector('input.reducertoken')   // the switch rebuilt the panel: a new shadow root
+      if (!field) return { error: 'no token field' }
+      if (!field.disabled) { field.value = value; field.dispatchEvent(new Event('change')) }
+      return { disabled: field.disabled, placeholder: field.placeholder, type: field.type }
+    }, value)
+    const tokenField = await panelToken(page, 'abc123')
+    const kept = await page.evaluate(() => ({
+      gm: window.GM_getValue('reducerToken', null),
+      site: Object.keys(localStorage).some(k => String(localStorage.getItem(k)).includes('abc123')),
+    }))
+    check('token kept in GM only', !tokenField.error && tokenField.type === 'password' && kept.gm === 'abc123' && !kept.site, JSON.stringify({ ...tokenField, ...kept }))
+    // Without Violentmonkey's storage the field is off: nothing is kept anywhere.
+    const bare = await browser.newContext({ viewport: { width: 360, height: 780 }, deviceScaleFactor: 2, hasTouch: true })
+    await bare.addInitScript({ content: INJECT.replace('window.GM_setValue = (k, v) => { store.set(k, JSON.stringify(v)) }', '') })
+    const page2 = await bare.newPage()
+    await page2.goto(START, { waitUntil: 'domcontentloaded', timeout: 60000 })
+    await page2.waitForFunction(() => !!window.__ibh, null, { timeout: 30000 })
+    const off = await panelToken(page2, 'xyz789')
+    check('no GM storage: no token kept', !off.error && off.disabled && off.placeholder === 'Needs Violentmonkey storage', JSON.stringify(off))
+    await bare.close()
   } catch (e) {
     // A step that throws stops the run: a failure, not a pass.
     check('smoke ran to the end', false, e.message.split('\n')[0])

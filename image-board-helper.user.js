@@ -126,6 +126,7 @@
     seekReel:       true,   // modal seek bar: the nearest keyframe at once (WebAssembly), the exact frame when the finger rests
     playRate:       1,      // modal player speed, picked in its ⚙ (0.5 to 2), kept for every video
     seekStep:       5,      // modal player: seconds a double tap on a side jumps, picked in its ⚙
+    videoReducer:   false,  // convert videos past the phone's decoder on the phone server (127.0.0.1:8730), with its token
     memorySaver:    true,   // release far off-screen images and removed videos (needs reload)
     urlCache:       true,   // remember which candidate URL worked for each file
     feedNav:        true,   // ⤒ ‹ › buttons: top of page, previous and next post in the feed (needs reload)
@@ -256,6 +257,8 @@
       tagOpened: 'Opened in a new tab', tagCopied: 'Copied', tagCopyFail: 'Could not copy', tagsNone: 'No tags', mTurn: 'Rotate the screen',
       mPlay: 'Play / pause', mMute: 'Sound on / off', mFavUp: 'Favorite and upvote', mGear: 'Speed and double tap',
       gearRate: 'Speed', gearStep: 'Double tap jumps', tPlayRate: 'Player speed', tSeekStep: 'Player double tap jump',
+      tReducer: 'Convert videos past the decoder (phone server)', reducerToken: 'Server token', reducerOk: 'Server connected',
+      reducerDown: 'Server not answering', reducerBadToken: 'Wrong token', reducerNoStore: 'Needs Violentmonkey storage',
       tRotate: 'Landscape in player fullscreen',
       tPreload: 'Next post loaded in the player',
       tModalOrig: 'original image in the player', origZoom: 'When zooming in (sample first, faster)', origAlways: 'Always (slower)',
@@ -330,6 +333,8 @@
       tagOpened: 'Aberto em outra aba', tagCopied: 'Copiado', tagCopyFail: 'Não foi possível copiar', tagsNone: 'Sem tags', mTurn: 'Girar a tela',
       mPlay: 'Tocar / pausar', mMute: 'Som liga / desliga', mFavUp: 'Favoritar e dar ▲', mGear: 'Velocidade e duplo toque',
       gearRate: 'Velocidade', gearStep: 'Duplo toque pula', tPlayRate: 'Velocidade do player', tSeekStep: 'Pulo do duplo toque no player',
+      tReducer: 'Converter vídeos acima do decoder (servidor do celular)', reducerToken: 'Token do servidor', reducerOk: 'Servidor conectado',
+      reducerDown: 'Servidor sem resposta', reducerBadToken: 'Token errado', reducerNoStore: 'Precisa do armazenamento do Violentmonkey',
       tRotate: 'Paisagem na tela cheia do player',
       tPreload: 'Próximo post carregado no player',
       tModalOrig: 'imagem original no player', origZoom: 'Ao dar zoom (sample antes, mais rápido)', origAlways: 'Sempre (mais lento)',
@@ -3094,6 +3099,66 @@
     else pageToast(t(ok ? 'dlDone' : 'dlFail'))   // the modal closed meanwhile
     if (ok) info(`download: post ${post} fetched, handed to Firefox to save`)
     else warn(`download: post ${post} failed — ${error}`)
+  }
+
+  // ── Video reducer (videoReducer) ──
+  // Videos past the phone's hardware decoder can be converted on the phone
+  // itself, by VideoReducer's vreduce behind the phone server
+  // (tools/phone-server.mts) on 127.0.0.1. Off by default: the script needs
+  // nothing outside the site. The token is kept with GM_setValue only:
+  // storeGet/storeSet fall back to the site's IndexedDB, and IBH_CFG has
+  // copies in the site's storage, all readable by the site's scripts.
+  const REDUCER = 'http://127.0.0.1:8730'
+  const REDUCER_TIMEOUT_MS = 10000
+  const reducerToken = () => (GM_STORE ? String(GM_getValue('reducerToken', '') || '') : '')
+  function setReducerToken(value) { if (GM_STORE) GM_setValue('reducerToken', String(value).trim()) }
+
+  // One request to the server: { ok, status, json } or { ok: false, stage, error },
+  // where stage is 'token' (401) or 'server' (down, or its own error).
+  function reducerCall(method, route, body) {
+    return new Promise(resolve => {
+      const down = () => resolve({ ok: false, status: 0, json: null, stage: 'server', error: 'not answering' })
+      if (!GM_XHR) { down(); return }
+      GM_xmlhttpRequest({
+        method,
+        url: `${REDUCER}/${route}`,
+        timeout: REDUCER_TIMEOUT_MS,
+        headers: { Authorization: `Bearer ${reducerToken()}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+        data: body ? JSON.stringify(body) : undefined,
+        onload: res => {
+          let json = null
+          try { json = JSON.parse(res.responseText) } catch (e) { /* not JSON */ }
+          if (res.status === 401) resolve({ ok: false, status: 401, json, stage: 'token', error: 'wrong token' })
+          else if (res.status >= 200 && res.status < 300 && json && json.ok) resolve({ ok: true, status: res.status, json })
+          else resolve({ ok: false, status: res.status, json, stage: 'server', error: (json && json.error) || `HTTP ${res.status}` })
+        },
+        onerror: down,
+        ontimeout: down,
+      })
+    })
+  }
+
+  // The panel's token field and the server's status (asked each time the
+  // panel is built or opened).
+  let reducerStatusRow = null
+  function reducerControls() {
+    const field = el('input', { class: 'reducertoken', type: 'password', autocomplete: 'off', placeholder: t(GM_STORE ? 'reducerToken' : 'reducerNoStore') })
+    field.disabled = !GM_STORE
+    field.value = reducerToken()
+    field.addEventListener('change', () => { setReducerToken(field.value); refreshReducerStatus() })
+    reducerStatusRow = el('div', { class: 'lbl reducerstatus', text: '…' })
+    refreshReducerStatus()
+    return el('div', { class: 'lang' }, [el('div', { class: 'lbl', text: t('reducerToken') }), field, reducerStatusRow])
+  }
+
+  async function refreshReducerStatus() {
+    const row = reducerStatusRow
+    if (!row || !CFG.videoReducer) return
+    if (!GM_STORE) { row.textContent = t('reducerNoStore'); return }
+    const r = await reducerCall('GET', 'status')
+    row.textContent = r.ok ? `${t('reducerOk')} · ${r.json.version}` : t(r.stage === 'token' ? 'reducerBadToken' : 'reducerDown')
+    if (r.ok) dbg(`video reducer: server ${r.json.version}`)
+    else info(`video reducer: server ${r.stage} ${r.error}`)
   }
 
   // The post's own file, once it loaded: with the sample on screen, the
@@ -6328,8 +6393,9 @@
 
     .lang { padding: 4px 12px 8px; }
     .lang .lbl { color: #4e6469; font-size: 11px; padding-bottom: 4px; }
-    .lang select {
-      width: 100%; padding: 7px 8px; font-size: 12px;
+    .lang .reducerstatus { padding: 4px 0 0; }
+    .lang select, .lang input.reducertoken {
+      width: 100%; box-sizing: border-box; padding: 7px 8px; font-size: 12px;
       background: #0a0e10; color: #d7dee0;
       border: 1px solid #234a45; border-radius: 6px;
     }
@@ -6530,6 +6596,8 @@
     const onScreen = () => { if (modal) applyPlayRate(modal.video) }
     body.appendChild(choiceSelect('playRate', t('tPlayRate'), PLAY_RATES.map(r => [r, `${r.toLocaleString(LANG)}×`]), onScreen))
     body.appendChild(choiceSelect('seekStep', t('tSeekStep'), SEEK_JUMPS.map(s => [s, `${s} s`])))
+    body.appendChild(toggle('videoReducer', t('tReducer'), null, rebuildPanel))
+    if (CFG.videoReducer) body.appendChild(reducerControls())
     body.appendChild(choiceSelect('modalOriginal', t('tModalOrig'), [['zoom', t('origZoom')], ['always', t('origAlways')]]))
     body.appendChild(toggle('videoCovers', t('tCovers')))
     body.appendChild(toggle('gifInline', t('tGif')))
@@ -6586,6 +6654,7 @@
     panel.hidden = !panelOpen
     if (panelOpen) {
       renderStatus()
+      refreshReducerStatus()
       const fab = shadow.querySelector('.fab')
       if (fab) delete fab.dataset.alert
     }
