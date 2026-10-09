@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.13.0
+
+- The player's capsule has a second row: ▶/❚❚, ♥ (favorite and upvote, as
+  the top ♥ does; on a favorite it only says so, and taking it back stays
+  with the top ♥), ⓘ (the sheet on its Info tab, closed by a second tap) and
+  ⚙, a menu with the speed (0.5× to 2×, `playRate`) and how far a double tap
+  on a side jumps (5, 10, 15 or 30 s, `seekStep`). Both are kept for every
+  video and are also in the panel; the bar stays up while ⚙'s menu is open
+- The site bar's kind waits for Search or Enter too, as the order does since
+  1.12.1
+- The VLC button shows VLC's traffic cone (a 29x36 PNG, inline) in place of ▶
+- Downloads: they always went on when the modal moved to another post, but
+  the button follows the post on screen, so they seemed to stop. The top bar
+  now shows ⬇ with the count and progress of every download in flight, from
+  any post; one that ends with the modal closed says so on the page; and the
+  three-minute cap on a download is gone (a big video on a slow line was cut
+  short): only 60 s without a byte ends one
+- Holding 🔗 Copy link opens the post's file in a new tab (a tap still
+  copies the link)
+- The sheet's Copy all (every tag at once) is gone
+- Motion: the ☰ sheet (tags, Info, comments) slides up from below and back
+  down, the capsule sinks as it fades and rises as it comes back, the top bar
+  rises out of fullscreen's way, and ⚙'s menu rises in; only transform and
+  opacity, which the GPU composes. Android's "Remove animations" turns them off
+- The smoke test counts a step that throws as a failure: it used to print
+  "all checks passed" before the error
+
 ## 1.12.1
 
 - The site bar's order (newest, score, random) no longer searches as soon

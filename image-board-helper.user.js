@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.12.1
+// @version      1.13.0
 // @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -68,7 +68,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.12.1'
+  const VERSION = '1.13.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // The site's thumbnail list. Gelbooru 0.2 sites (rule34, safebooru, xbooru)
@@ -124,6 +124,8 @@
     slideReel:      true,   // hold slideshow from keyframes only (MP4): one small read per scene, no seeking the file
     wasmDecode:     true,   // with slideReel, decode the keyframes in WebAssembly (FFmpeg's H.264) into a canvas
     seekReel:       true,   // modal seek bar: the nearest keyframe at once (WebAssembly), the exact frame when the finger rests
+    playRate:       1,      // modal player speed, picked in its ⚙ (0.5 to 2), kept for every video
+    seekStep:       5,      // modal player: seconds a double tap on a side jumps, picked in its ⚙
     memorySaver:    true,   // release far off-screen images and removed videos (needs reload)
     urlCache:       true,   // remember which candidate URL worked for each file
     feedNav:        true,   // ⤒ ‹ › buttons: top of page, previous and next post in the feed (needs reload)
@@ -143,7 +145,7 @@
     videoModal:     true,   // open posts from site pages in an overlay: video, GIF, image (needs reload)
     rotateLandscape: true,  // in the modal player's fullscreen, lock wide videos to landscape
     modalPreload:   true,   // in the modal, have the next post loaded before the swipe
-    vlcButton:      true,   // ▶ VLC in a video post's ☰ menu: the video in the VLC app
+    vlcButton:      true,   // VLC (with its cone) in a video post's ☰ menu: the video in the VLC app
     copyLinkButton: true,   // 🔗 in the post's ☰ menu: copies the link to the post's own file (raw, not the sample)
     modalOriginal:  'zoom', // images in the modal: 'zoom' shows the sample and fetches the original on zoom; 'always'
     siteTheme:      true,   // the modal's dark theme on the site's pages
@@ -220,7 +222,7 @@
       tBulkBtn: 'Mass-favorite button', navBulk: 'Mass favorite: each tapped post gets ♥ and ▲',
       bulkOn: 'Mass favorite on: tap posts to favorite and upvote them', bulkOff: 'Mass favorite off',
       tCopyBtn: 'Copy-link button in the post menu', copyLink: '🔗 Copy link', linkCopied: 'Link to the raw file copied', copyFailed: 'Could not copy the link',
-      tVlcBtn: 'VLC button in the post menu', bigVideo: 'Past this phone’s hardware decoder: ☰ → ▶ VLC',
+      tVlcBtn: 'VLC button in the post menu', bigVideo: 'Past this phone’s hardware decoder: ☰ → VLC',
       tRedoBtn: 'Redo-thumbnails shortcut button', navRedo: 'Free memory, then redo thumbnails', tDoubleTap: 'Double tap a thumbnail: favorite + upvote',
       tEyeBtn: '👁 button: hides the other buttons', eyeHide: 'Hide the buttons', eyeShow: 'Show the buttons',
       tFreeBtn: 'Free-memory shortcut button', navFree: 'Free memory & cache',
@@ -251,8 +253,9 @@
       tabTags: 'Tags', tabInfo: 'Info', tabComments: 'Comments', commentsMore: 'More comments', commentsNone: 'No comments', commentsHidden: 'hidden by your comment threshold', infoKind: 'Kind', infoRes: 'Resolution', infoFormat: 'Format', infoDuration: 'Duration',
       infoDrops: 'Dropped frames', infoDropsOf: 'of', infoAbove: 'above 1080p: mid-range phones decode it in software', infoLoading: 'loading…',
       kindVideo: 'Video', kindGif: 'GIF', kindImage: 'Image',
-      tagsCopyAll: 'Copy all', tagOpened: 'Opened in a new tab', tagCopied: 'Copied', tagCopyFail: 'Could not copy', tagsNone: 'No tags', mTurn: 'Rotate the screen',
-      mPlay: 'Play / pause', mMute: 'Sound on / off',
+      tagOpened: 'Opened in a new tab', tagCopied: 'Copied', tagCopyFail: 'Could not copy', tagsNone: 'No tags', mTurn: 'Rotate the screen',
+      mPlay: 'Play / pause', mMute: 'Sound on / off', mFavUp: 'Favorite and upvote', mGear: 'Speed and double tap',
+      gearRate: 'Speed', gearStep: 'Double tap jumps', tPlayRate: 'Player speed', tSeekStep: 'Player double tap jump',
       tRotate: 'Landscape in player fullscreen',
       tPreload: 'Next post loaded in the player',
       tModalOrig: 'original image in the player', origZoom: 'When zooming in (sample first, faster)', origAlways: 'Always (slower)',
@@ -293,7 +296,7 @@
       tBulkBtn: 'Botão de favoritar em massa', navBulk: 'Favoritar em massa: cada post tocado ganha ♥ e ▲',
       bulkOn: 'Favoritar em massa ligado: toque nos posts para favoritar e votar', bulkOff: 'Favoritar em massa desligado',
       tCopyBtn: 'Botão de copiar link no menu do post', copyLink: '🔗 Copiar link', linkCopied: 'Link do arquivo raw copiado', copyFailed: 'Não deu para copiar o link',
-      tVlcBtn: 'Botão do VLC no menu do post', bigVideo: 'Grande demais para o decodificador do celular: ☰ → ▶ VLC',
+      tVlcBtn: 'Botão do VLC no menu do post', bigVideo: 'Grande demais para o decodificador do celular: ☰ → VLC',
       tRedoBtn: 'Botão de atalho para refazer as miniaturas', navRedo: 'Limpar a memória e refazer as miniaturas', tDoubleTap: 'Toque duplo na miniatura: favoritar + votar',
       tEyeBtn: 'Botão 👁: oculta os outros botões', eyeHide: 'Ocultar os botões', eyeShow: 'Mostrar os botões',
       tFreeBtn: 'Botão de atalho para limpar a memória', navFree: 'Limpar memória e cache',
@@ -324,8 +327,9 @@
       tabTags: 'Tags', tabInfo: 'Info', tabComments: 'Comentários', commentsMore: 'Mais comentários', commentsNone: 'Sem comentários', commentsHidden: 'ocultos pelo seu limite de score de comentários', infoKind: 'Tipo', infoRes: 'Resolução', infoFormat: 'Formato', infoDuration: 'Duração',
       infoDrops: 'Quadros perdidos', infoDropsOf: 'de', infoAbove: 'acima de 1080p: celulares intermediários decodificam em software', infoLoading: 'carregando…',
       kindVideo: 'Vídeo', kindGif: 'GIF', kindImage: 'Imagem',
-      tagsCopyAll: 'Copiar todas', tagOpened: 'Aberto em outra aba', tagCopied: 'Copiado', tagCopyFail: 'Não foi possível copiar', tagsNone: 'Sem tags', mTurn: 'Girar a tela',
-      mPlay: 'Tocar / pausar', mMute: 'Som liga / desliga',
+      tagOpened: 'Aberto em outra aba', tagCopied: 'Copiado', tagCopyFail: 'Não foi possível copiar', tagsNone: 'Sem tags', mTurn: 'Girar a tela',
+      mPlay: 'Tocar / pausar', mMute: 'Som liga / desliga', mFavUp: 'Favoritar e dar ▲', mGear: 'Velocidade e duplo toque',
+      gearRate: 'Velocidade', gearStep: 'Duplo toque pula', tPlayRate: 'Velocidade do player', tSeekStep: 'Pulo do duplo toque no player',
       tRotate: 'Paisagem na tela cheia do player',
       tPreload: 'Próximo post carregado no player',
       tModalOrig: 'imagem original no player', origZoom: 'Ao dar zoom (sample antes, mais rápido)', origAlways: 'Sempre (mais lento)',
@@ -2487,7 +2491,7 @@
 
   const SITE_LINK = `${THUMB} a`
   const SWIPE_MIN = 60        // px sideways to change post
-  const CONTROLS_BAND = 64    // bottom strip of the video: the player's own controls (the capsule and its margin)
+  const CONTROLS_BAND = 100   // bottom strip of the video: the player's own controls (the two-row capsule and its margin)
   let modal = null
 
   const siteLinks = () => [...document.querySelectorAll(SITE_LINK)]
@@ -2495,7 +2499,7 @@
   const MODAL_CSS = `
     :host { all: initial; }
     * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
-    .m { position: fixed; inset: 0; z-index: 2147483600; background: rgba(0, 0, 0, .95); }
+    .m { position: fixed; inset: 0; z-index: 2147483600; background: rgba(0, 0, 0, .95); overflow: hidden; }
     .stage {
       position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain;
       display: flex; flex-direction: column; justify-content: center;
@@ -2509,17 +2513,37 @@
        hid their bar behind the layer, worst in fullscreen. */
     .vlayer { position: absolute; left: 0; right: 0; top: 0; bottom: ${CONTROLS_BAND}px;
       -webkit-touch-callout: none; user-select: none; }
-    /* The controls: a glass capsule floating over the bottom of the video. */
+    /* The controls: a glass capsule floating over the bottom of the video,
+       the seek bar on top and the buttons under it. */
     .vctl {
-      position: absolute; left: 10px; right: 10px; bottom: 10px; height: 44px;
-      display: flex; align-items: center; gap: 6px; padding: 0 6px 0 14px;
-      border-radius: 22px; border: 1px solid rgba(255, 255, 255, .1);
+      position: absolute; left: 10px; right: 10px; bottom: 10px;
+      display: flex; flex-direction: column; gap: 2px; padding: 4px 8px 4px 14px;
+      border-radius: 20px; border: 1px solid rgba(255, 255, 255, .1);
       background: rgba(12, 18, 21, .55); -webkit-backdrop-filter: blur(10px) saturate(1.2); backdrop-filter: blur(10px) saturate(1.2);
-      box-shadow: 0 4px 18px rgba(0, 0, 0, .35); transition: opacity .3s;
+      box-shadow: 0 4px 18px rgba(0, 0, 0, .35); transition: opacity .25s, transform .25s;
     }
-    .vctl.hide { opacity: 0; pointer-events: none; }
+    .vctl.hide { opacity: 0; transform: translateY(16px); pointer-events: none; }
     .vctl button { width: 34px; height: 34px; border: none; background: transparent; color: #e6eef0; padding: 0; flex: none; }
     .vctl button svg, .vbig svg { width: 24px; height: 24px; fill: currentColor; }
+    .vrow { display: flex; align-items: center; gap: 6px; height: 34px; }
+    .vgap { flex: 1; }
+    .vctl .vfav.on { color: #e5534b; }
+    /* ⚙'s menu, over the capsule's right end: the speed and the double tap's jump. */
+    .vmenu { position: absolute; right: 10px; bottom: ${CONTROLS_BAND}px; display: grid; gap: 10px; padding: 10px 12px;
+      border-radius: 16px; border: 1px solid rgba(255, 255, 255, .1); background: rgba(12, 18, 21, .8);
+      -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); color: #e6eef0; font-size: 12px; }
+    .vmenu { transition: opacity .2s, transform .2s, visibility 0s; }
+    .vmenu[hidden] { display: grid !important; visibility: hidden; opacity: 0; transform: translateY(8px);
+      transition: opacity .15s, transform .15s, visibility 0s .15s; }
+    /* Android's "Remove animations": everything just shows and goes. */
+    @media (prefers-reduced-motion: reduce) {
+      .vctl, .bar, .side, .sheet, .sheet[hidden], .vmenu, .vmenu[hidden] { transition: none !important; }
+    }
+    .vmrow { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; max-width: 250px; }
+    .vmrow .lbl { width: 100%; opacity: .75; }
+    .vmrow button { min-width: 42px; height: 30px; padding: 0 8px; border-radius: 15px; border: 1px solid rgba(255, 255, 255, .18);
+      background: transparent; color: inherit; font-size: 13px; }
+    .vmrow button.on { background: ${ACCENT}; color: #0f1417; border-color: ${ACCENT}; }
     .vtime { color: #d7dee0; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
     /* Thin seek bar: played in the theme's teal (the range's own progress),
        downloaded in light grey (--buf, kept by the player), a thumb that
@@ -2549,8 +2573,10 @@
       color: #fff; background: rgba(0, 0, 0, .55); padding: 1px 0;
     }
     /* Fullscreen shows only the post; a tap on an image brings the bar back. */
-    .bar, .side { transition: opacity .2s; }
+    .bar, .side { transition: opacity .25s; }
+    .bar { transition: opacity .25s, transform .25s; }
     .m.clean .bar, .m.clean .side { opacity: 0; pointer-events: none; }
+    .m.clean .bar { transform: translateY(-14px); }
     video { max-height: 100vh; }
     video { -webkit-touch-callout: none; user-select: none; }
     /* The whole image fits the screen, in either orientation; a comic
@@ -2561,6 +2587,8 @@
     .bar { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 8px; padding: 10px; pointer-events: none; }
     .bar > * { pointer-events: auto; }
     .count { margin-left: auto; color: #a8b8bb; font-size: 13px; text-shadow: 0 1px 3px #000; }
+    .dlq { padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, .12); background: rgba(12, 18, 21, .7);
+      color: #e6eef0; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
     .status { position: absolute; left: 0; right: 0; top: 50%; text-align: center; color: #a8b8bb; font-size: 14px; pointer-events: none; }
     button, a.btn {
       width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center;
@@ -2580,9 +2608,15 @@
     .sheet {
       position: absolute; left: 0; right: 0; bottom: 0; max-height: 55%; overflow-y: auto; overscroll-behavior: contain;
       background: rgba(10, 14, 16, .97); border-top: 1px solid #2a3a3f; border-radius: 14px 14px 0 0; padding: 10px 10px 18px;
+      transition: transform .25s ease-out, visibility 0s;
     }
+    /* Closed, it waits below the screen (invisible, out of reach) instead of
+       display: none, so opening and closing slide; hidden keeps the state. */
+    .sheet[hidden] { display: block !important; visibility: hidden; transform: translateY(calc(100% + 24px));
+      transition: transform .2s ease-in, visibility 0s .2s; }
     .sheethead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
     button.pill { width: auto; height: 36px; border-radius: 18px; padding: 0 14px; font-size: 13px; }
+    button.pill .cone { height: 18px; width: auto; margin-right: 6px; vertical-align: -4px; }
     button.pill:disabled { opacity: .85; }
     /* Download in progress: the button spins until the file is fetched. */
     .spin { display: inline-block; width: 12px; height: 12px; margin-right: 7px; vertical-align: -2px;
@@ -2599,7 +2633,7 @@
     button.t-copyright { color: #c678dd; border-color: #5a3566; }
     button.t-metadata { color: #e5534b; border-color: #66282a; }
     button.tag.copied { background: ${ACCENT}; color: #0f1417; border-color: ${ACCENT}; }
-    button.tag.held { background: ${ACCENT_DARK}; border-color: ${ACCENT}; }
+    button.tag.held, button.pill.held { background: ${ACCENT_DARK}; border-color: ${ACCENT}; }
     button.tag { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
     .sheet .none { color: #4e6469; font-size: 13px; }
     button.quality { position: absolute; left: 12px; bottom: 16px; width: auto; height: 32px; padding: 0 12px;
@@ -2670,22 +2704,36 @@
     // where the top bar is hidden.
     const fsBtn = el('button', { class: 'vfs', title: t('mFull') })
     setFsIcon(fsBtn, false)
-    const ctl = el('div', { class: 'vctl' }, [times[0], seek, times[1], muteBtn, fsBtn])
+    // The second row: play/pause, ♥ (favorite and upvote), ⓘ (the Info tab), and on the right ⚙, sound, fullscreen.
+    const playPause = el('button', { class: 'vplay', title: t('mPlay') })
+    setIcon(playPause, PLAYER_ICON.play)
+    const favUp = el('button', { class: 'vfav', title: t('mFavUp') })
+    setIcon(favUp, PLAYER_ICON.heartLine)
+    const infoBtn = el('button', { class: 'vinfo', title: t('tabInfo') })
+    setIcon(infoBtn, PLAYER_ICON.info)
+    const gear = el('button', { class: 'vgear', title: t('mGear') })
+    setIcon(gear, PLAYER_ICON.gear)
+    const gearMenu = el('div', { class: 'vmenu' })
+    gearMenu.hidden = true
+    const ctl = el('div', { class: 'vctl' }, [
+      el('div', { class: 'vrow' }, [times[0], seek, times[1]]),
+      el('div', { class: 'vrow' }, [playPause, favUp, infoBtn, el('span', { class: 'vgap' }), gear, muteBtn, fsBtn]),
+    ])
     const prevBox = el('div', { class: 'vprev' }, [el('span')])
     prevBox.hidden = true
-    const vwrap = el('div', { class: 'vwrap' }, [video, layer, playBtn, prevBox, ctl])
-    const controls = installVideoControls(video, ctl, playBtn, times, seek, muteBtn, prevBox, vwrap)
+    const vwrap = el('div', { class: 'vwrap' }, [video, layer, playBtn, prevBox, gearMenu, ctl])
+    const controls = installVideoControls(video, ctl, playBtn, times, seek, muteBtn, prevBox, vwrap, { playPause, gearMenu })
+    installGearMenu(gear, gearMenu, video, vwrap, controls.poke)
     const stage = el('div', { class: 'stage' }, [vwrap, image])
     const close = el('button', { text: '✕', title: t('mClose') })
     const post = el('a', { class: 'btn', text: '↗', title: t('mOpen'), target: '_blank', rel: 'noopener' })   // a new tab
     const menu = el('button', { text: '☰', title: t('mMenu') })
-    const tagAll = el('button', { class: 'pill', text: t('tagsCopyAll') })
     const tagList = el('div', { class: 'taglist' })
     const laterBtn = el('button', { class: 'pill', text: t('laterAdd') })
     const dlBtn = el('button', { class: 'pill', text: t('dlBtn') })
     const copyBtn = el('button', { class: 'pill', text: t('copyLink') })
     copyBtn.hidden = !CFG.copyLinkButton
-    const vlcBtn = el('button', { class: 'pill', text: '▶ VLC' })
+    const vlcBtn = el('button', { class: 'pill' }, [el('img', { class: 'cone', src: VLC_CONE, alt: '' }), 'VLC'])
     vlcBtn.hidden = true   // videos only (showVideo)
     const tabTags = el('button', { class: 'tab on', text: t('tabTags') })
     const tabInfo = el('button', { class: 'tab', text: t('tabInfo') })
@@ -2694,7 +2742,7 @@
     infoList.hidden = true
     const commentList = el('div', { class: 'commentlist' })
     commentList.hidden = true
-    const sheet = el('div', { class: 'sheet' }, [el('div', { class: 'sheethead' }, [post, laterBtn, dlBtn, copyBtn, vlcBtn, tagAll]),
+    const sheet = el('div', { class: 'sheet' }, [el('div', { class: 'sheethead' }, [post, laterBtn, dlBtn, copyBtn, vlcBtn]),
       el('div', { class: 'tabs' }, [tabTags, tabInfo, tabComments]), tagList, infoList, commentList])
     // Sample or raw, for an image that has a sample: tap to switch.
     const quality = el('button', { class: 'quality' })
@@ -2708,6 +2756,8 @@
     const full = el('button', { text: '⛶', title: t('mFull') })
     const turn = el('button', { text: '↻', title: t('mTurn') })
     const count = el('span', { class: 'count' })
+    const dlq = el('span', { class: 'dlq' })   // downloads in flight, from any post
+    dlq.hidden = true
     const status = el('div', { class: 'status' })
     const fav = el('button', { text: '♡', title: t('mFav') })
     const score = el('span', { class: 'score' })
@@ -2718,7 +2768,7 @@
     badge.hidden = true
     const prev = el('button', { class: 'side prev', text: '‹', title: t('mPrev') })
     const next = el('button', { class: 'side next', text: '›', title: t('mNext') })
-    const box = el('div', { class: 'm' }, [stage, status, el('div', { class: 'bar' }, [close, menu, full, turn, fav, up, count]), prev, next, quality, sheet, laterView, toast, badge])
+    const box = el('div', { class: 'm' }, [stage, status, el('div', { class: 'bar' }, [close, menu, full, turn, fav, up, count, dlq]), prev, next, quality, sheet, laterView, toast, badge])
     close.addEventListener('click', () => closeModal(false))
     full.addEventListener('click', () => toggleModalFullscreen())
     menu.addEventListener('click', () => toggleMenu())
@@ -2730,7 +2780,7 @@
     box.addEventListener('pointerdown', ev => {
       if (sheet.hidden) return
       const path = ev.composedPath()
-      if (path.includes(sheet) || path.includes(menu)) return
+      if (path.includes(sheet) || path.includes(menu) || path.includes(infoBtn)) return   // ⓘ switches the tab itself
       closeMenu()
       swallowClick = Date.now() + 600
       ev.stopPropagation()
@@ -2745,13 +2795,26 @@
     laterBtn.addEventListener('click', () => toggleLaterHere())
     dlBtn.addEventListener('click', () => modalDownload())
     vlcBtn.addEventListener('click', () => openInVlc())
-    copyBtn.addEventListener('click', () => copyRawLink())
+    // 🔗: a tap copies the file's link, a hold opens the file in a new tab.
+    // The link is asked for as the finger lands, so it is there by the time
+    // the hold ends (the tab must open within that gesture).
+    let rawHref = null
+    const askRaw = () => { rawHref = null; rawFileUrl().then(u => { rawHref = u }, () => {}) }
+    copyBtn.addEventListener('touchstart', askRaw, { passive: true })
+    copyBtn.addEventListener('pointerdown', ev => { if (ev.pointerType === 'mouse') askRaw() })
+    chipGestures(copyBtn, () => rawHref, () => copyRawLink(), 'the post\'s file')
     laterClose.addEventListener('click', () => closeModal(false))
     quality.addEventListener('click', () => toggleQuality())
     fsBtn.addEventListener('click', () => toggleModalFullscreen())
     turn.addEventListener('click', () => turnScreen())
     fav.addEventListener('click', modalFavorite)
     up.addEventListener('click', modalUpvote)
+    // The player's ♥ only adds (with its upvote): taking a favorite back stays with the top ♥.
+    favUp.addEventListener('click', () => {
+      if (fav.classList.contains('on')) { flash(t('favAlready')); return }
+      modalFavorite()
+    })
+    infoBtn.addEventListener('click', () => toggleInfo())
     prev.addEventListener('click', () => stepModal(-1))
     next.addEventListener('click', () => stepModal(1))
     // Tap on the empty area around the media closes. The image fills the
@@ -2764,7 +2827,7 @@
     installImageHold(stage, image, box)
     installVideoGestures(layer, video)
     root.append(style, box)
-    modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, score, toast, badge, turn, fsBtn, menu, sheet, tagList, tagAll, laterBtn, dlBtn, vlcBtn, quality, tabTags, tabInfo, tabComments, infoList, commentList, sheetTab: 'tags', laterView, laterHead, laterGrid, laterNote, listLinks: null, turned: null, open: false, link: null, seq: 0 }
+    modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, vfav: favUp, gearMenu, dlq, score, toast, badge, turn, fsBtn, menu, sheet, tagList, laterBtn, dlBtn, vlcBtn, quality, tabTags, tabInfo, tabComments, infoList, commentList, sheetTab: 'tags', laterView, laterHead, laterGrid, laterNote, listLinks: null, turned: null, open: false, link: null, seq: 0 }
   }
 
   let toastTimer = 0
@@ -2927,6 +2990,7 @@
   const dlPercent = new Map()   // post id -> last progress, for the button
   const DL_DONE_MS = 1500       // the ✓ stays this long before the button comes back
   const BLOB_LIFE_MS = 120000   // how long Firefox gets to save the file
+  const DL_STALL_MS = 60000     // a download that gets nothing for this long is given up (no cap on the whole)
   let dlDoneAt = { post: null, until: 0 }
 
   // Files come only from the site's own hosts (rule34.xxx, api-cdn.rule34.xxx…).
@@ -2945,9 +3009,24 @@
   // alive long enough to confirm the prompt.
   function saveFile(url, name, done, progress) {
     let last = 0
-    GM_xmlhttpRequest({
+    let heard = Date.now()   // the last time any bytes came
+    let over = false
+    const end = (ok, error) => {
+      if (over) return
+      over = true
+      clearInterval(watch)
+      done(ok, error)
+    }
+    // A big video on a slow line can take many minutes: only silence ends it.
+    const watch = setInterval(() => {
+      if (Date.now() - heard < DL_STALL_MS) return
+      if (req && req.abort) req.abort()
+      end(false, `nothing received for ${DL_STALL_MS / 1000} s`)
+    }, 5000)
+    const req = GM_xmlhttpRequest({
       // A big file takes a while: report how far it got, twice a second at most.
       onprogress: e => {
+        heard = Date.now()
         if (!e.total || Date.now() - last < 500) return
         last = Date.now()
         progress(e.loaded, e.total)
@@ -2955,12 +3034,11 @@
       method: 'GET',
       url,
       responseType: 'blob',
-      timeout: 180000,
       // The video hosts refuse a request without the site as referrer (403),
       // which the browser sends when it plays the video and the extension not.
       headers: { Referer: `${location.origin}/` },
       onload: res => {
-        if (res.status !== 200 || !res.response) { done(false, `HTTP ${res.status}`); return }
+        if (res.status !== 200 || !res.response) { end(false, `HTTP ${res.status}`); return }
         const href = URL.createObjectURL(res.response)
         const a = document.createElement('a')
         a.href = href
@@ -2970,16 +3048,24 @@
         a.click()
         a.remove()
         setTimeout(() => URL.revokeObjectURL(href), BLOB_LIFE_MS)
-        done(true)
+        end(true)
       },
-      onerror: () => done(false, 'network error'),
-      ontimeout: () => done(false, 'timeout'),
+      onerror: () => end(false, 'network error'),
+      ontimeout: () => end(false, 'timeout'),
     })
   }
 
   // The button follows the post on screen: spinning with the progress while
   // it downloads (and disabled, the cooldown), ✓ for a moment once done.
+  // The top bar's ⬇ counts every download in flight, from any post.
   function refreshDlButton() {
+    const queue = modal && modal.dlq
+    if (queue) {
+      const known = [...downloading].map(p => dlPercent.get(p)).filter(v => v != null)
+      const pct = known.length ? `${Math.round(known.reduce((a, b) => a + b, 0) / known.length)}%` : '…'
+      queue.hidden = !downloading.size
+      queue.textContent = downloading.size > 1 ? `⬇ ${downloading.size} · ${pct}` : `⬇ ${pct}`
+    }
     const btn = modal && modal.dlBtn
     if (!btn) return
     const post = modal.link && postId(modal.link)
@@ -3005,6 +3091,7 @@
     }
     refreshDlButton()
     if (modal && modal.open) flash(t(ok ? 'dlDone' : 'dlFail'))
+    else pageToast(t(ok ? 'dlDone' : 'dlFail'))   // the modal closed meanwhile
     if (ok) info(`download: post ${post} fetched, handed to Firefox to save`)
     else warn(`download: post ${post} failed — ${error}`)
   }
@@ -3065,7 +3152,11 @@
     })
   }
 
-  // ▶ VLC: the video in the VLC app, from where the modal was. VLC decodes
+  // VLC's traffic cone on its button: a PNG cut to 29x36 (shown 18 px tall,
+  // sharp at DPR 2) and kept inline, so the script stays one file.
+  const VLC_CONE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAB0AAAAkCAMAAABCOMFYAAADAFBMVEVHcEz/fz36XhD7vHPxqmD//+nKAAD//9H9uXf////n5+b/t2j///LVXgDgZwDkbAB/f1vgZgDqcgHybQe/wcP0dAPaYADaYQD8smj/vXXe7vfZXwD/vHP/vHXPUwD/ozXp2cb/vnb/lSL/v3//vHW/ztj/9On/tWT/2K/8jjL+hQH1xpzx8/X/fAD+ozv2ZgDXXADYXgDZXwDUagDZYADYWgDYXADjaAHPWQD/yH//tWjwdgDzdwD3gBbs7Ozl5eX7hRb/um3qbgDx8fH/unD8kTX/uWz6fQD7tGrvcwD/s2P1egDZXwD8ypX/+vT/um/OtqX/////n0fvw5Py3sz/t3D9u3r/smH2eQ/9v3z/rFP/woXEzNP9kzf/x4X9nkvt7e38jiP///v/0Zrvx6b9sWbuawfvdgD28/D/pkT0eQD9o0X/igrIvrb/qkv3eQf9wIX6iCX/pUn0eAzBs6n9tGf9tm/////k3db5gh7/tW3/tGr6gQz/hAX6o0/9u3rwgBn/rEj9gQLk4+D9u3v/z6H09PPo7Ozp6efu7u7Ml2/////uawH//v3/hAHvbAH6fQD/eQHyZgDycAH1dQD/khn/ggH2bgH9ewHZYADsaQDfZQDobwD9ggDhaAD/jRH/w3v+unj/v3b/fgX9cwH3eAD/hwT/rlHvbgT6+vrxcQj+dgP2agDPzs7/zKH/woj/mijydwDm7fL+x5L+lSK8urm1s7G9vbyxusH/zIi0tLTiYwDdYgD+gAHkZgDqbADtcgD/ypj+p0vwdQD/sFv/njz4fBf/jyz/iQ3jfCvYiEn8gx7o5+e1vsW4vL//1aX9bgC4trS4uLj09vf2/v/znlb4cwz/0Zv9tXC5wMbX2t3/cQD//fvDwcDx7+7W1NPlZwD0egD52779hAD/uGrLlm3rz7baup3MpobP1tvt6+r8/v//5L3NzMr/x4D+3LLxtIHtfyXNzs7Pm3T+jwvwjj3ldx7/7dLngS/7lTv/ewv/vmPQ09Xj1s3S3OTZklcSialVAAAAxnRSTlMAAgMEAwEBAv39/igD/f3+Au/8/fz9eRv9nw+uee8o/D+NIPP9Gvv+/v38M4n5/v5g2cYM6UmMgTYO3PUt88KCn2SW9MrTOzdP+YClnVz+t/sjaFHn6f6S9+nsLvywF5LMXUYc7KX9/les4vIY/V6I+KJTyfuIyyBM35h80jLOwO79+fbX/fF/x7/7//////////////////////////////////////////////////////////////////////////////4V5EZ6AAACtElEQVQ4y22TdVhTYRTGz1g4aqNGo5Skgt3d3d3d3d29ZhusgDFqgNIxSrpLuqZid2G33xR5WHx/3fv87nvO977nXIDOgyHonzpz4iRgQNvBwvHv5xi7QUcr7Qanz/YO3o8naIMY2OEUyw9d4qi1NBb2pQbyKcFrtZbGwrFUDz7l217AaSutc0Gayac0HMWCZmcceF70Cmn183a31yI2gMt0t6b639d+9kLPmn6uUnXrflXIf1wBvDo0gp6X6Io7d5OSb58/jD5Vv/ERqi4V0TSz+C3oTZ0e/OyiqG1pTjvwdrWGYzzhUGOPxK8fv3zaFDXRgKAeo+OehER2663rPrQGd321MLGwq9GZF8wOkdFopkXz1ErjYGOV6wdEOYiWrVTV4sF6QZWXb1QIquzjXbjBWsUyDuxfzHrjWlBU9q6k9P3O+HUqcRnAaOSWSo3Qa6+UV5iVq4aJh1FUXbqCHlHeXpNcbdayBo9XiXE8vUOblFaT8kpvbpcwsdj5SqlCUat3Iym5OmXF85k6/8PEoB6LX7ogKbUu/lmzXF45p34MWgalKwwa9Spbu+hF4Q9z3O4/fvL0UWmJqd/IwRYdXN9hqSQmugklxWZH+SHDPrLIwkjjcSMQW27l9FpqmZCTzwtj+GbyuSgsJlNGMQngTp0+GRamEonEoOiE3EAGoiwuhykU0picLBLZxHc4TLOTBBGDYmIKwhD1Z4VymDQaTXhTRBZzjc1RWytnCVKH84rDGH+psC1DICDJSDO6KyOGSbOlEqJlbmzgA9a9PDFZJDA0bBPZDAHlHJWWpkyQ5hckFvuz4rLFARmGgvR+AxEz+resGMCNHRbO81BSMkmU3rcPATCYLhOEobbLYllxm03EWQPM+4PqchAQX++wvTgv23iQBWj+hXgUu+fWbTboojqdK/kHzocKJWuySiIAAAAASUVORK5CYII='
+
+  // VLC (the cone button): the video in the VLC app, from where the modal was. VLC decodes
   // natively on every core, where a video past the hardware decoder still
   // plays. An intent link opens it; an intent cannot carry the site as
   // Referer, which rule34's fast host (api-cdn) wants, and VLC for Android has
@@ -4245,8 +4336,9 @@
     }
     for (const field of [input, or, min]) field.addEventListener('keydown', ev => { if (ev.key === 'Enter') { ev.preventDefault(); submit() } })
     go.addEventListener('click', submit)
-    kind.addEventListener('change', submit)
-    sort.addEventListener('change', saved.sync)   // the order waits for Search or Enter: other fields may follow
+    // The kind and the order wait for Search or Enter: other fields may follow.
+    kind.addEventListener('change', saved.sync)
+    sort.addEventListener('change', saved.sync)
     dbg('site search bar added')
   }
 
@@ -4389,15 +4481,28 @@
     else renderTags(link, seq)
   }
 
-  function showTab(tab) {
+  function markTab(tab) {
     modal.sheetTab = tab
     modal.tabTags.classList.toggle('on', tab === 'tags')
     modal.tabInfo.classList.toggle('on', tab === 'info')
     modal.tabComments.classList.toggle('on', tab === 'comments')
-    modal.tagList.hidden = modal.tagAll.hidden = tab !== 'tags'
+    modal.tagList.hidden = tab !== 'tags'
     modal.infoList.hidden = tab !== 'info'
     modal.commentList.hidden = tab !== 'comments'
+  }
+
+  function showTab(tab) {
+    markTab(tab)
     renderSheet(modal.link, modal.seq)
+  }
+
+  // The player's ⓘ: the sheet open on Info, or closed if it already shows it.
+  function toggleInfo() {
+    const open = !modal.sheet.hidden
+    if (open && modal.sheetTab === 'info') toggleMenu()
+    else if (open) showTab('info')
+    else { markTab('info'); toggleMenu() }   // toggleMenu draws it
+    dbg(`modal: info ${modal.sheet.hidden ? 'closed' : 'opened'} from the player`)
   }
 
   // Comments tab: read from the post page (already fetched for the heart and
@@ -4552,7 +4657,6 @@
       return chip
     }))
     if (!sorted.length) modal.tagList.append(el('span', { class: 'none', text: t('tagsNone') }))
-    modal.tagAll.onclick = () => copyText(sorted.map(tag => tag.name).join(' '), modal.tagAll)
   }
 
   // A tap copies the tag; a hold opens its search in a new tab. The tab opens
@@ -4570,7 +4674,9 @@
   // serve the mouse. The tab opens from touchend/pointerup, both user gestures.
   const HOLD_SLOP = 12   // px the finger may wander and still be holding
 
-  function chipGestures(chip, url, onTap) {
+  // `url`: a link, or a function giving it at the moment of the hold (null:
+  // not known yet). `what` names it in the log.
+  function chipGestures(chip, url, onTap, what = 'tag search') {
     let down = null
     let skipClick = false
     const reset = () => {
@@ -4591,9 +4697,11 @@
       if (!held) return
       skipClick = true   // a click that may follow is not a copy
       if (ev.cancelable) ev.preventDefault()   // and stop it where we can
-      window.open(url, '_blank', 'noopener')
+      const href = typeof url === 'function' ? url() : url
+      if (!href) { flash(t('dlWait')); return }
+      window.open(href, '_blank', 'noopener')
       flash(t('tagOpened'))
-      dbg(`modal: tag search opened in a new tab (${url})`)
+      dbg(`modal: ${what} opened in a new tab (${href})`)
     }
     chip.addEventListener('touchstart', ev => start(ev.touches[0].clientX, ev.touches[0].clientY), { passive: true })
     chip.addEventListener('touchmove', ev => { if (moved(ev.touches[0].clientX, ev.touches[0].clientY)) reset() }, { passive: true })
@@ -4635,6 +4743,8 @@
   function showFav(on) {
     modal.fav.textContent = on ? '♥' : '♡'
     modal.fav.classList.toggle('on', on)
+    setIcon(modal.vfav, on ? PLAYER_ICON.heart : PLAYER_ICON.heartLine)
+    modal.vfav.classList.toggle('on', on)
   }
 
   // What is known shows at once; the post page corrects it when it answers.
@@ -4896,11 +5006,11 @@
   }
 
   // On the modal video: hold for 2x while the finger stays down; double tap on
-  // the right or left third to jump 5 s forward or back. The control strip is
+  // the right or left third to jump seekStep seconds (5, or what ⚙ picked)
+  // forward or back. The control strip is
   // left to the player. Turned, "left/right" follow the viewer, not the screen.
   const HOLD_FAST_MS = 400
   const HOLD_RATE = 2
-  const SEEK_STEP = 5
   const videoPress = { held: false }
 
   let badgeTimer = 0
@@ -4974,9 +5084,10 @@
           toggleModalFullscreen()
         } else if (side && side === tap.side) {
           const d = Number.isFinite(video.duration) ? video.duration : Infinity
-          video.currentTime = Math.min(d, Math.max(0, video.currentTime + side * SEEK_STEP))
-          showBadge(side > 0 ? `+${SEEK_STEP}s` : `−${SEEK_STEP}s`)
-          dbg(`modal: double tap, ${side > 0 ? '+' : '-'}${SEEK_STEP}s`)
+          const step = Number(CFG.seekStep) || 5
+          video.currentTime = Math.min(d, Math.max(0, video.currentTime + side * step))
+          showBadge(side > 0 ? `+${step}s` : `−${step}s`)
+          dbg(`modal: double tap, ${side > 0 ? '+' : '-'}${step}s`)
         }
         tap = null
         return
@@ -5002,20 +5113,67 @@
   // The seek bar's preview from keyframes (seekReel): this many, evenly spread.
   const SEEK_STEPS = Array.from({ length: 40 }, (_, i) => i / 40)
 
+  // ⚙ on the player: its speed and how far a double tap on a side jumps,
+  // both kept in the settings (playRate, seekStep), as rows of chips.
+  const PLAY_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2]
+  const SEEK_JUMPS = [5, 10, 15, 30]
+
+  function applyPlayRate(video) {
+    const rate = Number(CFG.playRate) || 1
+    video.defaultPlaybackRate = rate   // load() puts the speed back to this, so the next video keeps it
+    video.playbackRate = rate
+  }
+
+  function installGearMenu(gear, menu, video, vwrap, poke) {
+    const chips = []
+    const mark = () => chips.forEach(c => c.button.classList.toggle('on', Number(CFG[c.key]) === c.value))
+    const row = (label, key, attr, values, text, apply) => el('div', { class: 'vmrow' }, [el('span', { class: 'lbl', text: label }),
+      ...values.map(value => {
+        const button = el('button', { type: 'button', text: text(value), [`data-${attr}`]: String(value) })
+        button.addEventListener('click', () => {
+          setCfg(key, value)
+          apply()
+          mark()
+          poke()
+          dbg(`modal: ${key} set to ${value} from the player's ⚙`)
+        })
+        chips.push({ button, key, value })
+        return button
+      })])
+    menu.append(
+      row(t('gearRate'), 'playRate', 'rate', PLAY_RATES, v => `${v.toLocaleString(LANG)}×`, () => applyPlayRate(video)),
+      row(t('gearStep'), 'seekStep', 'step', SEEK_JUMPS, v => `${v} s`, () => {}))
+    gear.addEventListener('click', () => {
+      menu.hidden = !menu.hidden
+      if (!menu.hidden) mark()
+      poke()
+    })
+    // A touch anywhere else on the video closes it.
+    vwrap.addEventListener('pointerdown', ev => {
+      const path = ev.composedPath()
+      if (!menu.hidden && !path.includes(menu) && !path.includes(gear)) menu.hidden = true
+    }, true)
+  }
+
   // Returns { shown(), poke(), dropReel() }: the bar fades after 2 s without
   // interaction while playing, and stays up while paused or while the seek
   // bar is dragged.
-  function installVideoControls(video, ctl, playBtn, times, seek, muteBtn, prevBox, vwrap) {
+  function installVideoControls(video, ctl, playBtn, times, seek, muteBtn, prevBox, vwrap, { playPause, gearMenu }) {
     let dragging = false
     let hideTimer = 0
-    let muted = null   // the icon on show, so timeupdate does not rebuild it
+    let muted = null   // the icons on show, so timeupdate does not rebuild them
+    let paused = null
     const poke = () => {
       ctl.classList.remove('hide')
       clearTimeout(hideTimer)
-      hideTimer = setTimeout(() => { if (!dragging && !video.paused) ctl.classList.add('hide') }, CONTROLS_HIDE_MS)
+      hideTimer = setTimeout(() => {
+        if (!dragging && !video.paused && gearMenu.hidden) ctl.classList.add('hide')
+        else if (!gearMenu.hidden) poke()   // ⚙'s menu open: look again later
+      }, CONTROLS_HIDE_MS)
     }
     const sync = () => {
       playBtn.hidden = !video.paused
+      if (paused !== video.paused) { paused = video.paused; setIcon(playPause, paused ? PLAYER_ICON.play : PLAYER_ICON.pause) }
       if (muted !== video.muted) { muted = video.muted; setIcon(muteBtn, muted ? PLAYER_ICON.muted : PLAYER_ICON.volume) }
       times[1].textContent = mmss(video.duration)
       if (!dragging) times[0].textContent = mmss(video.currentTime)
@@ -5030,6 +5188,12 @@
       video.addEventListener(type, sync)
     }
     playBtn.addEventListener('click', () => { video.play().catch(() => {}) })
+    playPause.addEventListener('click', () => {
+      if (video.paused) video.play().catch(() => {})
+      else video.pause()
+      poke()
+      dbg(`modal: ${video.paused ? 'paused' : 'playing'} from the player's button`)
+    })
     muteBtn.addEventListener('click', () => { video.muted = !video.muted })
 
     // While the seek bar is dragged, only the preview box follows the finger;
@@ -5156,7 +5320,8 @@
     const v = modal.video
     v.pause()
     v.onerror = v.oncanplay = v.onloadedmetadata = null
-    v.playbackRate = 1
+    applyPlayRate(v)
+    modal.gearMenu.hidden = true
     modal.badge.hidden = true
     modal.vlcBtn.hidden = true
     modal.controls.dropReel()
@@ -5206,6 +5371,11 @@
   // The player's other Material icons, in the same stroke.
   const PLAYER_ICON = {
     play: 'M8 5v14l11-7z',
+    pause: 'M6 19h4V5H6v14zm8-14v14h4V5h-4z',
+    heart: 'M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z',
+    heartLine: 'M16.5 3c-1.74 0-3.41.81-4.5 2.09C10.91 3.81 9.24 3 7.5 3 4.42 3 2 5.42 2 8.5c0 3.78 3.4 6.86 8.55 11.54L12 21.35l1.45-1.32C18.6 15.36 22 12.28 22 8.5 22 5.42 19.58 3 16.5 3zm-4.4 15.55l-.1.1-.1-.1C7.14 14.24 4 11.39 4 8.5 4 6.5 5.5 5 7.5 5c1.54 0 3.04.99 3.57 2.36h1.87C13.46 5.99 14.96 5 16.5 5c2 0 3.5 1.5 3.5 3.5 0 2.89-3.14 5.74-7.9 10.05z',
+    info: 'M11 7h2v2h-2zm0 4h2v6h-2zm1-9C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8z',
+    gear: 'M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58a.49.49 0 0 0 .12-.61l-1.92-3.32a.49.49 0 0 0-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54a.48.48 0 0 0-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96a.49.49 0 0 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58a.49.49 0 0 0-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6A3.6 3.6 0 1 1 12 8.4a3.6 3.6 0 0 1 0 7.2z',
     volume: 'M3 9v6h4l5 5V4L7 9H3zm13.5 3c0-1.77-1.02-3.29-2.5-4.03v8.05c1.48-.73 2.5-2.25 2.5-4.02zM14 3.23v2.06c2.89.86 5 3.54 5 6.71s-2.11 5.85-5 6.71v2.06c4.01-.91 7-4.49 7-8.77s-2.99-7.86-7-8.77z',
     muted: 'M16.5 12c0-1.77-1.02-3.29-2.5-4.03v2.21l2.45 2.45c.03-.2.05-.41.05-.63zm2.5 0c0 .94-.2 1.82-.54 2.64l1.51 1.51C20.63 14.91 21 13.5 21 12c0-4.28-2.99-7.86-7-8.77v2.06c2.89.86 5 3.54 5 6.71zM4.27 3L3 4.27 7.73 9H3v6h4l5 5v-6.73l4.25 4.25c-.67.52-1.42.93-2.25 1.18v2.06c1.38-.31 2.63-.95 3.69-1.81L19.73 21 21 19.73l-9-9L4.27 3zM12 4L9.91 6.09 12 8.18V4z',
   }
@@ -6357,6 +6527,9 @@
     body.appendChild(toggle('vlcButton', t('tVlcBtn')))
     body.appendChild(toggle('copyLinkButton', t('tCopyBtn')))
     body.appendChild(toggle('seekReel', t('tSeekReel')))
+    const onScreen = () => { if (modal) applyPlayRate(modal.video) }
+    body.appendChild(choiceSelect('playRate', t('tPlayRate'), PLAY_RATES.map(r => [r, `${r.toLocaleString(LANG)}×`]), onScreen))
+    body.appendChild(choiceSelect('seekStep', t('tSeekStep'), SEEK_JUMPS.map(s => [s, `${s} s`])))
     body.appendChild(choiceSelect('modalOriginal', t('tModalOrig'), [['zoom', t('origZoom')], ['always', t('origAlways')]]))
     body.appendChild(toggle('videoCovers', t('tCovers')))
     body.appendChild(toggle('gifInline', t('tGif')))

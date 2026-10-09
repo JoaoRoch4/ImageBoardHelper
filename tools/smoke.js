@@ -224,6 +224,87 @@ const logLine = (page, re, timeout = 15000) => page.waitForFunction(
       })
       check('player capsule', player.times === 2 && player.svgButtons >= 2 && !player.emoji && player.bigPlay && player.blur && player.seekReel === true,
         `${player.times} times, ${player.svgButtons} SVG buttons, emoji ${player.emoji}, big play ${player.bigPlay}, blur ${player.blur}, seekReel ${player.seekReel}`)
+      // Its second row: play/pause, ♥ (favorite and upvote), ⓘ (the Info tab), ⚙ (speed and the
+      // double tap's jump, both kept in the settings). Clicked in the page: the post may be an image.
+      const extras = await page.evaluate(() => {
+        const root = [...document.querySelectorAll('*')].find(e => e.shadowRoot && e.shadowRoot.querySelector('.vlayer')).shadowRoot
+        const q = s => root.querySelector(s)
+        const out = { buttons: ['.vplay', '.vfav', '.vinfo', '.vgear'].filter(s => q(`.vctl ${s} svg`)).length }
+        q('.vgear').click()
+        out.menu = !!q('.vmenu') && !q('.vmenu').hidden
+        q('.vmenu [data-rate="1.5"]').click()
+        q('.vmenu [data-step="10"]').click()
+        out.rate = q('video').playbackRate
+        out.cfg = [window.__ibh.cfg.playRate, window.__ibh.cfg.seekStep]
+        q('.vmenu [data-rate="1"]').click()
+        q('.vmenu [data-step="5"]').click()
+        q('.vgear').click()
+        out.closed = q('.vmenu').hidden
+        q('.vinfo').click()
+        out.info = !q('.sheet').hidden && q('.tabs .tab.on').textContent
+        q('.vinfo').click()
+        out.infoClosed = q('.sheet').hidden
+        out.cone = q('.pill .cone') && q('.pill .cone').naturalWidth   // VLC's button, inline PNG
+        return out
+      })
+      check('player extras', extras.buttons === 4 && extras.menu && extras.rate === 1.5 && String(extras.cfg) === '1.5,10' && extras.closed &&
+        extras.info === 'Info' && extras.infoClosed && extras.cone === 29, JSON.stringify(extras))
+      // A download goes on across posts: the top bar's ⬇ shows it from any post, and goes once it ends.
+      // GM_xmlhttpRequest is swapped for one that reports 50% and waits for the test to finish it.
+      const dl = await page.evaluate(async () => {
+        const root = [...document.querySelectorAll('*')].find(e => e.shadowRoot && e.shadowRoot.querySelector('.vlayer')).shadowRoot
+        const q = s => root.querySelector(s)
+        const wait = ms => new Promise(r => setTimeout(r, ms))
+        let req = null
+        window.GM_xmlhttpRequest = d => { req = d; setTimeout(() => d.onprogress({ loaded: 50, total: 100 }), 10); return { abort() {} } }
+        ;[...root.querySelectorAll('.sheethead button')].find(b => b.textContent.startsWith('⬇')).click()
+        for (let i = 0; i < 100 && !req; i++) await wait(100)
+        await wait(300)
+        const out = { asked: !!req, first: !q('.dlq').hidden && q('.dlq').textContent }
+        q('.side.next').click()
+        await wait(800)
+        out.afterStep = !q('.dlq').hidden && q('.dlq').textContent
+        if (req) req.onload({ status: 200, response: new Blob(['x']) })
+        await wait(100)
+        out.gone = q('.dlq').hidden
+        return out
+      })
+      check('downloads across posts', dl.asked && /50%/.test(dl.first) && /50%/.test(dl.afterStep) && dl.gone, JSON.stringify(dl))
+      // Holding 🔗 opens the post's file in a new tab (window.open is caught here; the hold is ≥ 450 ms).
+      const held = await page.evaluate(async () => {
+        const root = [...document.querySelectorAll('*')].find(e => e.shadowRoot && e.shadowRoot.querySelector('.vlayer')).shadowRoot
+        const btn = [...root.querySelectorAll('.sheethead button')].find(b => b.textContent.startsWith('🔗'))
+        let opened = null
+        const open = window.open
+        window.open = u => { opened = u; return null }
+        const touch = type => {
+          const t = new Touch({ identifier: 2, target: btn, clientX: 5, clientY: 5 })
+          const now = type === 'touchend' ? [] : [t]
+          btn.dispatchEvent(new TouchEvent(type, { bubbles: true, cancelable: true, touches: now, targetTouches: now, changedTouches: [t] }))
+        }
+        touch('touchstart')
+        await new Promise(r => setTimeout(r, 1500))
+        touch('touchend')
+        window.open = open
+        return opened
+      })
+      // The sheet slides up from below and back (closed it waits off screen, invisible); the capsule and
+      // the top bar move as they fade.
+      const motion = await page.evaluate(async () => {
+        const root = [...document.querySelectorAll('*')].find(e => e.shadowRoot && e.shadowRoot.querySelector('.vlayer')).shadowRoot
+        const cs = s => getComputedStyle(root.querySelector(s))
+        const menu = [...root.querySelectorAll('.bar button')].find(b => b.textContent === '☰')
+        const state = () => [cs('.sheet').visibility, cs('.sheet').transform === 'none' ? 'in place' : 'moved']
+        menu.click()
+        await new Promise(r => setTimeout(r, 450))
+        const open = state()
+        menu.click()
+        await new Promise(r => setTimeout(r, 450))
+        return { open, closed: state(), capsule: cs('.vctl').transitionProperty, bar: cs('.bar').transitionProperty }
+      })
+      check('sheet and bars slide', String(motion.open) === 'visible,in place' && String(motion.closed) === 'hidden,moved' &&
+        /transform/.test(motion.capsule) && /transform/.test(motion.bar), JSON.stringify(motion))
+      check('hold copy link opens the file', typeof held === 'string' && /^https:\/\//.test(held), String(held))
       await page.goBack()
       await page.waitForTimeout(500)
       check('modal closes on back', !(await modalShown()), `still on ${page.url().replace(/^.*\?/, '?')}`)
@@ -244,17 +325,21 @@ const logLine = (page, re, timeout = 15000) => page.waitForFunction(
     if (await orField.count()) {
       await page.locator('#ibh-sitesearch input[type="search"]').first().fill('')
       await orField.fill('red_eyes blue_eyes || smile blush')
-      // Picking an order waits for Search (or Enter): other fields may follow.
+      // Picking an order or a kind waits for Search (or Enter): other fields may follow.
       const before = page.url()
       await page.locator('#ibh-sitesearch select.sort').selectOption('score')
+      await page.locator('#ibh-sitesearch select.kind').selectOption('image')
       await page.waitForTimeout(1500)
       const stayed = page.url() === before
       await Promise.all([page.waitForURL(u => u.href.includes('smile'), { timeout: 30000 }), orField.press('Enter')])
       const tags = new URL(page.url()).searchParams.get('tags') || ''
       const back = await page.locator('#ibh-sitesearch input.or').inputValue({ timeout: 30000 })
-      check('order waits for Search', stayed && tags.endsWith(' sort:score'), `${stayed ? 'stayed' : 'left at once'}; tags=${tags}`)
-      check('OR groups', tags === '( red_eyes ~ blue_eyes ) ( smile ~ blush ) sort:score' && back === 'red_eyes blue_eyes || smile blush', `tags=${tags}; read back "${back}"`)
+      check('order and kind wait for Search', stayed && tags.endsWith(' -animated -video -gif sort:score'), `${stayed ? 'stayed' : 'left at once'}; tags=${tags}`)
+      check('OR groups', tags === '( red_eyes ~ blue_eyes ) ( smile ~ blush ) -animated -video -gif sort:score' && back === 'red_eyes blue_eyes || smile blush', `tags=${tags}; read back "${back}"`)
     }
+  } catch (e) {
+    // A step that throws stops the run: a failure, not a pass.
+    check('smoke ran to the end', false, e.message.split('\n')[0])
   } finally {
     await browser.close()
     console.log(failed ? `\n${failed} check(s) failed` : '\nall checks passed')
