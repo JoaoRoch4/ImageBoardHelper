@@ -9,12 +9,14 @@ interface GMResponse {
   status: number
   readyState: number
   response: any
+  responseText: string   // the body as text (responseType unset or 'text')
   responseHeaders: string
 }
 declare function GM_xmlhttpRequest(details: {
   method?: string
   url: string
   headers?: Record<string, string>
+  data?: string          // the request body
   responseType?: 'text' | 'json' | 'blob' | 'arraybuffer' | 'document'
   timeout?: number
   onload?: (res: GMResponse) => void
