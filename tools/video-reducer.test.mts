@@ -207,3 +207,121 @@ test('stopping the server stops vreduce', async () => {
   for (let i = 0; i < 40 && !(fs.existsSync(s.log) && fs.readFileSync(s.log, 'utf8').includes(`SIGTERM ${url}`)); i++) await sleep(50)
   assert.ok(fs.readFileSync(s.log, 'utf8').includes(`SIGTERM ${url}`))
 })
+
+// ─── heat and battery, save, batch, video.log ───
+
+let heat: Server
+const battery = (temperature: number, percentage = 80, plugged = 'UNPLUGGED') =>
+  fs.writeFileSync(path.join(dir, 'heat', 'battery.json'), JSON.stringify({ temperature, percentage, plugged, status: 'DISCHARGING' }))
+const BATTERY_WAIT = 500   // more than IBH_VIDEO_BATTERY_MS below
+
+test('above 45 °C nothing runs and status says hot', async () => {
+  heat = await startServer('heat', { IBH_VIDEO_BATTERY_MS: '200', IBH_VIDEO_INTEREST_MS: '800' }, cache => {
+    const home = path.dirname(cache)
+    fs.writeFileSync(path.join(home, 'battery.json'), JSON.stringify({ temperature: 30, percentage: 80, plugged: 'UNPLUGGED' }))
+    fs.writeFileSync(path.join(home, 'termux-battery-status'), `#!/bin/sh\ncat "${home}/battery.json"\n`, { mode: 0o755 })
+    fs.writeFileSync(path.join(home, 'termux-notification'), `#!/bin/sh\necho "termux-notification $*" >> "${home}/calls.log"\n`, { mode: 0o755 })
+    fs.mkdirSync(path.join(home, 'media'))
+  })
+  battery(46)
+  await sleep(BATTERY_WAIT)
+  const { json } = await reduce(heat, 'https://api-cdn.rule34.xxx/slow/hot.mp4')
+  for (let i = 0; i < 10; i++) { const st = await status(heat, json.id); assert.equal(st.state, 'queued'); assert.equal(st.hot, true); await sleep(100) }
+  battery(30)
+  await waitFor(heat, json.id, st => st.state === 'running' && !st.hot)
+  await req(heat, 'video/cancel', { id: json.id })
+})
+
+// SIGSTOP stops nothing under proot, which traces every process and resumes
+// it; the server runs natively in Termux, where it does. Measured here once.
+const sigstopWorks = await new Promise<boolean>(resolve => {
+  const child = spawn(process.execPath, ['-e', 'let n = 0; setInterval(() => console.log(++n), 50)'], { detached: true, stdio: ['ignore', 'pipe', 'ignore'] })
+  let count = 0
+  child.stdout.on('data', d => { count = Number(String(d).trim().split('\n').at(-1)) })
+  setTimeout(() => {
+    process.kill(-child.pid!, 'SIGSTOP')
+    setTimeout(() => {
+      const at = count
+      setTimeout(() => { process.kill(-child.pid!, 'SIGKILL'); resolve(count === at) }, 400)
+    }, 100)
+  }, 600)
+})
+
+test('a running job pauses above 45 °C and goes on below', { skip: !sigstopWorks && 'SIGSTOP does not stop processes here (proot)' }, async () => {
+  const { json } = await reduce(heat, 'https://api-cdn.rule34.xxx/slow/pause.mp4')
+  await waitFor(heat, json.id, st => st.pos >= 1)
+  battery(46)
+  for (let end = Date.now() + BATTERY_WAIT + 1200; Date.now() < end; await sleep(100)) await status(heat, json.id)   // a tick in flight may still land
+  const held = (await status(heat, json.id)).pos
+  for (let end = Date.now() + 1500; Date.now() < end; await sleep(100)) assert.equal((await status(heat, json.id)).pos, held, 'paused while hot')
+  battery(30)
+  await waitFor(heat, json.id, st => st.pos > held, 5000)
+  await req(heat, 'video/cancel', { id: json.id })
+})
+
+test('above 42 °C next and batch wait, open goes on', async () => {
+  battery(43)
+  await sleep(BATTERY_WAIT)
+  const next = (await reduce(heat, 'https://api-cdn.rule34.xxx/slow/warm-next.mp4', { priority: 'next' })).json
+  for (let i = 0; i < 8; i++) { assert.equal((await status(heat, next.id)).state, 'queued'); await sleep(100) }
+  const open = (await reduce(heat, 'https://api-cdn.rule34.xxx/slow/warm-open.mp4')).json
+  await waitFor(heat, open.id, st => st.state === 'running')
+  await req(heat, 'video/cancel', { id: open.id })
+  await req(heat, 'video/cancel', { id: next.id })
+  battery(30)
+})
+
+test('below 20 % and not plugged, next waits', async () => {
+  battery(30, 15, 'UNPLUGGED')
+  await sleep(BATTERY_WAIT)
+  const next = (await reduce(heat, 'https://api-cdn.rule34.xxx/slow/low-next.mp4', { priority: 'next' })).json
+  for (let i = 0; i < 8; i++) { assert.equal((await status(heat, next.id)).state, 'queued'); await sleep(100) }
+  battery(30, 15, 'PLUGGED_AC')
+  await waitFor(heat, next.id, st => st.state === 'running')
+  await req(heat, 'video/cancel', { id: next.id })
+  battery(30)
+})
+
+test('save of a finished job copies to the media folder and notifies', async () => {
+  const url = 'https://api-cdn.rule34.xxx/images/2/save.mp4'
+  const { json } = await reduce(heat, url)
+  await waitFor(heat, json.id, st => st.state === 'done')
+  assert.deepEqual((await req(heat, 'video/save', { id: json.id, name: 'rule34_1.1080p' })).json, { ok: true, saved: true })
+  const home = path.join(dir, 'heat')
+  assert.equal(fs.statSync(path.join(home, 'media', 'rule34_1.1080p.mp4')).size, fs.statSync(path.join(heat.cache, `${hash(url)}.mp4`)).size)
+  assert.match(fs.readFileSync(path.join(home, 'calls.log'), 'utf8'), /termux-notification .*rule34_1\.1080p\.mp4/)
+})
+
+test('save before done answers later, then copies at the end; the job outlives the interest time', async () => {
+  const { json } = await reduce(heat, 'https://api-cdn.rule34.xxx/images/2/later.mp4')
+  assert.deepEqual((await req(heat, 'video/save', { id: json.id, name: 'rule34_2.1080p' })).json, { ok: true, saved: false, later: true })
+  const saved = path.join(dir, 'heat', 'media', 'rule34_2.1080p.mp4')
+  for (let i = 0; i < 80 && !fs.existsSync(saved); i++) await sleep(100)   // no polling meanwhile: 8 s against an 800 ms interest time
+  assert.ok(fs.existsSync(saved))
+})
+
+test('a bad save name: 400', async () => {
+  const { json } = await reduce(heat, 'https://api-cdn.rule34.xxx/images/2/save.mp4')
+  for (const name of ['../x', 'a b', '', 'x'.repeat(81)]) assert.equal((await req(heat, 'video/save', { id: json.id, name })).status, 400, name)
+})
+
+test('batch queues files without a .1080p sibling and writes <name>.1080p.mp4 next to them', async () => {
+  const saved = path.join(dir, 'heat', 'saved')
+  fs.mkdirSync(saved)
+  fs.writeFileSync(path.join(saved, 'clip.mp4'), 'x')
+  fs.writeFileSync(path.join(saved, 'done.mp4'), 'x')
+  fs.writeFileSync(path.join(saved, 'done.1080p.mp4'), 'x')
+  const { json } = await req(heat, 'video/batch', { paths: [path.join(saved, 'clip.mp4'), path.join(saved, 'done.mp4')] })
+  assert.deepEqual(json, { ok: true, queued: [path.join(saved, 'clip.mp4')] })
+  for (let i = 0; i < 80 && !fs.existsSync(path.join(saved, 'clip.1080p.mp4')); i++) await sleep(100)
+  assert.ok(fs.existsSync(path.join(saved, 'clip.1080p.mp4')))
+  assert.ok(!fs.readdirSync(saved).some(f => f.includes('.part')))
+})
+
+test('video.log has start and done lines without the url', () => {
+  const log = fs.readFileSync(path.join(dir, 'heat', 'video.log'), 'utf8')
+  const h8 = hash('https://api-cdn.rule34.xxx/images/2/save.mp4').slice(0, 8)
+  assert.match(log, new RegExp(`start ${h8}`))
+  assert.match(log, new RegExp(`done ${h8}`))
+  assert.doesNotMatch(log, /https?:\/\//)
+})
