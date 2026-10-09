@@ -213,73 +213,100 @@ test('stopping the server stops vreduce', async () => {
 let heat: Server
 const battery = (temperature: number, percentage = 80, plugged = 'UNPLUGGED') =>
   fs.writeFileSync(path.join(dir, 'heat', 'battery.json'), JSON.stringify({ temperature, percentage, plugged, status: 'DISCHARGING' }))
-const BATTERY_WAIT = 500   // more than IBH_VIDEO_BATTERY_MS below
+
+// The server starts hot. A new battery reading has landed once a status's
+// `hot` flips, so the tests wait for that instead of a fixed time, and each
+// puts the battery back to 30 °C however it ends.
+const cool = () => battery(30)
+async function readingLanded(id: string, isHot: boolean) { await waitFor(heat, id, st => !!st.hot === isHot, 5000) }
 
 test('above 45 °C nothing runs and status says hot', async () => {
   heat = await startServer('heat', { IBH_VIDEO_BATTERY_MS: '200', IBH_VIDEO_INTEREST_MS: '800' }, cache => {
     const home = path.dirname(cache)
-    fs.writeFileSync(path.join(home, 'battery.json'), JSON.stringify({ temperature: 30, percentage: 80, plugged: 'UNPLUGGED' }))
+    fs.writeFileSync(path.join(home, 'battery.json'), JSON.stringify({ temperature: 46, percentage: 80, plugged: 'UNPLUGGED' }))
     fs.writeFileSync(path.join(home, 'termux-battery-status'), `#!/bin/sh\ncat "${home}/battery.json"\n`, { mode: 0o755 })
     fs.writeFileSync(path.join(home, 'termux-notification'), `#!/bin/sh\necho "termux-notification $*" >> "${home}/calls.log"\n`, { mode: 0o755 })
     fs.mkdirSync(path.join(home, 'media'))
   })
-  battery(46)
-  await sleep(BATTERY_WAIT)
   const { json } = await reduce(heat, 'https://api-cdn.rule34.xxx/slow/hot.mp4')
-  for (let i = 0; i < 10; i++) { const st = await status(heat, json.id); assert.equal(st.state, 'queued'); assert.equal(st.hot, true); await sleep(100) }
-  battery(30)
-  await waitFor(heat, json.id, st => st.state === 'running' && !st.hot)
-  await req(heat, 'video/cancel', { id: json.id })
+  try {
+    await readingLanded(json.id, true)
+    for (let i = 0; i < 10; i++) { const st = await status(heat, json.id); assert.equal(st.state, 'queued'); assert.equal(st.hot, true); await sleep(100) }
+    cool()
+    await waitFor(heat, json.id, st => st.state === 'running' && !st.hot)
+  } finally {
+    cool()
+    await req(heat, 'video/cancel', { id: json.id })
+  }
 })
 
 // SIGSTOP stops nothing under proot, which traces every process and resumes
-// it; the server runs natively in Termux, where it does. Measured here once.
+// it; the server runs natively in Termux, where it does. Measured here once,
+// on a child that has been seen counting (a slow start proves nothing).
 const sigstopWorks = await new Promise<boolean>(resolve => {
   const child = spawn(process.execPath, ['-e', 'let n = 0; setInterval(() => console.log(++n), 50)'], { detached: true, stdio: ['ignore', 'pipe', 'ignore'] })
   let count = 0
   child.stdout.on('data', d => { count = Number(String(d).trim().split('\n').at(-1)) })
-  setTimeout(() => {
+  const done = (works: boolean) => { try { process.kill(-child.pid!, 'SIGKILL') } catch (e) { /* gone */ } resolve(works) }
+  const started = Date.now()
+  const wait = setInterval(() => {
+    if (count < 3 && Date.now() - started < 10000) return
+    clearInterval(wait)
+    if (count < 3) { done(false); return }
     process.kill(-child.pid!, 'SIGSTOP')
-    setTimeout(() => {
-      const at = count
-      setTimeout(() => { process.kill(-child.pid!, 'SIGKILL'); resolve(count === at) }, 400)
-    }, 100)
-  }, 600)
+    setTimeout(() => { const at = count; setTimeout(() => done(count === at), 600) }, 200)
+  }, 50)
 })
 
 test('a running job pauses above 45 °C and goes on below', { skip: !sigstopWorks && 'SIGSTOP does not stop processes here (proot)' }, async () => {
   const { json } = await reduce(heat, 'https://api-cdn.rule34.xxx/slow/pause.mp4')
-  await waitFor(heat, json.id, st => st.pos >= 1)
-  battery(46)
-  for (let end = Date.now() + BATTERY_WAIT + 1200; Date.now() < end; await sleep(100)) await status(heat, json.id)   // a tick in flight may still land
-  const held = (await status(heat, json.id)).pos
-  for (let end = Date.now() + 1500; Date.now() < end; await sleep(100)) assert.equal((await status(heat, json.id)).pos, held, 'paused while hot')
-  battery(30)
-  await waitFor(heat, json.id, st => st.pos > held, 5000)
-  await req(heat, 'video/cancel', { id: json.id })
+  try {
+    await waitFor(heat, json.id, st => st.pos >= 1)
+    battery(46)
+    await readingLanded(json.id, true)
+    for (let end = Date.now() + 1200; Date.now() < end; await sleep(100)) await status(heat, json.id)   // a tick in flight may still land
+    const held = (await status(heat, json.id)).pos
+    for (let end = Date.now() + 1500; Date.now() < end; await sleep(100)) assert.equal((await status(heat, json.id)).pos, held, 'paused while hot')
+    cool()
+    await waitFor(heat, json.id, st => st.pos > held, 5000)
+  } finally {
+    cool()
+    await req(heat, 'video/cancel', { id: json.id })
+  }
 })
 
 test('above 42 °C next and batch wait, open goes on', async () => {
-  battery(43)
-  await sleep(BATTERY_WAIT)
+  battery(46)
   const next = (await reduce(heat, 'https://api-cdn.rule34.xxx/slow/warm-next.mp4', { priority: 'next' })).json
-  for (let i = 0; i < 8; i++) { assert.equal((await status(heat, next.id)).state, 'queued'); await sleep(100) }
-  const open = (await reduce(heat, 'https://api-cdn.rule34.xxx/slow/warm-open.mp4')).json
-  await waitFor(heat, open.id, st => st.state === 'running')
-  await req(heat, 'video/cancel', { id: open.id })
-  await req(heat, 'video/cancel', { id: next.id })
-  battery(30)
+  let open: { id: string } | null = null
+  try {
+    await readingLanded(next.id, true)
+    battery(43)
+    await readingLanded(next.id, false)   // the 43 °C reading is in
+    for (let i = 0; i < 8; i++) { assert.equal((await status(heat, next.id)).state, 'queued'); await sleep(100) }
+    open = (await reduce(heat, 'https://api-cdn.rule34.xxx/slow/warm-open.mp4')).json
+    await waitFor(heat, open!.id, st => st.state === 'running')
+  } finally {
+    cool()
+    if (open) await req(heat, 'video/cancel', { id: open.id })
+    await req(heat, 'video/cancel', { id: next.id })
+  }
 })
 
 test('below 20 % and not plugged, next waits', async () => {
-  battery(30, 15, 'UNPLUGGED')
-  await sleep(BATTERY_WAIT)
+  battery(46)
   const next = (await reduce(heat, 'https://api-cdn.rule34.xxx/slow/low-next.mp4', { priority: 'next' })).json
-  for (let i = 0; i < 8; i++) { assert.equal((await status(heat, next.id)).state, 'queued'); await sleep(100) }
-  battery(30, 15, 'PLUGGED_AC')
-  await waitFor(heat, next.id, st => st.state === 'running')
-  await req(heat, 'video/cancel', { id: next.id })
-  battery(30)
+  try {
+    await readingLanded(next.id, true)
+    battery(30, 15, 'UNPLUGGED')
+    await readingLanded(next.id, false)   // the low-battery reading is in
+    for (let i = 0; i < 8; i++) { assert.equal((await status(heat, next.id)).state, 'queued'); await sleep(100) }
+    battery(30, 15, 'PLUGGED_AC')
+    await waitFor(heat, next.id, st => st.state === 'running')
+  } finally {
+    cool()
+    await req(heat, 'video/cancel', { id: next.id })
+  }
 })
 
 test('save of a finished job copies to the media folder and notifies', async () => {
@@ -324,4 +351,102 @@ test('video.log has start and done lines without the url', () => {
   assert.match(log, new RegExp(`start ${h8}`))
   assert.match(log, new RegExp(`done ${h8}`))
   assert.doesNotMatch(log, /https?:\/\//)
+})
+
+// ─── /v/<key>.mp4: the growing file over HTTP ───
+
+let ranges: Server   // a 300 ms wait for a range past the written end
+const TICK = 64 * 1024
+const media = (s: Server, stream: string, range?: string) =>
+  fetch(`http://127.0.0.1:${s.port}${stream}`, range ? { headers: { range } } : {})   // no token: the key is the capability
+const writtenOf = (s: Server, url: string) => fs.statSync(path.join(s.cache, `${hash(url)}.part.mp4`)).size
+
+test('no token needed for the right key; a wrong key is 404', async () => {
+  ranges = await startServer('ranges', { IBH_VIDEO_RANGE_WAIT_MS: '300' })
+  const url = 'https://api-cdn.rule34.xxx/slow/key.mp4'
+  const { json } = await reduce(ranges, url)
+  await waitFor(ranges, json.id, st => st.pos >= 1)
+  const ok = await media(ranges, json.stream, 'bytes=0-')
+  assert.equal(ok.status, 206)
+  await ok.arrayBuffer()
+  const wrong = await media(ranges, `/v/${'f'.repeat(64)}.mp4`)
+  assert.equal(wrong.status, 404)
+  assert.equal(wrong.headers.get('cross-origin-resource-policy'), 'cross-origin')
+  await req(ranges, 'video/cancel', { id: json.id })
+})
+
+test('while growing, bytes=N- inside the written part: 206 with bytes a-b/*', async () => {
+  const url = 'https://api-cdn.rule34.xxx/slow/grow.mp4'
+  const { json } = await reduce(main, url)
+  await waitFor(main, json.id, st => st.pos >= 2)
+  const res = await media(main, json.stream, 'bytes=1000-')
+  assert.equal(res.status, 206)
+  const m = /^bytes 1000-(\d+)\/\*$/.exec(res.headers.get('content-range') ?? '')
+  assert.ok(m, `content-range: ${res.headers.get('content-range')}`)
+  const body = Buffer.from(await res.arrayBuffer())
+  assert.equal(body.length, Number(m[1]) - 1000 + 1)
+  assert.ok(Number(m[1]) + 1 >= 2 * TICK)
+  assert.equal(res.headers.get('content-type'), 'video/mp4')
+  assert.equal(res.headers.get('cross-origin-resource-policy'), 'cross-origin')
+  await req(main, 'video/cancel', { id: json.id })
+})
+
+test('while growing, a range past the end waits for data', async () => {
+  const url = 'https://api-cdn.rule34.xxx/slow/wait.mp4'
+  const { json } = await reduce(main, url)
+  await waitFor(main, json.id, st => st.pos >= 1)
+  const from = writtenOf(main, url) + 1000
+  const keep = setInterval(() => { status(main, json.id).catch(() => {}) }, 200)   // keep the job wanted meanwhile
+  try {
+    const res = await media(main, json.stream, `bytes=${from}-`)
+    assert.equal(res.status, 206)
+    assert.match(res.headers.get('content-range') ?? '', new RegExp(`^bytes ${from}-\\d+/\\*$`))
+    assert.ok((await res.arrayBuffer()).byteLength > 0)
+  } finally {
+    clearInterval(keep)   // a failed assertion must not leave the timer holding the process
+    await req(main, 'video/cancel', { id: json.id })
+  }
+})
+
+test('a range past the end of a growing file gets 416 after the wait', async () => {
+  const url = 'https://api-cdn.rule34.xxx/slow/never.mp4'
+  const { json } = await reduce(ranges, url)
+  await waitFor(ranges, json.id, st => st.pos >= 1)
+  const t0 = Date.now()
+  const res = await media(ranges, json.stream, `bytes=${100 * 1024 * 1024}-`)
+  assert.equal(res.status, 416)
+  assert.ok(Date.now() - t0 >= 250, 'it waited before giving up')
+  assert.equal(res.headers.get('cross-origin-resource-policy'), 'cross-origin')
+  await req(ranges, 'video/cancel', { id: json.id })
+})
+
+test('finished: ordinary ranges with the size', async () => {
+  const url = 'https://api-cdn.rule34.xxx/images/1/done.mp4'   // converted by the first test
+  const { json } = await reduce(main, url)
+  assert.equal(json.state, 'done')
+  const size = fs.statSync(path.join(main.cache, `${hash(url)}.mp4`)).size
+  const part = await media(main, json.stream, 'bytes=0-99')
+  assert.equal(part.status, 206)
+  assert.equal(part.headers.get('content-range'), `bytes 0-99/${size}`)
+  assert.equal((await part.arrayBuffer()).byteLength, 100)
+  const whole = await media(main, json.stream)
+  assert.equal(whole.status, 200)
+  assert.equal(whole.headers.get('content-length'), String(size))
+  assert.equal((await whole.arrayBuffer()).byteLength, size)
+})
+
+test('no Range while growing: 200 chunked, following the file to the end', async () => {
+  const url = 'https://api-cdn.rule34.xxx/slow/follow.mp4'
+  const { json } = await reduce(main, url)
+  await waitFor(main, json.id, st => st.pos >= 1)
+  const keep = setInterval(() => { status(main, json.id).catch(() => {}) }, 200)
+  try {
+    const res = await media(main, json.stream)
+    assert.equal(res.status, 200)
+    assert.equal(res.headers.get('content-length'), null)
+    assert.equal((await res.arrayBuffer()).byteLength, 10 * TICK)
+    assert.equal((await status(main, json.id)).state, 'done')
+  } finally {
+    clearInterval(keep)
+  }
 })

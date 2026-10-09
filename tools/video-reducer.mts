@@ -11,7 +11,7 @@
 //
 // Paths and limits the tests override: VREDUCE, IBH_VREDUCE_CACHE,
 // IBH_VREDUCE_CACHE_MB, IBH_VIDEO_INTEREST_MS, IBH_VIDEO_BATTERY_MS,
-// IBH_VIDEO_WARM_C, IBH_VIDEO_HOT_C, IBH_VIDEO_LOW_BATTERY.
+// IBH_VIDEO_WARM_C, IBH_VIDEO_HOT_C, IBH_VIDEO_LOW_BATTERY, IBH_VIDEO_RANGE_WAIT_MS.
 // TypeScript that Node runs as it is (it strips the types); tsc -p tools checks it.
 
 import * as fs from 'node:fs'
@@ -72,6 +72,20 @@ const KILL_AFTER_MS = 5000
 const BOORUS = ['rule34.xxx', 'gelbooru.com', 'safebooru.org', 'xbooru.com']
 // /v/ answers are read by a <video> in a booru page: allowed cross-origin.
 const CORP = { 'cross-origin-resource-policy': 'cross-origin' }
+const MEDIA_CHUNK = 256 * 1024
+const GROW_POLL_MS = 200
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms))
+
+// Bytes start..end (inclusive) of an open file to the answer, minding backpressure.
+// A fresh buffer per read: write() keeps the buffer it is given until it is sent.
+async function pipeRange(handle: fs.promises.FileHandle, start: number, end: number, res: http.ServerResponse) {
+  for (let at = start; at <= end && !res.destroyed;) {
+    const { bytesRead, buffer } = await handle.read(Buffer.allocUnsafe(Math.min(MEDIA_CHUNK, end - at + 1)), 0, Math.min(MEDIA_CHUNK, end - at + 1), at)
+    if (!bytesRead) break
+    if (!res.write(buffer.subarray(0, bytesRead))) await new Promise(r => { res.once('drain', r); res.once('close', r) })
+    at += bytesRead
+  }
+}
 
 function booruUrl(url: string) {
   try {
@@ -103,12 +117,13 @@ export function makeVideoReducer(deps: VideoDeps) {
   const WARM_C = Number(process.env.IBH_VIDEO_WARM_C || 42)
   const HOT_C = Number(process.env.IBH_VIDEO_HOT_C || 45)
   const LOW_BATTERY = Number(process.env.IBH_VIDEO_LOW_BATTERY || 20)
+  const RANGE_WAIT_MS = Number(process.env.IBH_VIDEO_RANGE_WAIT_MS || 30000)
   const LOG = path.join(deps.dir, 'video.log')
 
   const jobs = new Map<string, VideoJob>()
   let running: VideoJob | null = null
   // The last battery reading; unknown (no Termux:API) means no limit.
-  let power: { temp: number | null; pct: number | null; plugged: boolean; at: number } = { temp: null, pct: null, plugged: true, at: 0 }
+  let power: { temp: number | null; pct: number | null; plugged: boolean } = { temp: null, pct: null, plugged: true }
   const hot = () => power.temp !== null && power.temp > HOT_C
   // Whether a job may start or go on now: hot stops everything; warm, or a
   // low battery while not charging, lets only the video on screen through.
@@ -233,15 +248,15 @@ export function makeVideoReducer(deps: VideoDeps) {
     child.on('error', e => { job.error = e.message; job.stage = 'process'; finish(null) })
   }
 
-  // termux-battery-status, at most every 2 s; a failure keeps the last reading.
+  // termux-battery-status, asked each time (before a job starts, and on the
+  // timer); a failure keeps the last reading.
   async function readBattery() {
-    if (Date.now() - power.at < 2000) return
     try {
       const o = JSON.parse(await deps.termux('termux-battery-status', []))
       power = { temp: typeof o.temperature === 'number' ? o.temperature : null, pct: typeof o.percentage === 'number' ? o.percentage : null,
-        plugged: typeof o.plugged === 'string' ? o.plugged !== 'UNPLUGGED' : true, at: Date.now() }
+        plugged: typeof o.plugged === 'string' ? o.plugged !== 'UNPLUGGED' : true }
     } catch (e) {
-      power = { ...power, at: Date.now() }
+      /* no Termux:API: keep the last reading (none: no limit) */
     }
   }
 
@@ -260,7 +275,7 @@ export function makeVideoReducer(deps: VideoDeps) {
   async function pump() {
     if (running || pumping) return
     pumping = true
-    try { await readBattery() } finally { pumping = false }
+    try { await readBattery() } finally { pumping = false }   // the spec's "before each job": a stale cool reading must not start one
     if (running) return
     const next = [...jobs.values()].filter(j => j.state === 'queued' && allowed(j))
       .sort((a, b) => RANK[b.priority] - RANK[a.priority] || a.created - b.created)[0]
@@ -274,7 +289,7 @@ export function makeVideoReducer(deps: VideoDeps) {
     for (const job of jobs.values()) if (job.priority !== 'batch' && !job.saveAs && now - job.lastPoll > INTEREST_MS) cancel(job)
   }, Math.max(100, Math.min(1000, INTEREST_MS / 4)))
   interest.unref()
-  const batteryTimer = setInterval(() => { power.at = 0; readBattery().then(() => { applyHeat(); pump() }) }, BATTERY_MS)
+  const batteryTimer = setInterval(() => { readBattery().then(() => { applyHeat(); pump() }) }, BATTERY_MS)
   batteryTimer.unref()
 
   // vreduce probe on a saved file: does it need converting?
@@ -374,8 +389,57 @@ export function makeVideoReducer(deps: VideoDeps) {
     },
   }
 
-  function serveMedia(_req: http.IncomingMessage, res: http.ServerResponse) {
-    res.writeHead(404, { ...CORP, 'content-type': 'text/plain' }).end('no such video')
+  // GET /v/<key>.mp4: the job's file, finished or still growing (the contract's
+  // semantics). The key, made per job, stands for the token.
+  async function serveMedia(req: http.IncomingMessage, res: http.ServerResponse) {
+    const notFound = () => { res.writeHead(404, { ...CORP, 'content-type': 'text/plain' }).end('no such video') }
+    const key = /^\/v\/([0-9a-f]{64})\.mp4$/.exec((req.url || '').split('?')[0] ?? '')?.[1]
+    const job = key ? [...jobs.values()].find(j => j.key === key) : undefined
+    const growing = job?.state === 'running'
+    const file = job?.state === 'done' ? job.final : growing ? job?.partial : undefined
+    if (!job || !file) { notFound(); return }
+    let handle: fs.promises.FileHandle
+    try { handle = await fs.promises.open(file, 'r') } catch (e) { notFound(); return }
+    let gone = false
+    res.on('close', () => { gone = true })
+    const head = { ...CORP, 'content-type': 'video/mp4', 'accept-ranges': 'bytes' }
+    const size = async () => (await handle.stat()).size   // the handle follows the file through its rename on done
+    try {
+      touch(job)
+      const range = /^bytes=(\d+)-(\d*)$/.exec(String(req.headers.range ?? ''))
+      if (range) {
+        const start = Number(range[1])
+        let have = await size()
+        // A range past the written end waits for the file to get there.
+        for (const until = Date.now() + RANGE_WAIT_MS; growing && have <= start && Date.now() < until && !gone && job.state === 'running'; have = await size()) await sleep(GROW_POLL_MS)
+        const total = job.state === 'done' ? String(have) : '*'
+        if (start >= have) { res.writeHead(416, { ...head, 'content-range': `bytes */${total}` }).end(); return }
+        const last = Math.min(range[2] ? Number(range[2]) : have - 1, have - 1)
+        res.writeHead(206, { ...head, 'content-range': `bytes ${start}-${last}/${total}`, 'content-length': String(last - start + 1) })
+        await pipeRange(handle, start, last, res)
+      } else if (!growing) {
+        const have = await size()
+        res.writeHead(200, { ...head, 'content-length': String(have) })
+        await pipeRange(handle, 0, have - 1, res)
+      } else {
+        // No range while growing: everything, chunked, following the file until the job ends.
+        res.writeHead(200, head)
+        let sent = 0
+        while (!gone) {
+          const still = job.state === 'running'   // read before the size: bytes written meanwhile are still sent
+          const have = await size()
+          if (have > sent) { await pipeRange(handle, sent, have - 1, res); sent = have }
+          else if (!still) break
+          else await sleep(GROW_POLL_MS)
+        }
+      }
+      res.end()
+    } catch (e) {
+      if (!res.headersSent) res.writeHead(500, { ...CORP, 'content-type': 'text/plain' }).end('read failed')
+      else res.destroy()
+    } finally {
+      await handle.close()
+    }
   }
 
   // The server is going away: vreduce, in its own process group, goes too
