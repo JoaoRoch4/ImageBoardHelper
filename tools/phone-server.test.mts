@@ -10,7 +10,7 @@ import * as fs from 'node:fs'
 import * as os from 'node:os'
 import * as path from 'node:path'
 import * as net from 'node:net'
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
 
 const SERVER = path.join(import.meta.dirname, 'phone-server.mts')
@@ -314,6 +314,59 @@ test('install-boot writes the Termux:Boot script', async () => {
   assert.ok(script.includes('termux-wake-lock'))
   assert.ok(script.includes('tmux has-session -t ibh || tmux new-session -d -s ibh'))
   assert.ok(script.includes('node /data/data/com.termux/files/usr/var/lib/proot-distro/containers/fedora/rootfs/root/ImageBoardHelper/tools/phone-server.mts serve'))
+})
+
+// ─── install-shortcuts: the IBH servidor icon and the ibh-servidor command ───
+
+// install-shortcuts into a fresh home and prefix; its task script and a folder for its stubs.
+async function shortcutHome() {
+  const home = fs.mkdtempSync(path.join(dir, 'sc-home-'))
+  const prefix = fs.mkdtempSync(path.join(dir, 'sc-prefix-'))
+  fs.mkdirSync(path.join(prefix, 'bin'))
+  const r = await cli(['install-shortcuts'], { IBH_TERMUX_HOME: home, IBH_TERMUX_PREFIX: prefix })
+  const bin = fs.mkdtempSync(path.join(dir, 'sc-bin-'))
+  return { r, home, prefix, bin, task: path.join(home, '.shortcuts', 'tasks', 'IBH servidor') }
+}
+
+// Runs the task with only the stubs and the system's own tools on PATH; what they saw.
+function runTask(task: string, bin: string) {
+  const before = calls().length
+  const r = spawnSync('sh', [task], { env: { PATH: `${bin}:/usr/bin:/bin`, HOME: dir }, encoding: 'utf8', timeout: 30000 })
+  return { code: r.status, seen: calls().slice(before) }
+}
+
+test('install-shortcuts writes the task, the command link and the icon', async () => {
+  const { r, home, prefix, task } = await shortcutHome()
+  assert.equal(r.code, 0, r.stderr)
+  assert.equal(fs.statSync(task).mode & 0o777, 0o755)
+  assert.equal(fs.readlinkSync(path.join(prefix, 'bin', 'ibh-servidor')), task)
+  const icon = fs.readFileSync(path.join(home, '.shortcuts', 'icons', 'IBH servidor.png'))
+  assert.equal(icon.subarray(1, 4).toString(), 'PNG')
+  assert.ok(fs.readFileSync(task, 'utf8').includes(`127.0.0.1:${port}/status`))
+})
+
+test('the shortcut starts the server when it does not answer', async () => {
+  const { task, bin } = await shortcutHome()
+  // curl fails once (the server is down), then answers.
+  stub(bin, 'curl', `n=$(cat "${bin}/n" 2>/dev/null || echo 0); n=$((n + 1)); echo $n > "${bin}/n"; [ $n -ge 2 ]`)
+  stub(bin, 'tmux', '[ "$1" != has-session ]')   // no session yet
+  for (const name of ['termux-wake-lock', 'termux-clipboard-set', 'termux-toast']) stub(bin, name)
+  const { code, seen } = runTask(task, bin)
+  assert.equal(code, 0)
+  assert.ok(seen.includes('tmux new-session -d -s ibh'), seen.join('\n'))
+  assert.ok(seen.some(c => /^tmux new-window -d -t ibh -n server node .*phone-server\.mts serve$/.test(c)), seen.join('\n'))
+  assert.ok(seen.includes('termux-clipboard-set'))
+  assert.equal(seen.at(-1), 'termux-toast IBH server on · token copied')
+})
+
+test('the shortcut leaves a running server alone', async () => {
+  const { task, bin } = await shortcutHome()
+  stub(bin, 'curl')   // answers at once
+  for (const name of ['tmux', 'termux-wake-lock', 'termux-clipboard-set', 'termux-toast']) stub(bin, name)
+  const { code, seen } = runTask(task, bin)
+  assert.equal(code, 0)
+  assert.ok(!seen.some(c => c.startsWith('tmux new-window')), seen.join('\n'))
+  assert.equal(seen.at(-1), 'termux-toast IBH server already on · token copied')
 })
 
 test('the default folder is in Termux\'s home, the same from the container and natively', async () => {

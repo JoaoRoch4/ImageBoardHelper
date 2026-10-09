@@ -8,6 +8,7 @@
 //   node tools/phone-server.mts call <route> [json]   one request, the answer printed
 //   node tools/phone-server.mts token                 the token (created if missing)
 //   node tools/phone-server.mts install-boot          starts the server when the phone boots (Termux:Boot)
+//   node tools/phone-server.mts install-shortcuts     the "IBH servidor" home-screen icon (Termux:Widget) and the ibh-servidor command
 //
 // Every request carries "Authorization: Bearer <token>"; the token lives in
 // ~/.config/ibh-server/token in Termux's home (mode 600), where the server
@@ -392,23 +393,64 @@ function serve() {
 // this file as seen from outside proot.
 // The boot script's place: Termux's home (IBH_TERMUX_HOME for tests), also
 // when this runs in the container, where os.homedir() is /root.
-export const bootFile = () => path.join(process.env.IBH_TERMUX_HOME || (fs.existsSync(TERMUX_HOME) ? TERMUX_HOME : os.homedir()), '.termux', 'boot', 'ibh-server.sh')
+const termuxHome = () => process.env.IBH_TERMUX_HOME || (fs.existsSync(TERMUX_HOME) ? TERMUX_HOME : os.homedir())
+export const bootFile = () => path.join(termuxHome(), '.termux', 'boot', 'ibh-server.sh')
 
-function installBoot() {
+// This file as native Termux sees it (through the rootfs path when run in the container).
+function nativeSelf() {
   const here = path.join(import.meta.dirname, 'phone-server.mts')
-  const native = here.startsWith(ROOTFS) ? here : `${ROOTFS}${here}`
-  const file = bootFile()
+  return here.startsWith(ROOTFS) ? here : `${ROOTFS}${here}`
+}
+
+// What the boot script and the shortcut share: Termux's wake lock and the
+// tmux session `ibh`; then the server's window.
+const SESSION_LINES = ['termux-wake-lock', 'tmux has-session -t ibh || tmux new-session -d -s ibh']
+const serverWindow = (native: string) => `tmux new-window -d -t ibh -n server 'node ${native} serve'`
+
+function writeScript(file: string, lines: string[]) {
   fs.mkdirSync(path.dirname(file), { recursive: true })
-  fs.writeFileSync(file, [
-    '#!/data/data/com.termux/files/usr/bin/sh',
-    "# Image Board Helper's phone server, started when the phone boots (Termux:Boot).",
-    'termux-wake-lock',
-    'tmux has-session -t ibh || tmux new-session -d -s ibh',
-    `tmux new-window -d -t ibh -n server 'node ${native} serve'`,
-    '',
-  ].join('\n'), { mode: 0o755 })
+  fs.writeFileSync(file, ['#!/data/data/com.termux/files/usr/bin/sh', ...lines, ''].join('\n'), { mode: 0o755 })
   fs.chmodSync(file, 0o755)   // mode applies only when the file is created
   console.log(`wrote ${file}`)
+}
+
+function installBoot() {
+  writeScript(bootFile(), ["# Image Board Helper's phone server, started when the phone boots (Termux:Boot).", ...SESSION_LINES, serverWindow(nativeSelf())])
+}
+
+// The "IBH servidor" icon: Termux:Widget runs ~/.shortcuts/tasks/* without a
+// terminal. It starts the server when /status does not answer and puts the
+// token on the clipboard, for the userscript's panel. ibh-servidor, on
+// Termux's PATH, runs the same script.
+function installShortcuts() {
+  const home = termuxHome()
+  const prefix = process.env.IBH_TERMUX_PREFIX || '/data/data/com.termux/files/usr'
+  const task = path.join(home, '.shortcuts', 'tasks', 'IBH servidor')
+  const token = path.join(DIR, 'token')
+  writeScript(task, [
+    "# Image Board Helper's phone server: started if it does not answer, then its token copied.",
+    `up() { curl -fsS -m 2 -H "Authorization: Bearer $(cat '${token}' 2>/dev/null)" http://127.0.0.1:${PORT}/status >/dev/null 2>&1; }`,
+    ...SESSION_LINES,
+    'if up; then',
+    "  msg='IBH server already on · token copied'",
+    'else',
+    `  ${serverWindow(nativeSelf())}`,
+    '  n=0',
+    '  while [ $n -lt 10 ] && ! up; do sleep 1; n=$((n + 1)); done',
+    "  if ! up; then termux-toast 'IBH server did not start'; exit 1; fi",
+    "  msg='IBH server on · token copied'",
+    'fi',
+    `termux-clipboard-set < '${token}'`,
+    'termux-toast "$msg"',
+  ])
+  const link = path.join(prefix, 'bin', 'ibh-servidor')
+  fs.rmSync(link, { force: true })
+  fs.symlinkSync(task, link)
+  console.log(`linked ${link}`)
+  const icon = path.join(home, '.shortcuts', 'icons', 'IBH servidor.png')
+  fs.mkdirSync(path.dirname(icon), { recursive: true })
+  fs.copyFileSync(path.join(import.meta.dirname, 'assets', 'ibh-servidor.png'), icon)
+  console.log(`wrote ${icon}`)
 }
 
 // One request from the command line: the answer printed, exit 0 when ok.
@@ -431,6 +473,7 @@ if (import.meta.main) {
   if (cmd === 'serve') serve()
   else if (cmd === 'token') console.log(readToken(true))
   else if (cmd === 'install-boot') installBoot()
+  else if (cmd === 'install-shortcuts') installShortcuts()
   else if (cmd === 'call' && args[0]) call(args[0], args[1]).then(code => process.exit(code), e => { console.error(e.message); process.exit(1) })
-  else { console.error('usage: phone-server.mts serve | call <route> [json] | token | install-boot'); process.exit(1) }
+  else { console.error('usage: phone-server.mts serve | call <route> [json] | token | install-boot | install-shortcuts'); process.exit(1) }
 }
