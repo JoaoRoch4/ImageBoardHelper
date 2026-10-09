@@ -244,10 +244,16 @@ const logLine = (page, re, timeout = 15000) => page.waitForFunction(
     if (await orField.count()) {
       await page.locator('#ibh-sitesearch input[type="search"]').first().fill('')
       await orField.fill('red_eyes blue_eyes || smile blush')
+      // Picking an order waits for Search (or Enter): other fields may follow.
+      const before = page.url()
+      await page.locator('#ibh-sitesearch select.sort').selectOption('score')
+      await page.waitForTimeout(1500)
+      const stayed = page.url() === before
       await Promise.all([page.waitForURL(u => u.href.includes('smile'), { timeout: 30000 }), orField.press('Enter')])
-      const tags = new URL(page.url()).searchParams.get('tags')
+      const tags = new URL(page.url()).searchParams.get('tags') || ''
       const back = await page.locator('#ibh-sitesearch input.or').inputValue({ timeout: 30000 })
-      check('OR groups', tags === '( red_eyes ~ blue_eyes ) ( smile ~ blush )' && back === 'red_eyes blue_eyes || smile blush', `tags=${tags}; read back "${back}"`)
+      check('order waits for Search', stayed && tags.endsWith(' sort:score'), `${stayed ? 'stayed' : 'left at once'}; tags=${tags}`)
+      check('OR groups', tags === '( red_eyes ~ blue_eyes ) ( smile ~ blush ) sort:score' && back === 'red_eyes blue_eyes || smile blush', `tags=${tags}; read back "${back}"`)
     }
   } finally {
     await browser.close()

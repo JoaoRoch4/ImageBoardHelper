@@ -1,5 +1,10 @@
 # Changelog
 
+## 1.12.1
+
+- The site bar's order (newest, score, random) no longer searches as soon
+  as it changes: it waits for Search or Enter, so other fields can follow
+
 ## 1.12.0
 
 - The OR field takes more than one group: `||` starts another, and each
