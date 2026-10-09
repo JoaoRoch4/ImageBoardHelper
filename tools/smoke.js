@@ -238,6 +238,17 @@ const logLine = (page, re, timeout = 15000) => page.waitForFunction(
     const scriptErrors = await page.evaluate(() => window.__ibh.log().filter(e => e.level === 'error' || e.level === 'warn').map(e => `${e.level}: ${e.msg}`))
     check('no page errors', !pageErrors.length, pageErrors.slice(0, 3).join(' | '))
     check('no errors in the script log', !scriptErrors.length, scriptErrors.slice(0, 3).join(' | '))
+
+    // The OR field: || starts another group, and the bar reads the groups back from the address.
+    const orField = page.locator('#ibh-sitesearch input.or')
+    if (await orField.count()) {
+      await page.locator('#ibh-sitesearch input[type="search"]').first().fill('')
+      await orField.fill('red_eyes blue_eyes || smile blush')
+      await Promise.all([page.waitForURL(u => u.href.includes('smile'), { timeout: 30000 }), orField.press('Enter')])
+      const tags = new URL(page.url()).searchParams.get('tags')
+      const back = await page.locator('#ibh-sitesearch input.or').inputValue({ timeout: 30000 })
+      check('OR groups', tags === '( red_eyes ~ blue_eyes ) ( smile ~ blush )' && back === 'red_eyes blue_eyes || smile blush', `tags=${tags}; read back "${back}"`)
+    }
   } finally {
     await browser.close()
     console.log(failed ? `\n${failed} check(s) failed` : '\nall checks passed')

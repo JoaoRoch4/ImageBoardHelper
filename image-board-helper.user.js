@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.11.1
+// @version      1.12.0
 // @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -68,7 +68,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.11.1'
+  const VERSION = '1.12.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // The site's thumbnail list. Gelbooru 0.2 sites (rule34, safebooru, xbooru)
@@ -226,7 +226,7 @@
       tFreeBtn: 'Free-memory shortcut button', navFree: 'Free memory & cache',
       tFavSearch: 'Search your favorites', tSiteSearch: 'Search bar on site pages', tSuggest: 'Tag suggestions while typing',
       savedPick: 'Favorite searches…', recentPick: 'Recent searches…', saveSearch: '☆ Favorite', savedSearch: '★ Favorite', savedAll: '(everything)',
-      orPlaceholder: 'any of these tags (OR): tag tag tag',
+      orPlaceholder: 'OR: tag tag tag · || new group',
       minScore: 'min. score', sitePlaceholder: 'search: tag -tag tag* ( a ~ b )', tPager: 'Autopager (searches and favorites)',
       pagerLoading: 'Loading the next page…', pagerEnd: 'End of the list', pagerFail: 'Could not load the next page — tap to retry',
       favPlaceholder: 'search favorites: tag -tag tag* a ~ b score:>10', favGo: 'Search', favClear: 'Clear',
@@ -299,7 +299,7 @@
       tFreeBtn: 'Botão de atalho para limpar a memória', navFree: 'Limpar memória e cache',
       tFavSearch: 'Buscar nos seus favoritos', tSiteSearch: 'Barra de busca nas páginas do site', tSuggest: 'Sugestões de tags ao digitar',
       savedPick: 'Buscas favoritas…', recentPick: 'Buscas recentes…', saveSearch: '☆ Favoritar', savedSearch: '★ Favorita', savedAll: '(tudo)',
-      orPlaceholder: 'qualquer destas tags (OU): tag tag tag',
+      orPlaceholder: 'OU: tag tag tag · || novo grupo',
       minScore: 'score mín.', sitePlaceholder: 'buscar: tag -tag tag* ( a ~ b )', tPager: 'Autopager (buscas e favoritos)',
       pagerLoading: 'Carregando a próxima página…', pagerEnd: 'Fim da lista', pagerFail: 'Não deu para carregar a próxima página — toque para tentar de novo',
       favPlaceholder: 'buscar nos favoritos: tag -tag tag* a ~ b score:>10', favGo: 'Buscar', favClear: 'Limpar',
@@ -3524,8 +3524,8 @@
   async function searchFavs() {
     const bar = document.getElementById('ibh-favsearch')
     if (!bar) return
-    const either = orTags(bar.querySelector('input.or').value)
-    const text = `${bar.querySelector('input').value} ${either.join(' ~ ')}`.trim()
+    const either = orGroups(bar.querySelector('input.or').value).map(g => g.join(' ~ '))
+    const text = `${bar.querySelector('input').value} ${either.join(' ')}`.trim()
     let idx = await loadFavIndex()
     if (!idx.items.length) idx = (await updateFavIndex(true)) || idx
     else if (Date.now() - idx.updated > FAV_STALE_MS) idx = (await updateFavIndex(false)) || idx
@@ -3688,7 +3688,8 @@
   }
 
   // OR field: tags typed apart by spaces become one either-of group, the
-  // site's ( a ~ b ~ c ), or a ~ b for the favorites search.
+  // site's ( a ~ b ~ c ), or a ~ b for the favorites search; || starts
+  // another group: a b || c d is ( a ~ b ) ( c ~ d ).
   function orInput() {
     const field = el('input', { class: 'or', type: 'search', placeholder: t('orPlaceholder'), enterkeyhint: 'search' })
     field.setAttribute('autocapitalize', 'off')
@@ -3725,10 +3726,10 @@
     let timer = 0
     let seq = 0
     const close = () => { seq++; box.hidden = true }
-    // The word being typed: after the last space, its - or ~ prefix apart.
+    // The word being typed: after the last space, its -, ~ or || prefix apart.
     const word = () => {
       const token = /\S*$/.exec(input.value)?.[0] ?? ''
-      const m = /^([-~]?)(.*)$/.exec(token) ?? ['', '', '']
+      const m = /^(\|\||[-~]?)(.*)$/.exec(token) ?? ['', '', '']
       return { token, prefix: m[1] ?? '', term: (m[2] ?? '').replace(/\*+$/, '') }
     }
     const show = items => {
@@ -3799,6 +3800,9 @@
   }
 
   const orTags = text => String(text || '').trim().split(/[\s~()]+/).filter(Boolean)
+  // The OR field's groups: || starts another one, and each must hold, so
+  // a b || c d is (a or b) and (c or d).
+  const orGroups = text => String(text || '').split('||').map(orTags).filter(g => g.length)
 
   function minScoreInput() {
     const min = el('input', { class: 'min', type: 'number', min: '0', step: '1', inputmode: 'numeric', placeholder: t('minScore') })
@@ -4067,7 +4071,7 @@
   }
 
   // Nothing typed and no filter: not worth keeping.
-  const emptySearch = q => !q.text.trim() && !orTags(q.or).length && q.kind === 'all' && !q.min && q.sort === 'new'
+  const emptySearch = q => !q.text.trim() && !orGroups(q.or).length && q.kind === 'all' && !q.min && q.sort === 'new'
 
   function addRecent(store, q) {
     if (emptySearch(q)) return
@@ -4077,13 +4081,13 @@
     if (mine.length > RECENT_MAX) store.recent = store.recent.filter(other => !mine.slice(RECENT_MAX).includes(other))
   }
 
-  const searchKey = q => [q.where, q.text.trim().replace(/\s+/g, ' '), orTags(q.or).join(' '), q.kind, q.sort, String(q.min || '')].join('|')
+  const searchKey = q => [q.where, q.text.trim().replace(/\s+/g, ' '), orGroups(q.or).map(g => g.join(' ')).join(' || '), q.kind, q.sort, String(q.min || '')].join('|')
 
   function searchLabel(q) {
     const kinds = { image: t('favKindImage'), video: t('favKindVideo'), gif: t('favKindGif'), animated: t('favKindAnimated') }
     const orders = { score: t('favSortScore'), random: t('favSortRandom'), old: t('favSortOld') }
-    const or = orTags(q.or)
-    return [q.text.trim() || (or.length ? '' : t('savedAll')), or.length ? `( ${or.join(' | ')} )` : '', kinds[q.kind], q.min ? `≥ ${q.min}` : '', orders[q.sort] || '']
+    const or = orGroups(q.or)
+    return [q.text.trim() || (or.length ? '' : t('savedAll')), or.map(g => `( ${g.join(' | ')} )`).join(' '), kinds[q.kind], q.min ? `≥ ${q.min}` : '', orders[q.sort] || '']
       .filter(Boolean).join(' · ')
   }
 
@@ -4159,13 +4163,15 @@
     for (const [k, q] of Object.entries(KIND_QUERY)) {
       if (rest.includes(` ${q} `)) { kind = k; rest = rest.replace(` ${q} `, ' '); break }
     }
-    // The first ( a ~ b ) group left after the kind goes to the OR field.
-    let or = ''
-    rest = rest.replace(/ \( ([^()]+?) \) /, (m, inner) => {
+    // The ( a ~ b ) groups left after the kind go to the OR field, apart by ||.
+    // The lookahead leaves the space after a group for the next one to start with.
+    const groups = []
+    rest = rest.replace(/ \( ([^()]+?) \)(?= )/g, (m, inner) => {
       if (!/ ~ /.test(` ${inner} `)) return m
-      or = orTags(inner).join(' ')
-      return ' '
+      groups.push(orTags(inner).join(' '))
+      return ''
     })
+    const or = groups.join(' || ')
     let sort = 'new'
     rest = rest.replace(/ sort:score(?::desc)? /i, () => { sort = 'score'; return ' ' })
     rest = rest.replace(/ sort:random /i, () => { sort = 'random'; return ' ' })
@@ -4175,8 +4181,7 @@
   }
 
   function siteQuery({ rest, kind, sort, min, or }) {
-    const tags = orTags(or)
-    const either = tags.length > 1 ? `( ${tags.join(' ~ ')} )` : (tags[0] || '')
+    const either = orGroups(or).map(g => g.length > 1 ? `( ${g.join(' ~ ')} )` : g[0]).join(' ')
     return [rest, either, KIND_QUERY[kind] || '', min ? `score:>=${min}` : '', sort === 'score' ? 'sort:score' : sort === 'random' ? 'sort:random' : '']
       .filter(Boolean).join(' ')
   }

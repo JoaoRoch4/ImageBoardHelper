@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.12.0
+
+- The OR field takes more than one group: `||` starts another, and each
+  must hold, so `a b || c d` searches `( a ~ b ) ( c ~ d )`, (a or b) and
+  (c or d). The site bar reads every group back from the address (it used
+  to take only the first), the favorites search filters by each, and saved
+  and recent searches keep them apart. A suggestion keeps a `||` typed
+  against the word
+
 ## 1.11.1
 
 - The one-column feed on the favorites pages takes the full width again:
