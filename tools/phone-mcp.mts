@@ -224,11 +224,14 @@ async function inTabs(match: string, expr: string, what?: string): Promise<TabVa
 // termux-am, whose socket server this Termux build does not run, or `am`,
 // which Android refuses to apps.)
 
+// Termux's own server sits in tmux-<its uid>; a tmux run as root inside proot
+// leaves a tmux-0 beside it, often without a socket, so the first match is
+// not enough: the sockets that exist, Termux's first.
 function tmuxSocket(): string | null {
   try {
-    const dir = fs.readdirSync(`${TERMUX}/var/run`).find(d => /^tmux-\d+$/.test(d))
-    const sock = dir && `${TERMUX}/var/run/${dir}/default`
-    return sock && fs.existsSync(sock) ? sock : null
+    const socks = fs.readdirSync(`${TERMUX}/var/run`).filter(d => /^tmux-\d+$/.test(d))
+      .map(d => `${TERMUX}/var/run/${d}/default`).filter(s => fs.existsSync(s))
+    return socks.find(s => !s.includes('/tmux-0/')) ?? socks[0] ?? null
   } catch (e) {
     return null
   }
