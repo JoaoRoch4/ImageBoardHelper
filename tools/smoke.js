@@ -339,7 +339,7 @@ const logLine = (page, re, timeout = 15000) => page.waitForFunction(
       await page.locator('#ibh-sitesearch select.kind').selectOption('image')
       await page.waitForTimeout(1500)
       const stayed = page.url() === before
-      await Promise.all([page.waitForURL(u => u.href.includes('smile'), { timeout: 30000 }), orField.press('Enter')])
+      await Promise.all([page.waitForURL(u => u.href.includes('smile'), { timeout: 60000 }), orField.press('Enter')])   // safebooru can be slow to the phone
       const tags = new URL(page.url()).searchParams.get('tags') || ''
       const back = await page.locator('#ibh-sitesearch input.or').inputValue({ timeout: 30000 })
       check('order and kind wait for Search', stayed && tags.endsWith(' -animated -video -gif sort:score'), `${stayed ? 'stayed' : 'left at once'}; tags=${tags}`)
