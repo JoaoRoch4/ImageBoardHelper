@@ -107,6 +107,24 @@ test('wrong token: 401', async () => assert.equal((await req('status', undefined
 
 test('unknown route: 404', async () => assert.equal((await req('nope', {})).status, 404))
 
+// ─── the router (part 2): GET routes and the token-free /v/ ───
+
+test('GET /v/<unknown key>: 404 without a token', async () => {
+  const res = await fetch(`http://127.0.0.1:${port}/v/${'0'.repeat(64)}.mp4`)
+  assert.equal(res.status, 404)
+  assert.equal(res.headers.get('cross-origin-resource-policy'), 'cross-origin')
+})
+
+test('GET /video/<id> needs the token', async () => assert.equal((await req('video/abc', undefined, '')).status, 401))
+
+test('GET /video/<unknown id>: 404 from the video reducer', async () => {
+  const { status, json } = await req('video/abc')
+  assert.equal(status, 404)
+  assert.equal(json.error, 'no such video')
+})
+
+test('status reports version 2.0.0', async () => assert.equal((await req('status')).json.version, '2.0.0'))
+
 test('a body that is not JSON: 400, and the server lives on', async () => {
   assert.equal((await req('status', undefined, TOKEN, 'not json at all')).status, 400)
   assert.equal((await req('status')).status, 200)

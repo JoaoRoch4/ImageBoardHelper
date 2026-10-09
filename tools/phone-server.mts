@@ -14,6 +14,9 @@
 // also keeps its log.
 // GET /status; every action is POST /<action> with a JSON body; answers are
 // { ok: true, ... } or { ok: false, error } with 400, 401, 404, 413, 503, 500.
+// The video routes (part 2, tools/video-reducer.mts) add GET /video/<id> and
+// GET /v/<key>.mp4, the one route without the token (a <video> sends no
+// header; the key is the capability).
 // Everything outside is reached through paths the tests override:
 // IBH_SERVER_DIR, IBH_SERVER_PORT, RISH, IBH_TERMUX_BIN.
 // TypeScript that Node runs as it is (it strips the types); tsc -p tools checks it.
@@ -25,8 +28,14 @@ import * as http from 'node:http'
 import * as crypto from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { ROOTFS, findRish, rish, shizukuUp } from './rish.mts'
+import { HttpError } from './http-error.mts'
+import type { Handler } from './http-error.mts'
+import { makeVideoReducer } from './video-reducer.mts'
 
-const VERSION = '1.0.0'
+export { HttpError }
+export type { Handler }
+
+const VERSION = '2.0.0'
 // Termux's home: the same path natively and from the container, so both
 // sides read one token.
 const TERMUX_HOME = '/data/data/com.termux/files/home'
@@ -39,16 +48,6 @@ const MAX_BODY = 30 * 1024 * 1024                     // a 20 MB file as base64,
 const LOG_MAX = 1024 * 1024
 const started = Date.now()
 
-// A failure with the HTTP status it answers with.
-export class HttpError extends Error {
-  status: number
-  constructor(status: number, message: string) {
-    super(message)
-    this.status = status
-  }
-}
-
-export type Handler = (body: Record<string, unknown>) => Promise<Record<string, unknown>>
 
 export const serverDir = () => DIR
 
@@ -347,18 +346,27 @@ function serve() {
   const want = Buffer.from(`Bearer ${readToken(true)}`)
   // Same length first: timingSafeEqual compares equal lengths only.
   const authorized = (header = '') => { const got = Buffer.from(header); return got.length === want.length && crypto.timingSafeEqual(got, want) }
+  const video = makeVideoReducer({
+    termux, dir: DIR, mediaDir: MEDIA,
+    notify: async (title, content) => { await termux('termux-notification', ['--title', title, '--content', content, '--id', 'ibh-video']) },
+  })
+  const routes: Record<string, Handler> = { ...ROUTES, ...video.routes }
   // No CORS headers: a web page can neither read an answer nor act without the token.
   const server = http.createServer(async (req, res) => {
     const t0 = Date.now()
     const route = (req.url || '/').split('?')[0]?.slice(1) ?? ''
+    // The growing video file: the key in the path stands for the token.
+    if (req.method === 'GET' && route.startsWith('v/')) { video.serveMedia(req, res); return }
     let status = 200
     let answer: Record<string, unknown>
     try {
       if (!authorized(req.headers.authorization)) throw new HttpError(401, 'missing or wrong token')
       const body = await readBody(req)
-      const handler = Object.hasOwn(ROUTES, route) ? ROUTES[route] : undefined
+      // GET /video/<id> reads a job; every other route is its own name.
+      const id = req.method === 'GET' && /^video\/[^/]+$/.test(route) ? route.slice('video/'.length) : null
+      const handler = id !== null ? routes['video/status'] : Object.hasOwn(routes, route) ? routes[route] : undefined
       if (!handler) throw new HttpError(404, `no route "${route}"`)
-      answer = { ok: true, ...await handler(body) }
+      answer = { ok: true, ...await handler(id !== null ? { id } : body) }
     } catch (e) {
       status = e instanceof HttpError ? e.status : 500
       answer = { ok: false, error: e instanceof Error ? e.message : String(e) }
