@@ -1794,10 +1794,7 @@
     const v = s.video
     const what = (st.detail || (v ? `${v.videoWidth}x${v.videoHeight}, ${mmss(v.duration)}, ${s.shared ? 'own video' : 'its cover'}` : '')) +
       (st.wasm ? `, ${st.wasm}` : '')
-    // TODO(strict): a card is the thumbnail's link on every supported site, but
-    // scanCards falls back to the <img>'s parent when there is none, and postId
-    // would throw on that (no href). Unreachable on today's sites.
-    info(`slideshow (${st.method}) post ${postId(/** @type {HTMLAnchorElement} */ (s.card))}: ${shown}${what ? `; ${what}` : ''}${st.reelError ? `; no reel: ${st.reelError}` : ''}`)
+    info(`slideshow (${st.method}) post ${postId(s.card)}: ${shown}${what ? `; ${what}` : ''}${st.reelError ? `; no reel: ${st.reelError}` : ''}`)
   }
 
   /** @param {Scrub} s */
@@ -4351,6 +4348,9 @@
     let idx = await loadFavIndex()
     if (!idx.items.length) idx = (await updateFavIndex(true)) || idx
     else if (Date.now() - idx.updated > FAV_STALE_MS) idx = (await updateFavIndex(false)) || idx
+    // A full scan reads every page: the bar (and its "more" button) may have
+    // gone meanwhile (favSearch switched off), and the page stays as it is.
+    if (!bar.isConnected) { info('favorites search: the bar went while the index loaded'); return }
     if (!favEntries) {
       favEntries = idx.items.map(([id, thumb, tags, score]) => {
         const list = tags.toLowerCase().split(/\s+/)
@@ -4417,9 +4417,8 @@
     const next = favResults.slice(favShown, favShown + FAV_SHOW)
     list.append(...next.map(favThumb))
     favShown += next.length
-    // TODO(strict): made with the favorites bar, but searchFavs checks the bar
-    // before awaiting the index (a full scan reads every page): if the bar goes
-    // meanwhile (favSearch switched off in the panel), this is null and throws.
+    // Made with the favorites bar, which searchFavs saw still there after its
+    // last await, and its own click handler.
     const more = /** @type {HTMLElement} */ (document.getElementById('ibh-favmore'))
     more.hidden = favShown >= favResults.length
     more.textContent = `${t('favMore')} (${favResults.length - favShown})`
@@ -6680,8 +6679,10 @@
     v.src = urls[i++]
   }
 
-  /** @param {HTMLAnchorElement} link */
-  const postId = link => (link.href.match(/id=(\d+)/) || [])[1] || '?'
+  // A card without a link (scanCards falls back to the <img>'s parent) has
+  // no href: '?' as for a link without an id, not a throw.
+  /** @param {Element} link */
+  const postId = link => (String(/** @type {HTMLAnchorElement} */ (link).href || '').match(/id=(\d+)/) || [])[1] || '?'
 
   // Only the "animated" tag, nothing else to go by: no gif, no video/mp4/webm,
   // no .webm-thumb mark from the site. Those may be either kind.
