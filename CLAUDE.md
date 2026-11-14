@@ -224,6 +224,16 @@ O servidor MCP `phone` (`tools/phone-mcp.mts`, sem dependências em tempo de exe
 
 ## Tarefas abertas
 
+**Para a próxima sessão (deixado em 2026-11-14, quando acabaram os tokens).** A transcrição inteira está em `docs/transcricao-2026-11-14.md` do qtmobilemedia (privado, porque este repositório é público). Em ordem:
+
+1. **O build do APK** (`./buildApk.py -xvl -j 8` no app, log `logs/buildApk-android-max-20261114-041038.log`) é o primeiro do pipeline refeito; estava no FFmpeg do vcpkg (16 de 38). Ver se terminou, instalou e abriu; se falhou, o primeiro erro diz o que falta no pipeline (`docs/qtmediaplayer.md`).
+2. **O agente de tipagem forte** (querySelector tipado, `unknown` + checagem nas bordas, validadores das respostas do app presos ao `types/qtmediaplayer.d.ts` por tipo mapeado, `modal` honesto, flags `noUncheckedIndexedAccess` e cia.) pode ter sido cortado no meio. Conferir `git log`/`git status` aqui: se houver commits dele, rodar `npm run check` e o `smoke` e dar push; se houver mudança sem commit, terminar ou descartar com cuidado.
+3. **`pastDecoder` igual ao `vreduce::fits` do app:** a regra exata do app (arredonda os fps, sem folga), com a folga só no fps medido durante um segurar (`holdVideoShow`). Os mesmos casos dos `static_assert`s do `probe.hpp` do app. Versão de correção, CHANGELOG.
+4. **O servidor do app (branch `script-bridge` do qtmobilemedia, rebaseada no `main` dele):** ainda não compilou depois da correção do reflect-cpp (`178bc51`/`baf7f45`). Rodar tudo o que aquele repositório exige (o usuário autorizou mexer no código do app para a integração, com essa condição): `./buildApk.py -trC -j2` no worktree, `tests/` nativo (`tst_scriptbridge`, `tst_preferences`), os testes do `buildapk/`, o teste ao vivo com `curl` (`logs/live/` do worktree). Só então merge no `main` do app e um APK com o servidor.
+5. **Depois do APK:** testar no Nightly o ▶/⬇ App/⚡ 1080p com o app novo, e o `appBridge` com o token.
+6. **O build na nuvem** volta quando o cartão do usuário for aceito pelo GitHub; então apagar a branch `ci-probe` e o worktree `~/projects/.qmp-ci-probe` do app.
+7. **O ELF do `buildApk`** (`python3 buildapk/build_elf.py`, nativo, ~5 min) ainda não foi recompilado depois do `5b74fec` (`run-termux.sh` com `MEDIAPLAYER_BUILD`).
+
 - **Conferir a 1.14.0 com o app novo no aparelho.** Já conferido no Nightly em 2026-11-14 (instalada, sem erros no log): num post de vídeo de 852×480 o ☰ mostra ▶ Media Player, ⬇ App e 🦊⬇ Baixar raw, com o ⚡ 1080p escondido (só acima de 1920×1088); num post de imagem, nenhum botão do app. Falta o app com o `MODE` (qtmobilemedia `55c4ec0` em diante), que não foi compilado: o Actions deu `startup_failure` em todo run desde 2026-11-13, porque o GitHub recusou o cartão do usuário. Com ele instalado: ▶ toca, ⬇ App baixa e devolve a tela ao Firefox, ⚡ 1080p baixa e aparece em Conversões. Até lá, no app antigo, ⬇ e ⚡ só tocam o vídeo.
 - **Servidor HTTP no app** (ver "Integração com o QtMediaPlayer"): o lado do script e o contrato (`types/qtmediaplayer.d.ts`) estão prontos; falta o servidor no QtMediaPlayer (C++, `QTcpServer` em `127.0.0.1:8745`, o token nas configurações, o Referer passado ao yt-dlp) e a decisão sobre a notificação fixa. Dá para testar o servidor sem APK no build do Termux (`build-termux/`, rodado pelo `run-termux.sh`) com `curl` do container.
 
