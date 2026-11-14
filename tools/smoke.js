@@ -200,7 +200,7 @@ const logLine = (page, re, timeout = 15000) => page.waitForFunction(
         check('favorites wrapper sized by the feed', sized.length > 0, sized.join(', ') || 'no feed rule gives the bare span a width')
       }
 
-      // With the video reducer off (the default) the script never calls 127.0.0.1: every GM request is recorded.
+      // The script never calls 127.0.0.1 (the phone server): every GM request is recorded.
       await page.evaluate(() => {
         const orig = window.GM_xmlhttpRequest
         window.__gmUrls = []
@@ -250,11 +250,12 @@ const logLine = (page, re, timeout = 15000) => page.waitForFunction(
         out.info = !q('.sheet').hidden && q('.tabs .tab.on').textContent
         q('.vinfo').click()
         out.infoClosed = q('.sheet').hidden
-        out.cone = q('.pill .cone') && q('.pill .cone').naturalWidth   // VLC's button, inline PNG
+        const pills = [...q('.sheethead').children]
+        out.player = ['▶ Media Player', '⬇ App', '⚡ 1080p'].every(name => pills.some(b => b.textContent === name))   // the app's buttons
         return out
       })
       check('player extras', extras.buttons === 4 && extras.menu && extras.rate === 1.5 && String(extras.cfg) === '1.5,10' && extras.closed &&
-        extras.info === 'Info' && extras.infoClosed && extras.cone === 29, JSON.stringify(extras))
+        extras.info === 'Info' && extras.infoClosed && extras.player, JSON.stringify(extras))
       // A download goes on across posts: the top bar's ⬇ shows it from any post, and goes once it ends.
       // GM_xmlhttpRequest is swapped for one that reports 50% and waits for the test to finish it.
       const dl = await page.evaluate(async () => {
@@ -263,7 +264,7 @@ const logLine = (page, re, timeout = 15000) => page.waitForFunction(
         const wait = ms => new Promise(r => setTimeout(r, ms))
         let req = null
         window.GM_xmlhttpRequest = d => { req = d; setTimeout(() => d.onprogress({ loaded: 50, total: 100 }), 10); return { abort() {} } }
-        ;[...root.querySelectorAll('.sheethead button')].find(b => b.textContent.startsWith('⬇')).click()
+        ;[...root.querySelectorAll('.sheethead button')].find(b => b.textContent.startsWith('🦊⬇')).click()   // the browser's download, not ⬇ App
         for (let i = 0; i < 100 && !req; i++) await wait(100)
         await wait(300)
         const out = { asked: !!req, first: !q('.dlq').hidden && q('.dlq').textContent }
@@ -315,7 +316,7 @@ const logLine = (page, re, timeout = 15000) => page.waitForFunction(
       await page.waitForTimeout(500)
       check('modal closes on back', !(await modalShown()), `still on ${page.url().replace(/^.*\?/, '?')}`)
       const local = await page.evaluate(() => window.__gmUrls.filter(u => u.startsWith('http://127.0.0.1')))
-      check('reducer off: no requests to 127.0.0.1', !local.length, local.join(', '))
+      check('no requests to 127.0.0.1', !local.length, local.join(', '))
 
       // Near the bottom, the next page is added under this one.
       await page.evaluate(() => window.scrollTo(0, document.documentElement.scrollHeight))
@@ -346,33 +347,6 @@ const logLine = (page, re, timeout = 15000) => page.waitForFunction(
       check('OR groups', tags === '( red_eyes ~ blue_eyes ) ( smile ~ blush ) -animated -video -gif sort:score' && back === 'red_eyes blue_eyes || smile blush', `tags=${tags}; read back "${back}"`)
     }
 
-    // The video reducer's token: typed in the panel, kept with GM_setValue only, never in the site's storage.
-    const panelToken = async (pg, value) => pg.evaluate(async value => {
-      const panelRoot = () => [...document.querySelectorAll('*')].map(e => e.shadowRoot).find(r => r && r.querySelector('.panel'))
-      const label = [...panelRoot().querySelectorAll('label.tog')].find(l => l.textContent.startsWith('Convert videos past the decoder'))
-      if (!label) return { error: 'no video reducer switch in the panel' }
-      if (!label.querySelector('input').checked) label.querySelector('input').click()
-      await new Promise(r => setTimeout(r, 300))
-      const field = panelRoot().querySelector('input.reducertoken')   // the switch rebuilt the panel: a new shadow root
-      if (!field) return { error: 'no token field' }
-      if (!field.disabled) { field.value = value; field.dispatchEvent(new Event('change')) }
-      return { disabled: field.disabled, placeholder: field.placeholder, type: field.type }
-    }, value)
-    const tokenField = await panelToken(page, 'abc123')
-    const kept = await page.evaluate(() => ({
-      gm: window.GM_getValue('reducerToken', null),
-      site: Object.keys(localStorage).some(k => String(localStorage.getItem(k)).includes('abc123')),
-    }))
-    check('token kept in GM only', !tokenField.error && tokenField.type === 'password' && kept.gm === 'abc123' && !kept.site, JSON.stringify({ ...tokenField, ...kept }))
-    // Without Violentmonkey's storage the field is off: nothing is kept anywhere.
-    const bare = await browser.newContext({ viewport: { width: 360, height: 780 }, deviceScaleFactor: 2, hasTouch: true })
-    await bare.addInitScript({ content: INJECT.replace('window.GM_setValue = (k, v) => { store.set(k, JSON.stringify(v)) }', '') })
-    const page2 = await bare.newPage()
-    await page2.goto(START, { waitUntil: 'domcontentloaded', timeout: 60000 })
-    await page2.waitForFunction(() => !!window.__ibh, null, { timeout: 30000 })
-    const off = await panelToken(page2, 'xyz789')
-    check('no GM storage: no token kept', !off.error && off.disabled && off.placeholder === 'Needs Violentmonkey storage', JSON.stringify(off))
-    await bare.close()
   } catch (e) {
     // A step that throws stops the run: a failure, not a pass.
     check('smoke ran to the end', false, e.message.split('\n')[0])

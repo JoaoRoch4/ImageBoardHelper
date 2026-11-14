@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.14.0
+
+- The external player is now the author's own QtMediaPlayer app
+  (`com.example.qtmediaplayer`) in place of VLC: ▶ Media Player in a video
+  post's ☰ menu (`playerButton`, replacing `vlcButton`; the cone is gone)
+- ⬇ App next to it: Android's share sheet, where the app's Download video
+  saves the file (its yt-dlp). That is the way to the app's own 1080p
+  conversion, which takes local files only and offers itself when one past
+  the decoder opens; the modal's hint for such a video now points there
+- The video reducer through the phone server is gone from the script
+  (`videoReducer`, its token field and status): the app converts instead.
+  The server keeps its routes
+
 ## 1.13.0
 
 - The player's capsule has a second row: ▶/❚❚, ♥ (favorite and upvote, as

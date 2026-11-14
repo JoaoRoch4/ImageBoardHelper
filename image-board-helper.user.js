@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.13.0
+// @version      1.14.0
 // @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -68,7 +68,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.13.0'
+  const VERSION = '1.14.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // The site's thumbnail list. Gelbooru 0.2 sites (rule34, safebooru, xbooru)
@@ -126,7 +126,6 @@
     seekReel:       true,   // modal seek bar: the nearest keyframe at once (WebAssembly), the exact frame when the finger rests
     playRate:       1,      // modal player speed, picked in its ⚙ (0.5 to 2), kept for every video
     seekStep:       5,      // modal player: seconds a double tap on a side jumps, picked in its ⚙
-    videoReducer:   false,  // convert videos past the phone's decoder on the phone server (127.0.0.1:8730), with its token
     memorySaver:    true,   // release far off-screen images and removed videos (needs reload)
     urlCache:       true,   // remember which candidate URL worked for each file
     feedNav:        true,   // ⤒ ‹ › buttons: top of page, previous and next post in the feed (needs reload)
@@ -146,7 +145,7 @@
     videoModal:     true,   // open posts from site pages in an overlay: video, GIF, image (needs reload)
     rotateLandscape: true,  // in the modal player's fullscreen, lock wide videos to landscape
     modalPreload:   true,   // in the modal, have the next post loaded before the swipe
-    vlcButton:      true,   // VLC (with its cone) in a video post's ☰ menu: the video in the VLC app
+    playerButton:   true,   // ▶ Media Player, ⬇ App and ⚡ 1080p in a video post's ☰ menu: the video played, downloaded or converted by the user's QtMediaPlayer app
     copyLinkButton: true,   // 🔗 in the post's ☰ menu: copies the link to the post's own file (raw, not the sample)
     modalOriginal:  'zoom', // images in the modal: 'zoom' shows the sample and fetches the original on zoom; 'always'
     siteTheme:      true,   // the modal's dark theme on the site's pages
@@ -223,7 +222,8 @@
       tBulkBtn: 'Mass-favorite button', navBulk: 'Mass favorite: each tapped post gets ♥ and ▲',
       bulkOn: 'Mass favorite on: tap posts to favorite and upvote them', bulkOff: 'Mass favorite off',
       tCopyBtn: 'Copy-link button in the post menu', copyLink: '🔗 Copy link', linkCopied: 'Link to the raw file copied', copyFailed: 'Could not copy the link',
-      tVlcBtn: 'VLC button in the post menu', bigVideo: 'Past this phone’s hardware decoder: ☰ → VLC',
+      tPlayerBtn: 'Media Player buttons (▶ play, ⬇ download, ⚡ convert) in the post menu', appDlBtn: '⬇ App', appReduceBtn: '⚡ 1080p',
+      bigVideo: 'Past this phone’s hardware decoder: ☰ → ⚡ 1080p converts it in the app',
       tRedoBtn: 'Redo-thumbnails shortcut button', navRedo: 'Free memory, then redo thumbnails', tDoubleTap: 'Double tap a thumbnail: favorite + upvote',
       tEyeBtn: '👁 button: hides the other buttons', eyeHide: 'Hide the buttons', eyeShow: 'Show the buttons',
       tFreeBtn: 'Free-memory shortcut button', navFree: 'Free memory & cache',
@@ -239,7 +239,7 @@
       favScanning: 'reading favorites, page', favResults: 'results', favMore: 'Show more',
       favUpdate: 'Update', favRebuild: 'Rebuild index', favScanFail: 'could not read the favorites page',
       tLaterBtn: 'Watch later button', navLater: 'Watch later', laterTitle: 'Watch later',
-      dlBtn: '⬇ Download raw', dlWait: 'The file is still loading', dlStart: 'Downloading…', dlBusy: 'Already downloading this post', dlDone: 'Downloaded: confirm in Firefox to save',
+      dlBtn: '🦊⬇ Download raw', dlWait: 'The file is still loading', dlStart: 'Downloading…', dlBusy: 'Already downloading this post', dlDone: 'Downloaded: confirm in Firefox to save',
       dlFail: 'Download failed', dlOpened: 'Opened in a new tab: hold it to save',
       laterAdd: '🕒 Watch later', laterIn: '✓ In Watch later', laterAdded: 'Saved for later', laterRemoved: 'Removed from the list',
       laterEmpty: 'Nothing saved yet. Use 🕒 in a post’s ☰ menu.', laterOnDevice: 'kept by Violentmonkey, on this device',
@@ -257,8 +257,6 @@
       tagOpened: 'Opened in a new tab', tagCopied: 'Copied', tagCopyFail: 'Could not copy', tagsNone: 'No tags', mTurn: 'Rotate the screen',
       mPlay: 'Play / pause', mMute: 'Sound on / off', mFavUp: 'Favorite and upvote', mGear: 'Speed and double tap',
       gearRate: 'Speed', gearStep: 'Double tap jumps', tPlayRate: 'Player speed', tSeekStep: 'Player double tap jump',
-      tReducer: 'Convert videos past the decoder (phone server)', reducerToken: 'Server token', reducerOk: 'Server connected',
-      reducerDown: 'Server not answering', reducerBadToken: 'Wrong token', reducerNoStore: 'Needs Violentmonkey storage',
       tRotate: 'Landscape in player fullscreen',
       tPreload: 'Next post loaded in the player',
       tModalOrig: 'original image in the player', origZoom: 'When zooming in (sample first, faster)', origAlways: 'Always (slower)',
@@ -299,7 +297,8 @@
       tBulkBtn: 'Botão de favoritar em massa', navBulk: 'Favoritar em massa: cada post tocado ganha ♥ e ▲',
       bulkOn: 'Favoritar em massa ligado: toque nos posts para favoritar e votar', bulkOff: 'Favoritar em massa desligado',
       tCopyBtn: 'Botão de copiar link no menu do post', copyLink: '🔗 Copiar link', linkCopied: 'Link do arquivo raw copiado', copyFailed: 'Não deu para copiar o link',
-      tVlcBtn: 'Botão do VLC no menu do post', bigVideo: 'Grande demais para o decodificador do celular: ☰ → VLC',
+      tPlayerBtn: 'Botões do Media Player (▶ tocar, ⬇ baixar, ⚡ converter) no menu do post', appDlBtn: '⬇ App', appReduceBtn: '⚡ 1080p',
+      bigVideo: 'Grande demais para o decodificador do celular: ☰ → ⚡ 1080p converte no app',
       tRedoBtn: 'Botão de atalho para refazer as miniaturas', navRedo: 'Limpar a memória e refazer as miniaturas', tDoubleTap: 'Toque duplo na miniatura: favoritar + votar',
       tEyeBtn: 'Botão 👁: oculta os outros botões', eyeHide: 'Ocultar os botões', eyeShow: 'Mostrar os botões',
       tFreeBtn: 'Botão de atalho para limpar a memória', navFree: 'Limpar memória e cache',
@@ -315,7 +314,7 @@
       favScanning: 'lendo favoritos, página', favResults: 'resultados', favMore: 'Mostrar mais',
       favUpdate: 'Atualizar', favRebuild: 'Refazer índice', favScanFail: 'não foi possível ler a página de favoritos',
       tLaterBtn: 'Botão Ver depois', navLater: 'Ver depois', laterTitle: 'Ver depois',
-      dlBtn: '⬇ Baixar raw', dlWait: 'O arquivo ainda está carregando', dlStart: 'Baixando…', dlBusy: 'Este post já está baixando', dlDone: 'Baixado: confirme no Firefox para salvar',
+      dlBtn: '🦊⬇ Baixar raw', dlWait: 'O arquivo ainda está carregando', dlStart: 'Baixando…', dlBusy: 'Este post já está baixando', dlDone: 'Baixado: confirme no Firefox para salvar',
       dlFail: 'Falha no download', dlOpened: 'Aberto em outra aba: segure para salvar',
       laterAdd: '🕒 Ver depois', laterIn: '✓ Na lista', laterAdded: 'Salvo para ver depois', laterRemoved: 'Tirado da lista',
       laterEmpty: 'Nada salvo ainda. Use o 🕒 no menu ☰ de um post.', laterOnDevice: 'guardado pelo Violentmonkey, neste aparelho',
@@ -333,8 +332,6 @@
       tagOpened: 'Aberto em outra aba', tagCopied: 'Copiado', tagCopyFail: 'Não foi possível copiar', tagsNone: 'Sem tags', mTurn: 'Girar a tela',
       mPlay: 'Tocar / pausar', mMute: 'Som liga / desliga', mFavUp: 'Favoritar e dar ▲', mGear: 'Velocidade e duplo toque',
       gearRate: 'Velocidade', gearStep: 'Duplo toque pula', tPlayRate: 'Velocidade do player', tSeekStep: 'Pulo do duplo toque no player',
-      tReducer: 'Converter vídeos acima do decoder (servidor do celular)', reducerToken: 'Token do servidor', reducerOk: 'Servidor conectado',
-      reducerDown: 'Servidor sem resposta', reducerBadToken: 'Token errado', reducerNoStore: 'Precisa do armazenamento do Violentmonkey',
       tRotate: 'Paisagem na tela cheia do player',
       tPreload: 'Próximo post carregado no player',
       tModalOrig: 'imagem original no player', origZoom: 'Ao dar zoom (sample antes, mais rápido)', origAlways: 'Sempre (mais lento)',
@@ -2621,7 +2618,6 @@
       transition: transform .2s ease-in, visibility 0s .2s; }
     .sheethead { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 10px; }
     button.pill { width: auto; height: 36px; border-radius: 18px; padding: 0 14px; font-size: 13px; }
-    button.pill .cone { height: 18px; width: auto; margin-right: 6px; vertical-align: -4px; }
     button.pill:disabled { opacity: .85; }
     /* Download in progress: the button spins until the file is fetched. */
     .spin { display: inline-block; width: 12px; height: 12px; margin-right: 7px; vertical-align: -2px;
@@ -2738,8 +2734,12 @@
     const dlBtn = el('button', { class: 'pill', text: t('dlBtn') })
     const copyBtn = el('button', { class: 'pill', text: t('copyLink') })
     copyBtn.hidden = !CFG.copyLinkButton
-    const vlcBtn = el('button', { class: 'pill' }, [el('img', { class: 'cone', src: VLC_CONE, alt: '' }), 'VLC'])
-    vlcBtn.hidden = true   // videos only (showVideo)
+    const playerBtn = el('button', { class: 'pill', text: '▶ Media Player' })
+    playerBtn.hidden = true   // videos only (showVideo)
+    const appDlBtn = el('button', { class: 'pill', text: t('appDlBtn') })
+    appDlBtn.hidden = true    // with playerBtn
+    const appReduceBtn = el('button', { class: 'pill', text: t('appReduceBtn') })
+    appReduceBtn.hidden = true   // videos past the hardware decoder only
     const tabTags = el('button', { class: 'tab on', text: t('tabTags') })
     const tabInfo = el('button', { class: 'tab', text: t('tabInfo') })
     const tabComments = el('button', { class: 'tab', text: t('tabComments') })
@@ -2747,7 +2747,7 @@
     infoList.hidden = true
     const commentList = el('div', { class: 'commentlist' })
     commentList.hidden = true
-    const sheet = el('div', { class: 'sheet' }, [el('div', { class: 'sheethead' }, [post, laterBtn, dlBtn, copyBtn, vlcBtn]),
+    const sheet = el('div', { class: 'sheet' }, [el('div', { class: 'sheethead' }, [post, laterBtn, dlBtn, copyBtn, playerBtn, appDlBtn, appReduceBtn]),
       el('div', { class: 'tabs' }, [tabTags, tabInfo, tabComments]), tagList, infoList, commentList])
     // Sample or raw, for an image that has a sample: tap to switch.
     const quality = el('button', { class: 'quality' })
@@ -2799,7 +2799,9 @@
     }, true)
     laterBtn.addEventListener('click', () => toggleLaterHere())
     dlBtn.addEventListener('click', () => modalDownload())
-    vlcBtn.addEventListener('click', () => openInVlc())
+    playerBtn.addEventListener('click', () => sendToApp('play'))
+    appDlBtn.addEventListener('click', () => sendToApp('download'))
+    appReduceBtn.addEventListener('click', () => sendToApp('reduce'))
     // 🔗: a tap copies the file's link, a hold opens the file in a new tab.
     // The link is asked for as the finger lands, so it is there by the time
     // the hold ends (the tab must open within that gesture).
@@ -2832,7 +2834,7 @@
     installImageHold(stage, image, box)
     installVideoGestures(layer, video)
     root.append(style, box)
-    modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, vfav: favUp, gearMenu, dlq, score, toast, badge, turn, fsBtn, menu, sheet, tagList, laterBtn, dlBtn, vlcBtn, quality, tabTags, tabInfo, tabComments, infoList, commentList, sheetTab: 'tags', laterView, laterHead, laterGrid, laterNote, listLinks: null, turned: null, open: false, link: null, seq: 0 }
+    modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, vfav: favUp, gearMenu, dlq, score, toast, badge, turn, fsBtn, menu, sheet, tagList, laterBtn, dlBtn, playerBtn, appDlBtn, appReduceBtn, quality, tabTags, tabInfo, tabComments, infoList, commentList, sheetTab: 'tags', laterView, laterHead, laterGrid, laterNote, listLinks: null, turned: null, open: false, link: null, seq: 0 }
   }
 
   let toastTimer = 0
@@ -3101,66 +3103,6 @@
     else warn(`download: post ${post} failed — ${error}`)
   }
 
-  // ── Video reducer (videoReducer) ──
-  // Videos past the phone's hardware decoder can be converted on the phone
-  // itself, by VideoReducer's vreduce behind the phone server
-  // (tools/phone-server.mts) on 127.0.0.1. Off by default: the script needs
-  // nothing outside the site. The token is kept with GM_setValue only:
-  // storeGet/storeSet fall back to the site's IndexedDB, and IBH_CFG has
-  // copies in the site's storage, all readable by the site's scripts.
-  const REDUCER = 'http://127.0.0.1:8730'
-  const REDUCER_TIMEOUT_MS = 10000
-  const reducerToken = () => (GM_STORE ? String(GM_getValue('reducerToken', '') || '') : '')
-  function setReducerToken(value) { if (GM_STORE) GM_setValue('reducerToken', String(value).trim()) }
-
-  // One request to the server: { ok, status, json } or { ok: false, stage, error },
-  // where stage is 'token' (401) or 'server' (down, or its own error).
-  function reducerCall(method, route, body) {
-    return new Promise(resolve => {
-      const down = () => resolve({ ok: false, status: 0, json: null, stage: 'server', error: 'not answering' })
-      if (!GM_XHR) { down(); return }
-      GM_xmlhttpRequest({
-        method,
-        url: `${REDUCER}/${route}`,
-        timeout: REDUCER_TIMEOUT_MS,
-        headers: { Authorization: `Bearer ${reducerToken()}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
-        data: body ? JSON.stringify(body) : undefined,
-        onload: res => {
-          let json = null
-          try { json = JSON.parse(res.responseText) } catch (e) { /* not JSON */ }
-          if (res.status === 401) resolve({ ok: false, status: 401, json, stage: 'token', error: 'wrong token' })
-          else if (res.status >= 200 && res.status < 300 && json && json.ok) resolve({ ok: true, status: res.status, json })
-          else resolve({ ok: false, status: res.status, json, stage: 'server', error: (json && json.error) || `HTTP ${res.status}` })
-        },
-        onerror: down,
-        ontimeout: down,
-      })
-    })
-  }
-
-  // The panel's token field and the server's status (asked each time the
-  // panel is built or opened).
-  let reducerStatusRow = null
-  function reducerControls() {
-    const field = el('input', { class: 'reducertoken', type: 'password', autocomplete: 'off', placeholder: t(GM_STORE ? 'reducerToken' : 'reducerNoStore') })
-    field.disabled = !GM_STORE
-    field.value = reducerToken()
-    field.addEventListener('change', () => { setReducerToken(field.value); refreshReducerStatus() })
-    reducerStatusRow = el('div', { class: 'lbl reducerstatus', text: '…' })
-    refreshReducerStatus()
-    return el('div', { class: 'lang' }, [el('div', { class: 'lbl', text: t('reducerToken') }), field, reducerStatusRow])
-  }
-
-  async function refreshReducerStatus() {
-    const row = reducerStatusRow
-    if (!row || !CFG.videoReducer) return
-    if (!GM_STORE) { row.textContent = t('reducerNoStore'); return }
-    const r = await reducerCall('GET', 'status')
-    row.textContent = r.ok ? `${t('reducerOk')} · ${r.json.version}` : t(r.stage === 'token' ? 'reducerBadToken' : 'reducerDown')
-    if (r.ok) dbg(`video reducer: server ${r.json.version}`)
-    else info(`video reducer: server ${r.stage} ${r.error}`)
-  }
-
   // The post's own file, once it loaded: with the sample on screen, the
   // original, known from the cache or the post page's Original image link
   // (the sample only as a last resort).
@@ -3217,29 +3159,31 @@
     })
   }
 
-  // VLC's traffic cone on its button: a PNG cut to 29x36 (shown 18 px tall,
-  // sharp at DPR 2) and kept inline, so the script stays one file.
-  const VLC_CONE = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAB0AAAAkCAMAAABCOMFYAAADAFBMVEVHcEz/fz36XhD7vHPxqmD//+nKAAD//9H9uXf////n5+b/t2j///LVXgDgZwDkbAB/f1vgZgDqcgHybQe/wcP0dAPaYADaYQD8smj/vXXe7vfZXwD/vHP/vHXPUwD/ozXp2cb/vnb/lSL/v3//vHW/ztj/9On/tWT/2K/8jjL+hQH1xpzx8/X/fAD+ozv2ZgDXXADYXgDZXwDUagDZYADYWgDYXADjaAHPWQD/yH//tWjwdgDzdwD3gBbs7Ozl5eX7hRb/um3qbgDx8fH/unD8kTX/uWz6fQD7tGrvcwD/s2P1egDZXwD8ypX/+vT/um/OtqX/////n0fvw5Py3sz/t3D9u3r/smH2eQ/9v3z/rFP/woXEzNP9kzf/x4X9nkvt7e38jiP///v/0Zrvx6b9sWbuawfvdgD28/D/pkT0eQD9o0X/igrIvrb/qkv3eQf9wIX6iCX/pUn0eAzBs6n9tGf9tm/////k3db5gh7/tW3/tGr6gQz/hAX6o0/9u3rwgBn/rEj9gQLk4+D9u3v/z6H09PPo7Ozp6efu7u7Ml2/////uawH//v3/hAHvbAH6fQD/eQHyZgDycAH1dQD/khn/ggH2bgH9ewHZYADsaQDfZQDobwD9ggDhaAD/jRH/w3v+unj/v3b/fgX9cwH3eAD/hwT/rlHvbgT6+vrxcQj+dgP2agDPzs7/zKH/woj/mijydwDm7fL+x5L+lSK8urm1s7G9vbyxusH/zIi0tLTiYwDdYgD+gAHkZgDqbADtcgD/ypj+p0vwdQD/sFv/njz4fBf/jyz/iQ3jfCvYiEn8gx7o5+e1vsW4vL//1aX9bgC4trS4uLj09vf2/v/znlb4cwz/0Zv9tXC5wMbX2t3/cQD//fvDwcDx7+7W1NPlZwD0egD52779hAD/uGrLlm3rz7baup3MpobP1tvt6+r8/v//5L3NzMr/x4D+3LLxtIHtfyXNzs7Pm3T+jwvwjj3ldx7/7dLngS/7lTv/ewv/vmPQ09Xj1s3S3OTZklcSialVAAAAxnRSTlMAAgMEAwEBAv39/igD/f3+Au/8/fz9eRv9nw+uee8o/D+NIPP9Gvv+/v38M4n5/v5g2cYM6UmMgTYO3PUt88KCn2SW9MrTOzdP+YClnVz+t/sjaFHn6f6S9+nsLvywF5LMXUYc7KX9/les4vIY/V6I+KJTyfuIyyBM35h80jLOwO79+fbX/fF/x7/7//////////////////////////////////////////////////////////////////////////////4V5EZ6AAACtElEQVQ4y22TdVhTYRTGz1g4aqNGo5Skgt3d3d3d3d29ZhusgDFqgNIxSrpLuqZid2G33xR5WHx/3fv87nvO977nXIDOgyHonzpz4iRgQNvBwvHv5xi7QUcr7Qanz/YO3o8naIMY2OEUyw9d4qi1NBb2pQbyKcFrtZbGwrFUDz7l217AaSutc0Gayac0HMWCZmcceF70Cmn183a31yI2gMt0t6b639d+9kLPmn6uUnXrflXIf1wBvDo0gp6X6Io7d5OSb58/jD5Vv/ERqi4V0TSz+C3oTZ0e/OyiqG1pTjvwdrWGYzzhUGOPxK8fv3zaFDXRgKAeo+OehER2663rPrQGd321MLGwq9GZF8wOkdFopkXz1ErjYGOV6wdEOYiWrVTV4sF6QZWXb1QIquzjXbjBWsUyDuxfzHrjWlBU9q6k9P3O+HUqcRnAaOSWSo3Qa6+UV5iVq4aJh1FUXbqCHlHeXpNcbdayBo9XiXE8vUOblFaT8kpvbpcwsdj5SqlCUat3Iym5OmXF85k6/8PEoB6LX7ogKbUu/lmzXF45p34MWgalKwwa9Spbu+hF4Q9z3O4/fvL0UWmJqd/IwRYdXN9hqSQmugklxWZH+SHDPrLIwkjjcSMQW27l9FpqmZCTzwtj+GbyuSgsJlNGMQngTp0+GRamEonEoOiE3EAGoiwuhykU0picLBLZxHc4TLOTBBGDYmIKwhD1Z4VymDQaTXhTRBZzjc1RWytnCVKH84rDGH+psC1DICDJSDO6KyOGSbOlEqJlbmzgA9a9PDFZJDA0bBPZDAHlHJWWpkyQ5hckFvuz4rLFARmGgvR+AxEz+resGMCNHRbO81BSMkmU3rcPATCYLhOEobbLYllxm03EWQPM+4PqchAQX++wvTgv23iQBWj+hXgUu+fWbTboojqdK/kHzocKJWuySiIAAAAASUVORK5CYII='
-
-  // VLC (the cone button): the video in the VLC app, from where the modal was. VLC decodes
-  // natively on every core, where a video past the hardware decoder still
-  // plays. An intent link opens it; an intent cannot carry the site as
-  // Referer, which rule34's fast host (api-cdn) wants, and VLC for Android has
-  // no setting for one, so it gets the origin host: slower, open to anyone.
-  // (mpv was tried too: its Referer needs a line in its own config.)
-  function openInVlc() {
+  // The app buttons hand the user's own QtMediaPlayer app
+  // (com.example.qtmediaplayer) the video's link, as an intent link to the
+  // app's filter for http(s) videos (ACTION_VIEW, BROWSABLE: Firefox opens
+  // it). The app's extra MODE says what to do with it: play (▶ Media Player:
+  // its FFmpeg plays what the hardware decoder can't, on the CPU), download
+  // (⬇ App: its yt-dlp, into the phone's Download folder, in the background)
+  // or reduce (⚡ 1080p: download, then convert with the app's own
+  // VideoReducer engine, which reads local files only). An app without MODE
+  // plays the link whatever it says. An intent cannot carry the site as
+  // Referer, which rule34's fast host (api-cdn) wants, so the app gets the
+  // origin host: slower, open to anyone. The title and position ride along.
+  const APP = 'com.example.qtmediaplayer'
+  function sendToApp(mode) {
     const playing = modal.fileUrl || modal.video.currentSrc
     if (!playing) { flash(t('dlWait')); return }
     const u = new URL(portableUrl(playing))
     const ms = Math.round((modal.video.currentTime || 0) * 1000)
-    modal.video.pause()
+    if (mode === 'play') modal.video.pause()
     const extras = [
-      `S.title=${encodeURIComponent(`${SITE.split('.')[0]} ${postId(modal.link)}`)}`,
+      `S.${APP}.extra.MODE=${mode}`,
+      `S.android.intent.extra.TITLE=${encodeURIComponent(`${SITE.split('.')[0]} ${postId(modal.link)}`)}`,
       `l.position=${ms}`,
-      `S.browser_fallback_url=${encodeURIComponent('https://play.google.com/store/apps/details?id=org.videolan.vlc')}`,
     ]
-    info(`external player: post ${postId(modal.link)} sent to VLC at ${mmss(ms / 1000)}`)
-    el('a', { href: `intent://${u.host}${u.pathname}${u.search}#Intent;scheme=${u.protocol.slice(0, -1)};type=video/*;package=org.videolan.vlc;${extras.join(';')};end` }).click()
+    info(`external player: post ${postId(modal.link)} sent to QtMediaPlayer to ${mode}${mode === 'play' ? ` at ${mmss(ms / 1000)}` : ''}`)
+    el('a', { href: `intent://${u.host}${u.pathname}${u.search}#Intent;scheme=${u.protocol.slice(0, -1)};type=video/*;package=${APP};${extras.join(';')};end` }).click()
   }
 
   // A copy of the settings in Violentmonkey and in the site's IndexedDB:
@@ -5388,7 +5332,9 @@
     applyPlayRate(v)
     modal.gearMenu.hidden = true
     modal.badge.hidden = true
-    modal.vlcBtn.hidden = true
+    modal.playerBtn.hidden = true
+    modal.appDlBtn.hidden = true
+    modal.appReduceBtn.hidden = true
     modal.controls.dropReel()
     if (!modal.root.fullscreenElement) setCleanUi(false)
     v.removeAttribute('src')
@@ -5546,10 +5492,12 @@
     v.onloadedmetadata = () => {
       cacheSet('video', hash, urls[i - 1], vcached)
       if (modal.seq === seq) modal.fileUrl = urls[i - 1]
-      if (modal.seq === seq && CFG.vlcButton) {
-        modal.vlcBtn.hidden = false
-        // The phone would decode it on the CPU, slowly: say where it plays well.
-        if (pastDecoder(v.videoWidth, v.videoHeight)) flash(t('bigVideo'))
+      if (modal.seq === seq && CFG.playerButton) {
+        modal.playerBtn.hidden = false
+        modal.appDlBtn.hidden = false
+        // The phone would decode it on the CPU, slowly: the app converts it.
+        modal.appReduceBtn.hidden = !pastDecoder(v.videoWidth, v.videoHeight)
+        if (!modal.appReduceBtn.hidden) flash(t('bigVideo'))
       }
       if (modal.seq === seq && !modal.sheet.hidden && modal.sheetTab === 'info') renderInfo(modal.link, seq)
       fitFullscreenOrientation()   // swiped onto a wide video while fullscreen
@@ -6393,8 +6341,7 @@
 
     .lang { padding: 4px 12px 8px; }
     .lang .lbl { color: #4e6469; font-size: 11px; padding-bottom: 4px; }
-    .lang .reducerstatus { padding: 4px 0 0; }
-    .lang select, .lang input.reducertoken {
+    .lang select {
       width: 100%; box-sizing: border-box; padding: 7px 8px; font-size: 12px;
       background: #0a0e10; color: #d7dee0;
       border: 1px solid #234a45; border-radius: 6px;
@@ -6590,14 +6537,12 @@
     body.appendChild(toggle('blockAds', t('tAds'), t('noteReload')))
     body.appendChild(toggle('rotateLandscape', t('tRotate')))
     body.appendChild(toggle('modalPreload', t('tPreload')))
-    body.appendChild(toggle('vlcButton', t('tVlcBtn')))
+    body.appendChild(toggle('playerButton', t('tPlayerBtn')))
     body.appendChild(toggle('copyLinkButton', t('tCopyBtn')))
     body.appendChild(toggle('seekReel', t('tSeekReel')))
     const onScreen = () => { if (modal) applyPlayRate(modal.video) }
     body.appendChild(choiceSelect('playRate', t('tPlayRate'), PLAY_RATES.map(r => [r, `${r.toLocaleString(LANG)}×`]), onScreen))
     body.appendChild(choiceSelect('seekStep', t('tSeekStep'), SEEK_JUMPS.map(s => [s, `${s} s`])))
-    body.appendChild(toggle('videoReducer', t('tReducer'), null, rebuildPanel))
-    if (CFG.videoReducer) body.appendChild(reducerControls())
     body.appendChild(choiceSelect('modalOriginal', t('tModalOrig'), [['zoom', t('origZoom')], ['always', t('origAlways')]]))
     body.appendChild(toggle('videoCovers', t('tCovers')))
     body.appendChild(toggle('gifInline', t('tGif')))
@@ -6654,7 +6599,6 @@
     panel.hidden = !panelOpen
     if (panelOpen) {
       renderStatus()
-      refreshReducerStatus()
       const fab = shadow.querySelector('.fab')
       if (fab) delete fab.dataset.alert
     }

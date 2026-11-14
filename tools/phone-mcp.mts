@@ -939,7 +939,7 @@ async function videoInfo({ post, url, scenes }: VideoArgs = {}) {
       `${plan.secs.toFixed(1)} s, ${ix.count} frames (${(ix.count / plan.secs).toFixed(1)} fps), ${((ix.total * 8) / plan.secs / 1e6).toFixed(1)} Mbit/s`,
     `index: moov ${kb(ix.moov.size)} at byte ${ix.moov.at} (${ix.moov.at < ix.total / 2 ? 'at the start: made for streaming' : 'at the end'}); top level ${ix.boxes.join(', ')}`,
     `keyframes: ${ix.sync.length}, every ${avgGap.toFixed(1)} s on average${gaps.length ? `, longest gap ${Math.max(...gaps).toFixed(1)} s` : ''}`,
-    `hardware decoder: ${plan.past ? 'past 1920×1088: the cover stays a poster and the modal decodes on the CPU (▶ VLC plays it better)' : 'within 1920×1088'}`,
+    `hardware decoder: ${plan.past ? 'past 1920×1088: the cover stays a poster and the modal decodes on the CPU (▶ Media Player plays it better)' : 'within 1920×1088'}`,
     `hold slideshow (${n} scenes): ${plan.plan}`,
   ].join('\n')
 }
