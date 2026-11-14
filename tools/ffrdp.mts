@@ -65,12 +65,18 @@ export function adb(...args: string[]): string {
 // for Nightly) or FFRDP_APP when its socket exists, else the first found.
 // Returns { serial, socket, app }.
 export function setup(app = process.env.FFRDP_APP): { serial: string; socket: string; app: string } {
+  // A Wireless debugging connection adb already has (adb-wifi, an earlier
+  // setup) is used as is: Fedora's adb server, the container's, has no mDNS
+  // ("unknown host service 'mdns:services'"), so mDNS is asked only when
+  // there is none.
+  let serial: string | null = adb('devices').split('\n').slice(1)
+    .map(l => l.trim().split(/\s+/))
+    .find(([s, state]) => state === 'device' && /^[\d.]+:\d+$/.test(s ?? ''))?.[0] ?? null
   // The connect port changes every time Wireless debugging restarts; mDNS has
   // it. A record can outlive the service, so try each one, on the loopback
   // address first (the phone talking to itself) and then the one advertised.
-  const records = adb('mdns', 'services').split('\n').filter(l => l.includes('_adb-tls-connect'))
-  if (!records.length) throw new Error('Wireless debugging not advertised; is it on?')
-  let serial: string | null = null
+  const records = serial ? [] : adb('mdns', 'services').split('\n').filter(l => l.includes('_adb-tls-connect'))
+  if (!serial && !records.length) throw new Error('Wireless debugging not advertised; is it on?')
   for (const line of records) {
     const addr = line.trim().split(/\s+/).pop() || ''
     const port = addr.split(':')[1]
