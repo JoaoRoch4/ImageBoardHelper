@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.16.0
+// @version      1.16.1
 // @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -68,7 +68,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.16.0'
+  const VERSION = '1.16.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // The site's thumbnail list. Gelbooru 0.2 sites (rule34, safebooru, xbooru)
@@ -750,13 +750,16 @@
 
   // Past a mid-range hardware decoder (this phone's stops at 1920×1088, in
   // either orientation, and at 1080p60's 489,600 macroblocks a second): such
-  // a video decodes on the CPU, slowly. Without fps only the size counts. A
-  // rate measured while playing wobbles, so it gets 4% of slack: 1080p60
-  // measured as 60.6 fps fits, 1080p120 doesn't.
+  // a video decodes on the CPU, slowly. Without fps only the size counts.
+  // The same rule as the app's vreduce::fits (QtMediaPlayer's
+  // src/reduce/probe.hpp, and its static_asserts are the cases to keep):
+  // the rate rounded first, so a phone's 60.03 or 59.94 fits and 60.6
+  // (61) doesn't. A rate measured while playing wobbles: its slack is where
+  // it is measured (HOLD_FPS_SLACK), not here.
   const MB_PER_S = 489600
   /** @param {number} w @param {number} h @param {number} [fps] */
   const pastDecoder = (w, h, fps) => Math.max(w, h) > 1920 || Math.min(w, h) > 1088 ||
-    (!!fps && Math.ceil(w / 16) * Math.ceil(h / 16) * fps > MB_PER_S * 1.04)
+    (!!fps && Math.ceil(w / 16) * Math.ceil(h / 16) * Math.round(fps) > MB_PER_S)
 
   // ⚠️ in the corner of a card whose video is past the hardware decoder,
   // found by its cover (size), its reel's index (size and fps) or a hold that
@@ -1732,6 +1735,8 @@
   // decoder would play on the CPU and stutter: it gets the scenes instead,
   // by its size at once, or by its frame rate a second into playing (a
   // <video> doesn't tell its fps: frames counted over the time played).
+  const HOLD_FPS_SLACK = 1.04
+
   /** @param {Scrub} s */
   function holdVideoShow(s) {
     const v = s.video
@@ -1761,7 +1766,9 @@
         v.removeEventListener('timeupdate', measure)
         const fps = (frames() - start.f) / dt
         s.stats.fps = fps
-        if (!pastDecoder(v.videoWidth, v.videoHeight, fps)) return
+        // Frames counted over a second wobble by one or two: the rule gets
+        // the rate with that slack taken off (1080p60 counted as 61 fits).
+        if (!pastDecoder(v.videoWidth, v.videoHeight, fps / HOLD_FPS_SLACK)) return
         endPlayShow(s)
         tooHeavy(`${v.videoWidth}x${v.videoHeight} at ${Math.round(fps)} fps`)
       }

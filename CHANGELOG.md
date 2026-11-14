@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.16.1
+
+- The hardware decoder's limit is now exactly the app's (`vreduce::fits` in
+  QtMediaPlayer): the frame rate rounded before it counts, with no slack, so
+  a 1080p at 60.6 fps is past it in both (the script let it through, and hid
+  ⚡ 1080p on a video the app would convert). The slack for a rate counted
+  while a hold plays stays where it is counted
+
 ## 1.16.0
 
 - The hardware decoder's limit is 1080p60 by its rate too, not only
