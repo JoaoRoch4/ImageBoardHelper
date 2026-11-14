@@ -31,7 +31,7 @@ module.exports = [
   },
   {
     // Its page.evaluate callbacks run in the browser.
-    files: ['tools/smoke.js'],
+    files: ['tools/smoke.js', 'tools/gif-test.js'],
     languageOptions: { globals: { ...globals.node, ...globals.browser } },
   },
 ]

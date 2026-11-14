@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.16.1
+// @version      1.16.2
 // @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -68,7 +68,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.16.1'
+  const VERSION = '1.16.2'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // The site's thumbnail list. Gelbooru 0.2 sites (rule34, safebooru, xbooru)
@@ -1093,6 +1093,13 @@
     nextGif()
   }
 
+  // A GIF still downloading, per card: stopGif cancels it, which hands its
+  // download slot on at once. A GIF scrolled past used to keep its slot until
+  // the whole file came (forever when the download stalled), and with all
+  // three held no other GIF started.
+  /** @type {WeakMap<HTMLElement, () => void>} */
+  const gifLoads = new WeakMap()
+
   /** @param {HTMLElement} card */
   function playGif(card) {
     if (card.dataset.ibhGif) return   // loading, playing or failed
@@ -1108,11 +1115,18 @@
     card.dataset.ibhGif = 'loading'
     const probe = new Image()
     let i = 0
-    let held = true
+    let held = false   // a download slot, once takeImageSlot hands one over
+    let live = true    // false once stopGif cancelled this load
     const release = () => { if (held) { held = false; giveImageSlot() } }
+    gifLoads.set(card, () => {
+      live = false
+      probe.onload = probe.onerror = null
+      probe.removeAttribute('src')   // Firefox drops the download
+      release()
+    })
     const tryNext = () => {
-      if (card.dataset.ibhGif !== 'loading') { release(); return }   // scrolled away meanwhile
       if (i >= urls.length) {
+        gifLoads.delete(card)
         release()
         card.dataset.ibhGif = 'failed'
         cacheSet('gif', hash, null)
@@ -1124,6 +1138,7 @@
       probe.src = urls[i++]
     }
     probe.onload = () => {
+      gifLoads.delete(card)
       release()
       cacheSet('gif', hash, probe.src, gcached)
       if (card.dataset.ibhGif !== 'loading') return
@@ -1137,7 +1152,11 @@
       dbg(`gif: playing ${probe.src}`)
     }
     probe.onerror = tryNext
-    takeImageSlot(tryNext)
+    takeImageSlot(() => {
+      if (!live) { giveImageSlot(); return }   // stopped while it waited for the slot
+      held = true
+      tryNext()
+    })
   }
 
   // An animated GIF keeps every decoded frame, and under memory pressure
@@ -1196,7 +1215,7 @@
       if (originalViewport) originalViewport.observe(el)   // upgraded again when it comes back
       n.images++
     })
-    markedCards('[data-ibh-gif="playing"]').forEach(card => {
+    markedCards('[data-ibh-gif="playing"], [data-ibh-gif="loading"]').forEach(card => {
       if (card !== keep && far(card)) { stopGif(card); n.gifs++ }
     })
     markedCards('[data-ibh-cover]').forEach(card => {
@@ -1208,6 +1227,8 @@
   /** @param {HTMLElement} card */
   function stopGif(card) {
     gifQueue.delete(card)
+    const cancel = gifLoads.get(card)
+    if (cancel) { gifLoads.delete(card); cancel() }
     const state = card.dataset.ibhGif
     if (state === 'playing' && card.dataset.ibhStill) {
       const pic = cardPicture(card)
@@ -1738,12 +1759,12 @@
     // holdVideo: the video itself, unless its cover already knows it is past
     // the hardware decoder (then the slideshow below, as without the option).
     if (CFG.holdVideo && !scrub.card.dataset.ibhBigVideo) {
-      if (!startScrub()) { scrub = null; return }
+      if (!startScrub()) { dropScrub(); return }
       holdVideoShow(scrub)
       return
     }
     if (CFG.slideReel && startReelShow(scrub)) return
-    if (!startScrub()) { scrub = null; return }
+    if (!startScrub()) { dropScrub(); return }
     if (CFG.slideReel) chooseShow(scrub)   // WebM: no reel, but a short clip plays
     else seekShow(scrub)
   }
@@ -2720,9 +2741,11 @@
     const { card } = s
     const pic = cardPicture(card)
     if (!pic) return false
-    freeForPreview(card)
+    // freeForPreview() only once the preview will run: one that cannot start
+    // never reaches endScrub(), which brings the paused GIFs back.
     const cover = card.querySelector('video[data-ibh]')
     if (cover && cover.readyState >= 1) {
+      freeForPreview(card)
       s.video = cover   // already loaded: instant, and no extra decoder
       // Download the whole file from now on: these are a few MB, and every
       // part already downloaded answers a seek at once.
@@ -2731,6 +2754,7 @@
       const hash = (thumbParts(pic.src) || {}).hash
       const urls = cachedFirst(fileCandidates(pic.src, ['mp4', 'webm']), cacheGet('video', hash))
       if (!urls.length) return false
+      freeForPreview(card)
       borrowDecoder(card)
       const holder = document.createElement('div')
       holder.style.cssText = 'position:absolute;inset:0;pointer-events:none'
@@ -2774,12 +2798,19 @@
     ;/** @type {Scrub} */ (scrub).label.textContent = at ? `${mmss(at.t)} / ${mmss(at.d)}` : '…'
   }
 
+  // Lets go of a scrub that never showed anything. nextGif() waits while a
+  // finger is down on a video card: a GIF whose turn came meanwhile starts now.
+  function dropScrub() {
+    scrub = null
+    nextGif()
+  }
+
   function endScrub() {
     const s = scrub
     scrub = null
     if (!s) return
     clearTimeout(s.holdTimer)
-    if (!s.on) return
+    if (!s.on) { nextGif(); return }
     if (s.tick) endSlideshow(s)
     if (s.onPlayTime) endPlayShow(s)
     if (s.stats) logSlideStats(s)
@@ -2788,6 +2819,7 @@
     s.label.remove()
     if (s.shared) { previewStop(); /** @type {HTMLElement} */ (s.holder).remove(); returnDecoder() }   // a shared preview has one
     afterPreview()
+    nextGif()   // the paused ones first, then any whose turn came meanwhile
     // A cover keeps the frame where the finger stopped.
     dbg(`scrub: stopped at ${s.label.textContent}`)
   }
@@ -2803,9 +2835,9 @@
     if (!scrub.on) {
       const dx = Math.abs(ev.clientX - scrub.x0)
       const dy = Math.abs(ev.clientY - scrub.y0)
-      if (dy > SCRUB_SLOP && dy > dx) { scrub = null; return }   // a page scroll
+      if (dy > SCRUB_SLOP && dy > dx) { dropScrub(); return }   // a page scroll
       if (dx < SCRUB_SLOP) return
-      if (!startScrub()) { scrub = null; return }
+      if (!startScrub()) { dropScrub(); return }
     }
     moveScrub(ev.clientX)
   }
@@ -2938,7 +2970,7 @@
   function releaseAll() {
     coverQueue.clear()   // first, or each unmount hands its slot to a queued card
     markedCards('[data-ibh-cover]').forEach(card => unmountCover(card))
-    markedCards('[data-ibh-gif="playing"]').forEach(card => stopGif(card))
+    markedCards('[data-ibh-gif="playing"], [data-ibh-gif="loading"]').forEach(card => stopGif(card))
     markedImages('[data-ibh-orig="done"]').forEach(el => {
       resetUpgrade(el)
       if (farViewport) farViewport.unobserve(el)
@@ -2962,10 +2994,15 @@
     sweepAt = Date.now()
     const n = freeOffscreen(null)
     if (n.images || n.gifs || n.covers) dbg(`memory: ${why} sweep freed ${n.images} images, ${n.gifs} GIFs, ${n.covers} covers`)
+    // A safety net: a GIF whose turn came while nextGif() had to wait (a
+    // finger on a video card, the modal, a hidden tab) starts here at the latest.
+    nextGif()
   }
 
   // A tab in the background decodes nothing, yet its covers and GIFs keep
   // their memory. Park them while hidden and bring them back on return.
+  // GIFs still downloading go too: Android freezes Firefox in the background,
+  // and a download cut there would leave the GIF marked as missing.
   /** @type {HTMLElement[]} */
   const parked = []
 
@@ -2975,7 +3012,7 @@
       parked.push(...coverQueue)
       coverQueue.clear()   // first, or each unmount hands its slot to a queued card
       markedCards('[data-ibh-cover]').forEach(card => { unmountCover(card); parked.push(card) })
-      markedCards('[data-ibh-gif="playing"]').forEach(card => { stopGif(card); parked.push(card) })
+      markedCards('[data-ibh-gif="playing"], [data-ibh-gif="loading"]').forEach(card => { stopGif(card); parked.push(card) })
       if (parked.length) dbg(`memory: tab hidden, parked ${parked.length} covers and GIFs`)
       return
     }
@@ -7026,7 +7063,7 @@
     const n = { covers: 0, gifs: 0, images: 0 }
     coverQueue.clear()   // first, or each unmount hands its slot to a queued card
     markedCards('[data-ibh-cover]').forEach(card => { unmountCover(card); n.covers++ })
-    markedCards('[data-ibh-gif="playing"]').forEach(card => { stopGif(card); n.gifs++ })
+    markedCards('[data-ibh-gif="playing"], [data-ibh-gif="loading"]').forEach(card => { stopGif(card); n.gifs++ })
     originalQueue.length = 0
     markedImages('[data-ibh-orig]').forEach(el => {
       const state = el.dataset.ibhOrig
@@ -8433,6 +8470,7 @@
     '  clearHostCache()       resolves the image host again (Clear host)',
     '  urlCache(), clearUrlCache()   the cache of which address worked',
     '  stored(), moveAgain()  the stored lists; merges the old storage bridge in again',
+    '  gifs()                 inline GIFs: download slots, turn queue, card states, what holds them',
   ].join('\n')
 
   // Console access, useful when the panel is turned off. On the page's own
@@ -8455,6 +8493,23 @@
     urlCache: () => ({ ...urlStats, entries: Object.keys(loadUrlCache()).length }),
     clearUrlCache,
     redo: redoThumbs,
+    // Where the inline GIFs stand, for one stuck on its still: the three
+    // download slots and who waits for one, the turn queue, each card's state,
+    // and what makes nextGif() wait.
+    gifs: () => {
+      /** @type {Record<string, number>} */
+      const cards = {}
+      markedCards('[data-ibh-gif]').forEach(c => {
+        const k = `${c.dataset.ibhGif}${c.dataset.ibhSeen ? ' on screen' : ''}`
+        cards[k] = (cards[k] || 0) + 1
+      })
+      return {
+        slots: `${imagesInflight}/${IMAGE_MAX_INFLIGHT}`, slotWaiters: imageWaiters.length,
+        live: `${gifsLive()}/${Number(CFG.gifMaxLive) || 3}`, queued: gifQueue.size, cards,
+        previewPaused: previewPaused.length, parked: parked.length,
+        holding: [document.hidden && 'hidden tab', modal && modal.open && 'modal', scrub && 'finger on a video'].filter(Boolean),
+      }
+    },
     set: setCfg,
     // Size of each stored key (JSON characters) and the move-in state.
     stored: () => (GM_STORE ? Object.fromEntries([...STORE_KEYS.map(k => [k, JSON.stringify(GM_getValue(k, null)).length]), ['movedIn', GM_getValue('movedIn', 0)]]) : null),

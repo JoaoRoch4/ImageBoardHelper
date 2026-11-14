@@ -7,6 +7,7 @@
     "lint": "eslint",
     "typecheck": "tsc -p . && tsc -p tools",
     "smoke": "node tools/smoke.js",
+    "test:gif": "node tools/gif-test.js",
     "test:tools": "node --test tools/rish.test.mts tools/phone-server.test.mts tools/video-reducer.test.mts"
   },
   "devDependencies": {

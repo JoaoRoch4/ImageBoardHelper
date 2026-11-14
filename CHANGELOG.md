@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.16.2
+
+- Inline GIFs no longer get stuck on their still until the page is reloaded
+  or a post opened and closed:
+  - a GIF that leaves the screen while it downloads cancels the download, and
+    its download slot goes on at once. It used to keep the slot until the
+    whole file came (forever when the download stalled), and with the three
+    slots held no other GIF, or sharper image, started
+  - GIFs still downloading stop too when a post opens, when the tab goes to
+    the background and when they are far off screen, like the playing ones
+  - a GIF whose turn came while a finger was down on a video thumbnail
+    starts when it lifts (it waited for another GIF to stop); with
+    `memorySaver`, its 15 s sweep starts any such GIF at the latest
+  - a scene preview that cannot start no longer pauses the GIFs on screen
+- `__ibh.gifs()` in the console: download slots, turn queue, each GIF card's
+  state, and what is holding them
+
 ## 1.16.1
 
 - The hardware decoder's limit is now exactly the app's (`vreduce::fits` in
