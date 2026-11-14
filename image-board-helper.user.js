@@ -810,6 +810,25 @@
   /** @type {WeakSet<HTMLElement>} */
   const tracked = new WeakSet()
 
+  // The elements carrying one of this script's own data-ibh-* marks, typed as
+  // what it marks: cards (a thumbnail's link) and, for data-ibh-orig, their
+  // <img>. Only the selectors below are accepted, so a lookup can't claim a
+  // type for a mark the script puts elsewhere.
+  /**
+   * @param {'[data-ibh-cover]' | '[data-ibh-seen]' | '[data-ibh-kind]' | '[data-ibh-gif]' | '[data-ibh-gif="playing"]' | '[data-ibh-gif="playing"], [data-ibh-gif="loading"]'} selector
+   * @returns {NodeListOf<HTMLElement>}
+   */
+  function markedCards(selector) {
+    return /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll(selector))
+  }
+  /**
+   * @param {'[data-ibh-orig]' | '[data-ibh-orig="done"]'} selector
+   * @returns {NodeListOf<HTMLImageElement>}
+   */
+  function markedImages(selector) {
+    return /** @type {NodeListOf<HTMLImageElement>} */ (document.querySelectorAll(selector))
+  }
+
   // A card is the link around a thumbnail (Gelbooru 0.2 markup). The kind
   // comes from the tags in the thumbnail's title or alt, or the site's own
   // .webm-thumb mark. "animated" alone may be either kind: it counts as video,
@@ -1034,7 +1053,7 @@
   // the screen first, and take the place of one that scrolls away.
   /** @type {Set<HTMLElement>} */
   const gifQueue = new Set()
-  const gifsLive = () => document.querySelectorAll('[data-ibh-gif="playing"], [data-ibh-gif="loading"]').length
+  const gifsLive = () => markedCards('[data-ibh-gif="playing"], [data-ibh-gif="loading"]').length
 
   function nextGif() {
     // Stopped to free memory (the modal, a scene preview, a hidden tab): those
@@ -1064,10 +1083,10 @@
   function applyGifLimit() {
     const max = Number(CFG.gifMaxLive) || 3
     const middle = window.innerHeight / 2
-    const live = [...document.querySelectorAll('[data-ibh-gif="playing"], [data-ibh-gif="loading"]')]
+    const live = [...markedCards('[data-ibh-gif="playing"], [data-ibh-gif="loading"]')]
       .sort((a, b) => Math.abs(b.getBoundingClientRect().top - middle) - Math.abs(a.getBoundingClientRect().top - middle))
-    while (live.length > max) {
-      const card = live.shift()
+    // The farthest ones, past the limit.
+    for (const card of live.splice(0, live.length - max)) {
       stopGif(card)
       gifQueue.add(card)
     }
@@ -1169,7 +1188,7 @@
       const r = el.getBoundingClientRect()
       return r.bottom < -window.innerHeight || r.top > window.innerHeight * 2
     }
-    document.querySelectorAll('[data-ibh-orig="done"]').forEach(el => {
+    markedImages('[data-ibh-orig="done"]').forEach(el => {
       if (!far(el)) return
       pinHeight(el)
       resetUpgrade(el)
@@ -1177,10 +1196,10 @@
       if (originalViewport) originalViewport.observe(el)   // upgraded again when it comes back
       n.images++
     })
-    document.querySelectorAll('[data-ibh-gif="playing"]').forEach(card => {
+    markedCards('[data-ibh-gif="playing"]').forEach(card => {
       if (card !== keep && far(card)) { stopGif(card); n.gifs++ }
     })
-    document.querySelectorAll('[data-ibh-cover]').forEach(card => {
+    markedCards('[data-ibh-cover]').forEach(card => {
       if (far(card)) { unmountCover(card); n.covers++ }
     })
     return n
@@ -1249,10 +1268,12 @@
   /** @param {AnyNode} root */
   function scanCards(root) {
     if (!root || !root.querySelectorAll) return
-    const imgs = [...root.querySelectorAll(NATIVE_THUMB)]
-    if (root.matches && root.matches(NATIVE_THUMB)) imgs.push(root)
+    // The selector ends in img: these are images.
+    const imgs = /** @type {HTMLImageElement[]} */ ([...root.querySelectorAll(NATIVE_THUMB)])
+    if (root.matches && root.matches(NATIVE_THUMB)) imgs.push(/** @type {HTMLImageElement} */ (root))
     for (const img of imgs) {
-      const link = img.closest('a') || img.parentElement
+      // Inside a card (the selector's THUMB), so it has a parent.
+      const link = /** @type {HTMLElement} */ (img.closest('a') || img.parentElement)
       // The search list marks videos with .webm-thumb (a blue frame), but
       // favorites leave it out. Put the site's own mark back on real videos.
       const tags = nativeTags(link)
@@ -1492,7 +1513,7 @@
   function scanThumbs(root) {
     if (!(CFG.originalThumbs || CFG.nativeFeed) || !root || !root.querySelectorAll) return
     const found = [...root.querySelectorAll(ORIGINAL_SELECTOR)]
-    if (root.matches && root.matches(ORIGINAL_SELECTOR)) found.push(root)
+    if (root.matches && root.matches(ORIGINAL_SELECTOR)) found.push(/** @type {HTMLImageElement} */ (root))   // matched img[…]
     for (const el of found) {
       if (watchedThumbs.has(el)) continue
       watchedThumbs.add(el)
@@ -1620,7 +1641,7 @@
     decodersBorrowed++
     liveCovers++
     if (liveCovers <= COVER_MAX_LIVE) return
-    const victim = [...document.querySelectorAll('[data-ibh-cover]')].find(c => c !== card)
+    const victim = [...markedCards('[data-ibh-cover]')].find(c => c !== card)
     if (!victim) return
     unmountCover(victim)   // its releaseCover sees the budget still full: nothing remounts
     if (victim.dataset.ibhSeen) coverQueue.add(victim)
@@ -1685,9 +1706,8 @@
   function onScrubDown(ev) {
     if (scrub || insidePanel(ev) || (modal && modal.open)) return
     if (ev.pointerType === 'mouse' && ev.button !== 0) return
-    // A pointer event's target is set; one with closest() is an element.
-    const card = /** @type {HTMLElement | null | undefined} */ (
-      /** @type {EventTarget} */ (ev.target).closest && /** @type {Element} */ (ev.target).closest('[data-ibh-video]'))
+    // data-ibh-video marks cards (trackCard).
+    const card = /** @type {HTMLElement | null | undefined} */ (asElement(ev.target)?.closest('[data-ibh-video]'))
     if (!card || card.dataset.ibhKind === 'gif') return
     scrub = /** @type {Scrub} */ ({ card, id: ev.pointerId, x0: ev.clientX, y0: ev.clientY, on: false, holdTimer: 0 })
     // Hold mode: a still finger for HOLD_MS starts the slideshow.
@@ -2820,13 +2840,12 @@
     window.addEventListener('pointercancel', onScrubUp, true)
     window.addEventListener('click', onScrubClick, true)
     // Hold mode: the long press is ours, so the browser's long-press menu stays out.
-    // An event's target is set while it is dispatched; one with closest() is an element.
     window.addEventListener('contextmenu', ev => {
-      if (CFG.scrubMode === 'hold' && /** @type {EventTarget} */ (ev.target).closest && /** @type {Element} */ (ev.target).closest('[data-ibh-video]')) ev.preventDefault()
+      if (CFG.scrubMode === 'hold' && asElement(ev.target)?.closest('[data-ibh-video]')) ev.preventDefault()
     }, true)
     // Belt and braces for the drag-and-drop that cancels a scrub on site pages.
     window.addEventListener('dragstart', ev => {
-      if (/** @type {EventTarget} */ (ev.target).closest && /** @type {Element} */ (ev.target).closest('[data-ibh-video]')) ev.preventDefault()
+      if (asElement(ev.target)?.closest('[data-ibh-video]')) ev.preventDefault()
     }, true)
     info(`video scene preview active: ${CFG.scrubMode !== 'hold' ? 'drag sideways on a video thumbnail' : CFG.holdVideo ? 'hold a video thumbnail to play it (hardware)' : 'hold a video thumbnail for a slideshow'}`)
   }
@@ -2918,9 +2937,9 @@
   // back button is light. Coming back from that copy, start the page over.
   function releaseAll() {
     coverQueue.clear()   // first, or each unmount hands its slot to a queued card
-    document.querySelectorAll('[data-ibh-cover]').forEach(card => unmountCover(card))
-    document.querySelectorAll('[data-ibh-gif="playing"]').forEach(card => stopGif(card))
-    document.querySelectorAll('[data-ibh-orig="done"]').forEach(el => {
+    markedCards('[data-ibh-cover]').forEach(card => unmountCover(card))
+    markedCards('[data-ibh-gif="playing"]').forEach(card => stopGif(card))
+    markedImages('[data-ibh-orig="done"]').forEach(el => {
       resetUpgrade(el)
       if (farViewport) farViewport.unobserve(el)
       if (originalViewport) originalViewport.observe(el)
@@ -2955,8 +2974,8 @@
     if (document.hidden) {
       parked.push(...coverQueue)
       coverQueue.clear()   // first, or each unmount hands its slot to a queued card
-      document.querySelectorAll('[data-ibh-cover]').forEach(card => { unmountCover(card); parked.push(card) })
-      document.querySelectorAll('[data-ibh-gif="playing"]').forEach(card => { stopGif(card); parked.push(card) })
+      markedCards('[data-ibh-cover]').forEach(card => { unmountCover(card); parked.push(card) })
+      markedCards('[data-ibh-gif="playing"]').forEach(card => { stopGif(card); parked.push(card) })
       if (parked.length) dbg(`memory: tab hidden, parked ${parked.length} covers and GIFs`)
       return
     }
@@ -2978,7 +2997,7 @@
   function freeForPreview(card) {
     if (!CFG.memorySaver) return
     const n = freeOffscreen(card)
-    document.querySelectorAll('[data-ibh-gif="playing"]').forEach(c => {
+    markedCards('[data-ibh-gif="playing"]').forEach(c => {
       if (c === card) return
       stopGif(c)
       previewPaused.push(c)
@@ -3082,7 +3101,7 @@
   let modal = /** @type {any} */ (null)
 
   /** @returns {HTMLAnchorElement[]} */
-  const siteLinks = () => [...document.querySelectorAll(SITE_LINK)]
+  const siteLinks = () => /** @type {HTMLAnchorElement[]} */ ([...document.querySelectorAll(SITE_LINK)])   // SITE_LINK ends in a
 
   const MODAL_CSS = `
     :host { all: initial; }
@@ -3486,6 +3505,16 @@
     const path = typeof ev.composedPath === 'function' ? ev.composedPath() : []
     return panelHost ? path.includes(panelHost) : false
   }
+
+  // An event's target as an element (one with closest()), or null: a text
+  // node, the document, the window, or no target outside a dispatch.
+  /**
+   * @param {EventTarget | null} target
+   * @returns {Element | null}
+   */
+  function asElement(target) {
+    return target && /** @type {Partial<Element>} */ (target).closest ? /** @type {Element} */ (target) : null
+  }
   const userId = () => (document.cookie.match(/(?:^|; )user_id=(\d+)/) || [])[1] || null
 
   // The viewer's own favorites page: every post on it is a favorite.
@@ -3527,20 +3556,21 @@
       const head = d.querySelector('.col1')
       const body = d.querySelector('.col2')
       if (body) body.querySelectorAll('br').forEach((/** @type {Element} */ br) => br.replaceWith('\n'))
-      const headText = head ? head.textContent.replace(/\s+/g, ' ') : ''
+      const headText = head ? (head.textContent || '').replace(/\s+/g, ' ') : ''
       const author = head && head.querySelector('a[href*="page=account"]')
       return {
         id: d.id.slice(1),   // c22197352 -> 22197352, for the vote
-        user: (author ? author.textContent : '').trim(),
-        profile: author ? new URL(author.getAttribute('href'), base).href : null,
+        user: ((author && author.textContent) || '').trim(),
+        profile: author ? new URL(/** @type {string} */ (author.getAttribute('href')), base).href : null,   // matched a[href…]
         date: (headText.match(/Posted on (\S+ \S+)/) || [])[1] || '',
         score: Number((head && head.querySelector('[id^="sc"]') || {}).textContent) || 0,
-        text: body ? body.textContent.replace(/\n{3,}/g, '\n\n').trim() : '',
+        text: body ? (body.textContent || '').replace(/\n{3,}/g, '\n\n').trim() : '',
       }
     }).filter(c => c.text)
     const total = Number(((doc.querySelector('#comment-list') || {}).textContent || '').match(/(\d+) comments?/)?.[1]) || list.length
-    const more = [...doc.querySelectorAll('#post-comments #paginator a')].find(a => /next/i.test(a.textContent))
-    return { list, total, next: more ? new URL(more.getAttribute('href'), base).href : null }
+    const more = [...doc.querySelectorAll('#post-comments #paginator a')].find(a => /next/i.test(a.textContent || ''))
+    const href = more && more.getAttribute('href')   // a link without one leads nowhere
+    return { list, total, next: href ? new URL(href, base).href : null }
   }
 
   /** @param {string} html */
@@ -3553,21 +3583,21 @@
       const type = (li.className.match(/tag-type-([a-z]+)/) || [])[1] || 'general'
       // The search link carries the tag as typed in a search (underscores).
       const a = [...li.querySelectorAll('a[href*="tags="]')].pop()
-      const q = a && a.getAttribute('href').match(/[?&]tags=([^&]+)/)
+      const q = a && /** @type {string} */ (a.getAttribute('href')).match(/[?&]tags=([^&]+)/)   // matched a[href…]
       if (q) tags.push({ name: decodeURIComponent(q[1].replace(/\+/g, ' ')), type })
     }
     // The sidebar's statistics: Id, Posted … by, Size, Source, Rating, Score.
     const stats = [...doc.querySelectorAll('#stats li')].map(li => {
-      const text = li.textContent.replace(/\s+/g, ' ').replace(/\(\s*vote.*$/i, '').trim()
+      const text = (li.textContent || '').replace(/\s+/g, ' ').replace(/\(\s*vote.*$/i, '').trim()
       const link = li.querySelector('a[href^="http"]')
       return { text, href: link ? link.getAttribute('href') : null }
     }).filter(st => st.text)
     const comments = readComments(doc)
     // The sidebar's "Original image" link: the exact file, no guessing.
-    const orig = [...doc.querySelectorAll('a[href*="/images/"]')].find(a => /original/i.test(a.textContent))
+    const orig = [...doc.querySelectorAll('a[href*="/images/"]')].find(a => /original/i.test(a.textContent || ''))
     // The page links videos on api-cdn-mp4, the slow origin (0.4–0.6 MB/s
     // measured, against 6–7 MB/s for the same file on api-cdn, Cloudflare).
-    const original = orig ? orig.getAttribute('href').replace(/([^:])\/\/+/g, '$1/').replace('//api-cdn-mp4.', '//api-cdn.') : null
+    const original = orig ? /** @type {string} */ (orig.getAttribute('href')).replace(/([^:])\/\/+/g, '$1/').replace('//api-cdn-mp4.', '//api-cdn.') : null   // matched a[href…]
     return { fav: heart ? heart[1] === 'heart-added' : null, tags, stats, original, comments }
   }
 
@@ -4258,7 +4288,8 @@
 
   async function renderLater() {
     const list = (await laterList()).filter(item => item.site === SITE)
-    modal.laterHead.querySelector('.lt').textContent = `🕒 ${t('laterTitle')} · ${list.length}`
+    const title = /** @type {Element} */ (modal.laterHead.querySelector('.lt'))   // buildModal made it
+    title.textContent = `🕒 ${t('laterTitle')} · ${list.length}`
     modal.laterNote.textContent = t(GM_STORE ? 'laterOnDevice' : 'laterOnSite')
     if (!list.length) {
       modal.laterGrid.replaceChildren(el('div', { class: 'none', text: t('laterEmpty') }))
@@ -4334,14 +4365,24 @@
   /** @type {(() => Promise<void>) | null} */
   let favBarReload = null      // refreshes its lists
 
+  // The favorites bar's fields: ensureFavSearch builds it with all of them.
+  /** @param {HTMLElement} bar */
+  const favFields = bar => ({
+    text: /** @type {HTMLInputElement} */ (bar.querySelector('input[type="search"]')),
+    or: /** @type {HTMLInputElement} */ (bar.querySelector('input.or')),
+    kind: /** @type {HTMLSelectElement} */ (bar.querySelector('select.kind')),
+    sort: /** @type {HTMLSelectElement} */ (bar.querySelector('select.sort')),
+    min: /** @type {HTMLInputElement} */ (bar.querySelector('input.min')),
+  })
+
   // The favorites bar's search, remembered for the next visit (active: shown).
   /** @param {boolean} active */
   async function rememberFavSearch(active) {
     const bar = document.getElementById('ibh-favsearch')
     if (!bar) return
     const store = await searchStore()
-    store.favLast = { text: bar.querySelector('input[type="search"]').value, or: bar.querySelector('input.or').value, kind: bar.querySelector('select.kind').value,
-      sort: bar.querySelector('select.sort').value, min: bar.querySelector('input.min').value, active }
+    const f = favFields(bar)
+    store.favLast = { text: f.text.value, or: f.or.value, kind: f.kind.value, sort: f.sort.value, min: f.min.value, active }
     if (active) addRecent(store, { where: 'fav', ...store.favLast, active: undefined })   // one write for both
     await storeSet('searches', store)
     if (active && favBarReload) favBarReload()
@@ -4372,8 +4413,9 @@
     const doc = new DOMParser().parseFromString(html, 'text/html')
     return [...doc.querySelectorAll('.thumb img[src]')].map(img => {
       const a = img.closest('a')
-      const id = ((a && a.getAttribute('href')) || '').match(/id=(\d+)/)?.[1] || (img.getAttribute('src').split('?')[1] || '')
-      return /** @type {FavItem} */ ([id, img.getAttribute('src'), (img.getAttribute('title') || img.getAttribute('alt') || '').trim(), scores.has(id) ? scores.get(id) : null])
+      const src = /** @type {string} */ (img.getAttribute('src'))   // matched img[src]
+      const id = ((a && a.getAttribute('href')) || '').match(/id=(\d+)/)?.[1] || (src.split('?')[1] || '')
+      return /** @type {FavItem} */ ([id, src, (img.getAttribute('title') || img.getAttribute('alt') || '').trim(), scores.has(id) ? scores.get(id) : null])
     }).filter(item => /^\d+$/.test(item[0]))
   }
 
@@ -4465,8 +4507,9 @@
   async function searchFavs() {
     const bar = document.getElementById('ibh-favsearch')
     if (!bar) return
-    const either = orGroups(bar.querySelector('input.or').value).map(g => g.join(' ~ '))
-    const text = `${bar.querySelector('input').value} ${either.join(' ')}`.trim()
+    const fields = favFields(bar)
+    const either = orGroups(fields.or.value).map(g => g.join(' ~ '))
+    const text = `${fields.text.value} ${either.join(' ')}`.trim()
     let idx = await loadFavIndex()
     if (!idx.items.length) idx = (await updateFavIndex(true)) || idx
     else if (Date.now() - idx.updated > FAV_STALE_MS) idx = (await updateFavIndex(false)) || idx
@@ -4486,13 +4529,13 @@
       })
     }
     const match = favQuery(text)
-    const kind = bar.querySelector('select.kind').value
+    const kind = fields.kind.value
     // kind: the select's other values are FavEntry's flags.
     /** @param {FavEntry} e */
     const ofKind = e => kind === 'all' || (kind === 'image' ? !e.animated : e[/** @type {'video' | 'gif' | 'animated'} */ (kind)])
-    const min = Number(bar.querySelector('input.min').value) || 0
+    const min = Number(fields.min.value) || 0
     let found = favEntries.filter(e => ofKind(e) && (!min || (e.score != null && e.score >= min)) && match(e))
-    const sort = bar.querySelector('select.sort').value
+    const sort = fields.sort.value
     if (sort === 'old') found = found.reverse()
     else if (sort === 'score') found = [...found].sort((a, b) => (b.score ?? -1e9) - (a.score ?? -1e9))
     else if (sort === 'random') found = found.map(e => /** @type {[number, FavEntry]} */ ([Math.random(), e])).sort((a, b) => a[0] - b[0]).map(pair => pair[1])
@@ -4520,6 +4563,10 @@
     return span
   }
 
+  // The site's own paginators, hidden while results stand in for the page:
+  // divs of its HTML.
+  const sitePaginators = () => /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('#paginator, .pagination'))
+
   /** @param {Array<FavEntry['item']>} items */
   function showFavResults(items) {
     const list = document.querySelector(LIST)
@@ -4528,7 +4575,7 @@
     favResults = items
     favShown = 0
     list.replaceChildren()
-    document.querySelectorAll('#paginator, .pagination').forEach(p => { p.style.display = 'none' })
+    sitePaginators().forEach(p => { p.style.display = 'none' })
     showMoreFavs()
     window.scrollTo({ top: list.getBoundingClientRect().top + window.scrollY - 80 })
   }
@@ -4552,11 +4599,11 @@
     if (list && favPage) list.replaceChildren(...favPage)
     favPage = null
     favResults = []
-    document.querySelectorAll('#paginator, .pagination').forEach(p => { p.style.display = '' })
+    sitePaginators().forEach(p => { p.style.display = '' })
     const more = document.getElementById('ibh-favmore')
     if (more) more.hidden = true
     const bar = document.getElementById('ibh-favsearch')
-    if (bar) { bar.querySelector('input').value = ''; bar.querySelector('input.or').value = '' }
+    if (bar) { const f = favFields(bar); f.text.value = ''; f.or.value = '' }
     rememberFavSearch(false)
     if (favBarSync) favBarSync()
     setFavStatus()
@@ -4566,9 +4613,10 @@
   function setFavStatus(text) {
     const st = document.querySelector('#ibh-favsearch .st')
     if (!st) return
-    if (text) { st.firstChild.textContent = text; return }
+    const line = /** @type {Text} */ (st.firstChild)   // ensureFavSearch puts a text node first
+    if (text) { line.textContent = text; return }
     const idx = favIndex
-    st.firstChild.textContent = idx && idx.items.length
+    line.textContent = idx && idx.items.length
       ? `${idx.items.length} ${t('favIndexed')} · ${new Date(idx.updated).toLocaleString(LANG)}`
       : t('favNever')
   }
@@ -4579,7 +4627,7 @@
     const want = CFG.favSearch && SITE === 'rule34.xxx' && onOwnFavorites() && !!document.querySelector(LIST)
     if (!want) { if (bar) { clearFavSearch(); bar.remove(); document.getElementById('ibh-favmore')?.remove() } return }
     if (bar) return
-    const list = document.querySelector(LIST)
+    const list = /** @type {Element} */ (document.querySelector(LIST))   // want found it
     const input = el('input', { type: 'search', placeholder: t('favPlaceholder'), enterkeyhint: 'search' })
     input.setAttribute('autocapitalize', 'off')
     input.setAttribute('autocomplete', 'off')
@@ -4724,9 +4772,8 @@
       input.focus()
       dbg(`search: suggestion "${li.dataset.value}" picked`)
     }
-    // An event's target is set while it is dispatched; one with closest() is an element.
     /** @param {Event} ev */
-    const itemAt = ev => /** @type {EventTarget} */ (ev.target).closest && /** @type {Element} */ (ev.target).closest('li')
+    const itemAt = ev => asElement(ev.target)?.closest('li')
     // A finger on the list may be scrolling it, so the tag goes in when the
     // finger lifts, and only if it stayed nearly still and the list did not
     // scroll. Measured on touch events, as in chipGestures: Firefox for
@@ -4796,7 +4843,7 @@
   /** @param {boolean} on */
   function setBulkMode(on) {
     bulkMode = on
-    const heart = shadow && shadow.querySelector('.bulkfab')
+    const heart = control('.bulkfab')
     if (heart) heart.classList.toggle('on', on)
     pageToast(t(on ? 'bulkOn' : 'bulkOff'))
     info(`mass favorite ${on ? 'on' : 'off'}`)
@@ -4806,7 +4853,7 @@
   /** @param {string} text */
   function pageToast(text) {
     if (!shadow) return
-    let toast = shadow.querySelector('.pagetoast')
+    let toast = control('.pagetoast')
     if (!toast) { toast = el('div', { class: 'pagetoast' }); shadow.appendChild(toast) }
     toast.textContent = text
     toast.style.opacity = '1'
@@ -4822,7 +4869,7 @@
    * @param {string} [cls]
    */
   function bulkBadge(link, text, tone, cls = 'ibh-bulkbadge') {
-    let badge = link.querySelector(`.${cls}`)
+    let badge = /** @type {HTMLSpanElement | null} */ (link.querySelector(`.${cls}`))   // made below
     if (!badge) {
       badge = document.createElement('span')
       badge.className = cls
@@ -4869,7 +4916,8 @@
   // their own hold, the scene preview, or play on their own).
   /** @param {EventTarget | null} target */
   function rawTarget(target) {
-    const img = /** @type {HTMLImageElement | null | undefined} */ (target && target.closest && target.closest(`${SITE_LINK} img`))
+    // The selectors end in img and in a.
+    const img = /** @type {HTMLImageElement | null | undefined} */ (asElement(target)?.closest(`${SITE_LINK} img`))
     const link = /** @type {HTMLAnchorElement | null | undefined} */ (img && img.closest(SITE_LINK))
     if (!link || link.dataset.ibhVideo || isVideoCard(link) || isGifCard(link)) return null
     return /** @type {{ img: HTMLImageElement, link: HTMLAnchorElement }} */ ({ img, link })   // the link was found from img
@@ -5002,9 +5050,8 @@
   /** @param {MouseEvent} ev */
   function onBulkClick(ev) {
     if (!bulkMode || ev.button !== 0) return
-    // A click's target is set; one with closest() is an element.
-    const link = /** @type {HTMLAnchorElement | null | undefined} */ (
-      /** @type {EventTarget} */ (ev.target).closest && /** @type {Element} */ (ev.target).closest(SITE_LINK))
+    // SITE_LINK ends in a: the link.
+    const link = /** @type {HTMLAnchorElement | null | undefined} */ (asElement(ev.target)?.closest(SITE_LINK))
     if (!link) return
     ev.preventDefault()
     ev.stopImmediatePropagation()
@@ -5026,9 +5073,8 @@
   /** @param {MouseEvent} ev */
   function onDoubleTapClick(ev) {
     if (ev.defaultPrevented || ev.button !== 0 || bulkMode) return
-    // A click's target is set; one with closest() is an element.
-    const link = /** @type {HTMLAnchorElement | null | undefined} */ (
-      /** @type {EventTarget} */ (ev.target).closest && /** @type {Element} */ (ev.target).closest(SITE_LINK))
+    // SITE_LINK ends in a: the link.
+    const link = /** @type {HTMLAnchorElement | null | undefined} */ (asElement(ev.target)?.closest(SITE_LINK))
     if (!link || link === passTap || !wantsDoubleTap()) return
     ev.preventDefault()
     ev.stopImmediatePropagation()
@@ -5254,7 +5300,8 @@
       home.before(box)
       home.style.display = 'none'
     } else {
-      document.querySelector(LIST).before(box)
+      const list = /** @type {Element} */ (document.querySelector(LIST))   // no home box: a listing, so want found it
+      list.before(box)
     }
     recordSiteSearch(read()).then(saved.reload)
     input.addEventListener('input', saved.sync)
@@ -5303,7 +5350,8 @@
     }
     if (pager && pager.sentinel.isConnected) return
     const sentinel = el('div', { id: 'ibh-pager' })
-    ;(document.getElementById('ibh-favmore') || document.querySelector(LIST)).after(sentinel)
+    const above = /** @type {Element} */ (document.getElementById('ibh-favmore') || document.querySelector(LIST))   // want found the list
+    above.after(sentinel)
     sentinel.addEventListener('click', () => { if (pager && !pager.done) favPagerNext() })   // retry after a failure
     const next = pageTarget(1)
     const io = new IntersectionObserver(entries => {
@@ -5737,8 +5785,7 @@
   // The site's own vote links (post pages, comments) count too.
   /** @param {MouseEvent} ev */
   function onSiteVoteClick(ev) {
-    // A click's target is set; one with closest() is an element.
-    const a = /** @type {EventTarget} */ (ev.target).closest && /** @type {Element} */ (ev.target).closest('a[onclick*="post_vote("]')
+    const a = asElement(ev.target)?.closest('a[onclick*="post_vote("]')
     const m = a && /** @type {string} */ (a.getAttribute('onclick')).match(/post_vote\('(\d+)',\s*'up'\)/)   // the selector asked for it
     if (m) setMark('v', m[1], true)
   }
@@ -6499,7 +6546,7 @@
     const urls = cachedFirst(candidates, vcached)
     const seq = modal.seq
     // The phone decodes about four videos at once; the modal gets one of them.
-    document.querySelectorAll('[data-ibh-cover]').forEach(card => unmountCover(card))
+    markedCards('[data-ibh-cover]').forEach(card => unmountCover(card))
     coverQueue.clear()
     modal.image.hidden = true
     modal.video.hidden = false
@@ -6978,10 +7025,10 @@
   function suspendPage() {
     const n = { covers: 0, gifs: 0, images: 0 }
     coverQueue.clear()   // first, or each unmount hands its slot to a queued card
-    document.querySelectorAll('[data-ibh-cover]').forEach(card => { unmountCover(card); n.covers++ })
-    document.querySelectorAll('[data-ibh-gif="playing"]').forEach(card => { stopGif(card); n.gifs++ })
+    markedCards('[data-ibh-cover]').forEach(card => { unmountCover(card); n.covers++ })
+    markedCards('[data-ibh-gif="playing"]').forEach(card => { stopGif(card); n.gifs++ })
     originalQueue.length = 0
-    document.querySelectorAll('[data-ibh-orig]').forEach(el => {
+    markedImages('[data-ibh-orig]').forEach(el => {
       const state = el.dataset.ibhOrig
       if (state === 'failed') return
       if (state === 'done') { pinHeight(el); resetUpgrade(el); n.images++ }
@@ -6996,7 +7043,7 @@
   function resumePage() {
     // observe() reports what is already on screen at once, so that upgrades now.
     for (const el of suspended.splice(0)) if (el.isConnected && originalViewport) originalViewport.observe(el)
-    document.querySelectorAll('[data-ibh-seen]').forEach(card => {
+    markedCards('[data-ibh-seen]').forEach(card => {
       if (CFG.videoCovers && isVideoCard(card)) mountCover(card)
       else if (CFG.gifInline && isGifCard(card)) playGif(card)
     })
@@ -7126,9 +7173,8 @@
   /** @param {MouseEvent} ev */
   function onSiteLinkClick(ev) {
     if (ev.defaultPrevented || ev.button !== 0) return
-    // A click's target is set; one with closest() is an element.
-    const link = /** @type {HTMLAnchorElement | null | undefined} */ (
-      /** @type {EventTarget} */ (ev.target).closest && /** @type {Element} */ (ev.target).closest(SITE_LINK))
+    // SITE_LINK ends in a: the link.
+    const link = /** @type {HTMLAnchorElement | null | undefined} */ (asElement(ev.target)?.closest(SITE_LINK))
     if (!link) return
     ev.preventDefault()
     ev.stopPropagation()
@@ -7154,7 +7200,7 @@
   /** Test every candidate URL of the first video card and log the outcome. */
   function probeVideoUrls() {
     // Prefer a card that is on screen, so the result matches what you see.
-    const cards = [...document.querySelectorAll(SITE_LINK)].filter(isVideoCard)
+    const cards = siteLinks().filter(isVideoCard)
     const card = cards.find(c => c.dataset.ibhSeen) || cards[0]
     if (!card) { warn('no video card on screen to test'); return }
     const pic = cardPicture(card)
@@ -7242,16 +7288,16 @@
     favLookups.clear()
     postInfos.clear()
     coverQueue.clear()   // first, or each unmount hands its slot to a queued card
-    document.querySelectorAll('[data-ibh-cover]').forEach(card => { unmountCover(card); n.covers++ })
+    markedCards('[data-ibh-cover]').forEach(card => { unmountCover(card); n.covers++ })
     // Animated GIFs keep every decoded frame; back to the still. Ones still
     // loading are dropped too.
-    document.querySelectorAll('[data-ibh-gif="playing"], [data-ibh-gif="loading"]').forEach(card => { stopGif(card); n.gifs++ })
+    markedCards('[data-ibh-gif="playing"], [data-ibh-gif="loading"]').forEach(card => { stopGif(card); n.gifs++ })
     // Undo sample/original upgrades, queued and in flight included, and watch
     // again: what is on screen comes back from the HTTP cache, the rest only
     // when it scrolls in.
     upgradeGen++
     originalQueue.length = 0
-    document.querySelectorAll('[data-ibh-orig]').forEach(el => {
+    markedImages('[data-ibh-orig]').forEach(el => {
       if (el.dataset.ibhOrig === 'failed') return
       if (el.dataset.ibhOrig === 'done') n.images++
       resetUpgrade(el)
@@ -7291,20 +7337,20 @@
   function redoThumbs() {
     const n = { images: 0, covers: 0, gifs: 0 }
     const misses = clearUrlCache(true)   // the point is retrying what failed
-    document.querySelectorAll('[data-ibh-orig]').forEach(el => {
+    markedImages('[data-ibh-orig]').forEach(el => {
       resetUpgrade(el)
       // observe() reports elements already on screen at once, so they upgrade now.
       if (originalViewport) originalViewport.observe(el)
       else upgradeToOriginal(el)
       n.images++
     })
-    document.querySelectorAll('[data-ibh-cover]').forEach(card => unmountCover(card))
+    markedCards('[data-ibh-cover]').forEach(card => unmountCover(card))
     coverQueue.clear()
-    document.querySelectorAll('[data-ibh-gif]').forEach(card => { stopGif(card); delete card.dataset.ibhGif })
+    markedCards('[data-ibh-gif]').forEach(card => { stopGif(card); delete card.dataset.ibhGif })
     // Forget which video cards turned out to be GIFs, so they get a fresh try.
     knownGifs.clear()
-    document.querySelectorAll('[data-ibh-kind]').forEach(card => { delete card.dataset.ibhKind })
-    document.querySelectorAll('[data-ibh-seen]').forEach(card => {
+    markedCards('[data-ibh-kind]').forEach(card => { delete card.dataset.ibhKind })
+    markedCards('[data-ibh-seen]').forEach(card => {
       if (CFG.videoCovers && isVideoCard(card)) { mountCover(card); n.covers++ }
       else if (CFG.gifInline && isGifCard(card)) { playGif(card); n.gifs++ }
     })
@@ -7331,6 +7377,23 @@
   let shadow = null
   /** @type {HTMLDivElement | null} */
   let logBox = null
+
+  // The panel's own elements, found again by class in its shadow root. The
+  // script makes each of them (mountPanel, ensureFeedNav, pageToast), so a
+  // lookup is typed as what it made.
+  /**
+   * @typedef {{ '.fab': HTMLButtonElement, '.panel': HTMLDivElement, '.feednav:not(.pagenav)': HTMLDivElement,
+   *   '.pagenav': HTMLDivElement, '.pagetoast': HTMLDivElement, '.favsfab': HTMLButtonElement,
+   *   '.bulkfab': HTMLButtonElement, '.clockfab': HTMLButtonElement, '.eyefab': HTMLButtonElement }} Controls
+   */
+  /**
+   * @template {keyof Controls} K
+   * @param {K} sel
+   * @returns {Controls[K] | null}
+   */
+  function control(sel) {
+    return shadow && /** @type {Controls[K] | null} */ (shadow.querySelector(sel))
+  }
   /** @type {HTMLDivElement | null} */
   let statusBox = null
   let panelOpen = false
@@ -7537,7 +7600,7 @@
     while (logBox.childElementCount > LOG_MAX) /** @type {Element} */ (logBox.firstElementChild).remove()   // past LOG_MAX: there is one
     logBox.scrollTop = logBox.scrollHeight
     if (entry.level === 'error' && shadow) {
-      const fab = shadow.querySelector('.fab')
+      const fab = control('.fab')
       if (fab) fab.dataset.alert = '1'
     }
   }
@@ -7733,13 +7796,13 @@
   /** @param {boolean} [open]   leave it out to switch */
   function togglePanel(open) {
     panelOpen = open == null ? !panelOpen : open
-    const panel = shadow && shadow.querySelector('.panel')
+    const panel = control('.panel')
     if (!panel) return
     panel.hidden = !panelOpen
     if (panelOpen) {
       renderStatus()
       refreshAppStatus()
-      const fab = /** @type {ShadowRoot} */ (shadow).querySelector('.fab')   // the panel is in it
+      const fab = control('.fab')
       if (fab) delete fab.dataset.alert
     }
   }
@@ -7786,7 +7849,7 @@
     const free = !!CFG.freeButton
     const redo = !!CFG.redoButton
     const want = `${feed ? 'f' : ''}${free ? 'c' : ''}${redo ? 'r' : ''}`
-    let nav = shadow.querySelector('.feednav:not(.pagenav)')
+    let nav = control('.feednav:not(.pagenav)')
     if (nav && nav.dataset.set !== want) { nav.remove(); nav = null }
     if (!nav && want) {
       nav = buildFeedNav(feed, free, redo)
@@ -7795,7 +7858,7 @@
       dbg(`buttons added: ${feed ? 'feed ' : ''}${free ? 'free' : ''}`.trim())
     }
     // Your favorites: top right, beside ♥ and 🕒.
-    let favs = shadow.querySelector('.favsfab')
+    let favs = control('.favsfab')
     const wantFavs = !!CFG.favsButton && SITE === 'rule34.xxx' && !!userId()
     if (favs && !wantFavs) { favs.remove(); favs = null }
     if (!favs && wantFavs) {
@@ -7808,11 +7871,11 @@
     }
     // Top right, packed from the edge in this order (🕒, ♥, 🔖), whichever show.
     const packRight = () => {
-      ['.clockfab', '.bulkfab', '.favsfab'].map(sel => /** @type {ShadowRoot} */ (shadow).querySelector(sel)).filter(Boolean)   // set: it runs below, past the check
+      [control('.clockfab'), control('.bulkfab'), control('.favsfab')].filter(btn => btn !== null)
         .forEach((btn, i) => { btn.style.right = `${12 + i * 52}px` })
     }
     // Mass favorite: next to Watch later, top right.
-    let heart = shadow.querySelector('.bulkfab')
+    let heart = control('.bulkfab')
     if (heart && !wantsBulkButton()) { heart.remove(); heart = null; if (bulkMode) setBulkMode(false) }
     if (!heart && wantsBulkButton()) {
       heart = iconButton('laterfab bulkfab', t('navBulk'), HEART_ICON)
@@ -7821,7 +7884,7 @@
       shadow.appendChild(heart)
     }
     // Watch later: a button of its own in the top-right corner.
-    let clock = shadow.querySelector('.clockfab')
+    let clock = control('.clockfab')
     if (clock && !wantsLaterButton()) { clock.remove(); clock = null }
     if (!clock && wantsLaterButton()) {
       clock = iconButton('laterfab clockfab', t('navLater'), CLOCK_ICON)
@@ -7830,7 +7893,7 @@
     }
     packRight()
     // 👁: bottom left, beside ◐ (in its place when the panel is off).
-    let eye = shadow.querySelector('.eyefab')
+    let eye = control('.eyefab')
     if (eye && !CFG.eyeButton) { eye.remove(); eye = null }
     if (!eye && CFG.eyeButton) {
       eye = iconButton('eyefab', t('eyeHide'), EYE_ICON)
@@ -7839,14 +7902,16 @@
       shadow.appendChild(eye)
     }
     applyButtonsHidden()
-    let pages = shadow.querySelector('.pagenav')
+    let pages = control('.pagenav')
     if (pages && !feed) { pages.remove(); pages = null }
     if (!pages && feed) { pages = buildPageNav(); shadow.appendChild(pages) }
     // The paginator comes after the post list in the page, so its state is
     // refreshed as the page fills in rather than fixed when the buttons appear.
     if (pages) {
-      pages.querySelector('.pp').disabled = !pageTarget(-1)
-      pages.querySelector('.np').disabled = !pageTarget(1)
+      const prev = /** @type {HTMLButtonElement} */ (pages.querySelector('.pp'))   // buildPageNav's buttons
+      const next = /** @type {HTMLButtonElement} */ (pages.querySelector('.np'))
+      prev.disabled = !pageTarget(-1)
+      next.disabled = !pageTarget(1)
     }
   }
 
@@ -7889,7 +7954,7 @@
     const box = root.querySelector('#paginator, .pagination')
     if (box) {
       const want = dir > 0 ? /^(>|›|next)$/i : /^(<|‹|back|prev(ious)?)$/i
-      const a = [...box.querySelectorAll('a')].find(x => want.test(x.textContent.trim()) || want.test(x.getAttribute('alt') || ''))
+      const a = [...box.querySelectorAll('a')].find(x => want.test((x.textContent || '').trim()) || want.test(x.getAttribute('alt') || ''))
       if (a) {
         const href = a.getAttribute('href')
         if (href && href !== '#') return new URL(href, base).href
@@ -7979,14 +8044,15 @@
   // The hiding is a class on the host, read by PANEL_CSS; without the eye
   // nothing stays hidden. Runs on every DOM change: only acts on a change.
   function applyButtonsHidden() {
-    const eye = shadow && shadow.querySelector('.eyefab')
+    const eye = control('.eyefab')
     if (!eye) { if (panelHost) panelHost.classList.remove('ibh-clean'); return }
     const hidden = !!CFG.buttonsHidden
     if (eye.dataset.hidden === String(hidden)) return
     eye.dataset.hidden = String(hidden)
     ;/** @type {HTMLDivElement} */ (panelHost).classList.toggle('ibh-clean', hidden)   // the eye is in its shadow
     eye.title = t(hidden ? 'eyeShow' : 'eyeHide')
-    eye.querySelector('path').setAttribute('d', hidden ? EYE_OFF_ICON : EYE_ICON)
+    const icon = /** @type {SVGPathElement} */ (eye.querySelector('path'))   // iconButton's
+    icon.setAttribute('d', hidden ? EYE_OFF_ICON : EYE_ICON)
   }
 
   // Material Design's "watch later" icon (a clock), as path data.

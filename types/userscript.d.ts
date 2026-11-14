@@ -29,19 +29,39 @@ declare function GM_xmlhttpRequest(details: {
 declare function GM_getResourceURL(name: string, isBlobUrl?: boolean): string
 declare const unsafeWindow: Window & typeof globalThis
 
-// What the DOM types call a plain Element is, here, the HTML element the
-// script looked for: loosened once instead of casts all over the code.
+// DOM lookups typed by their selector, as the DOM types already do for a bare
+// tag name: the tag of the selector's last compound names the element
+// ('#stats li' and 'input[type="search"]' are an HTMLLIElement and an
+// HTMLInputElement). Anything the parse can't vouch for is a plain Element: a
+// selector only known as a string, a list whose parts differ, no tag, or
+// parentheses (':has(> img)' would read as an img).
+type SelectorTrim<S extends string> = S extends ` ${infer R}` ? SelectorTrim<R> : S extends `${infer R} ` ? SelectorTrim<R> : S
+type SelectorLast<S extends string> =
+  S extends `${string}>${infer R}` ? SelectorLast<R> :
+  S extends `${string}+${infer R}` ? SelectorLast<R> :
+  S extends `${string}~${infer R}` ? SelectorLast<R> :
+  S extends `${string} ${infer R}` ? SelectorLast<R> : S
+type SelectorTag<C extends string> =
+  C extends `${infer T}[${string}` ? SelectorTag<T> :
+  C extends `${infer T}:${string}` ? SelectorTag<T> :
+  C extends `${infer T}.${string}` ? SelectorTag<T> :
+  C extends `${infer T}#${string}` ? SelectorTag<T> : C
+type TagElement<T extends string> =
+  T extends keyof HTMLElementTagNameMap ? HTMLElementTagNameMap[T] :
+  T extends keyof SVGElementTagNameMap ? SVGElementTagNameMap[T] : Element
+type SelectorElement<S extends string> =
+  {} extends Record<S, 1> ? Element :   // not a literal: string, or a template with a hole
+  S extends `${string}(${string}` ? Element :
+  S extends `${infer A},${infer B}` ? SelectorElement<A> | SelectorElement<B> :
+  TagElement<SelectorTag<SelectorLast<SelectorTrim<S>>>>
 interface ParentNode {
-  querySelector(selectors: string): any
-  querySelectorAll(selectors: string): NodeListOf<any>
+  querySelector<S extends string>(selectors: S): SelectorElement<S> | null
+  querySelectorAll<S extends string>(selectors: S): NodeListOf<SelectorElement<S>>
 }
 interface Element {
-  readonly dataset: DOMStringMap
-  src: string
+  closest<S extends string>(selectors: S): SelectorElement<S> | null
 }
-interface EventTarget {
-  closest?(selectors: string): Element | null
-}
+
 interface Window {
   __ibh: unknown
 }
