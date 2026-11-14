@@ -10,5 +10,5 @@
     "strict": false,
     "types": []
   },
-  "files": ["image-board-helper.user.js", "types/userscript.d.ts"]
+  "files": ["image-board-helper.user.js", "types/userscript.d.ts", "types/qtmediaplayer.d.ts"]
 }

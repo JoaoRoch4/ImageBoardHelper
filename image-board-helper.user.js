@@ -145,6 +145,7 @@
     videoModal:     true,   // open posts from site pages in an overlay: video, GIF, image (needs reload)
     rotateLandscape: true,  // in the modal player's fullscreen, lock wide videos to landscape
     modalPreload:   true,   // in the modal, have the next post loaded before the swipe
+    appBridge:      false,  // ⬇ App and ⚡ 1080p through the app's own server (127.0.0.1:8745, its token) when it answers: the site's fast host, progress here
     playerButton:   true,   // ▶ Media Player, ⬇ App and ⚡ 1080p in a video post's ☰ menu: the video played, downloaded or converted by the user's QtMediaPlayer app
     copyLinkButton: true,   // 🔗 in the post's ☰ menu: copies the link to the post's own file (raw, not the sample)
     modalOriginal:  'zoom', // images in the modal: 'zoom' shows the sample and fetches the original on zoom; 'always'
@@ -224,6 +225,10 @@
       tCopyBtn: 'Copy-link button in the post menu', copyLink: '🔗 Copy link', linkCopied: 'Link to the raw file copied', copyFailed: 'Could not copy the link',
       tPlayerBtn: 'Media Player buttons (▶ play, ⬇ download, ⚡ convert) in the post menu', appDlBtn: '⬇ App', appReduceBtn: '⚡ 1080p',
       bigVideo: 'Past this phone’s hardware decoder: ☰ → ⚡ 1080p converts it in the app',
+      tAppBridge: 'Talk to the app directly (its server)', appToken: 'App token', appOk: 'App connected', appDown: 'App not answering (open it)',
+      appBadToken: 'Wrong token', appNoStore: 'Needs Violentmonkey storage', appQueued: 'Downloading in the app',
+      appReduceQueued: 'Downloading in the app, to convert', appSaved: 'Saved by the app', appFailed: 'The app’s download failed',
+      appConverting: 'Converting in the app', appConverted: 'Converted by the app', appFits: 'Saved: it plays as it is',
       tRedoBtn: 'Redo-thumbnails shortcut button', navRedo: 'Free memory, then redo thumbnails', tDoubleTap: 'Double tap a thumbnail: favorite + upvote',
       tEyeBtn: '👁 button: hides the other buttons', eyeHide: 'Hide the buttons', eyeShow: 'Show the buttons',
       tFreeBtn: 'Free-memory shortcut button', navFree: 'Free memory & cache',
@@ -299,6 +304,10 @@
       tCopyBtn: 'Botão de copiar link no menu do post', copyLink: '🔗 Copiar link', linkCopied: 'Link do arquivo raw copiado', copyFailed: 'Não deu para copiar o link',
       tPlayerBtn: 'Botões do Media Player (▶ tocar, ⬇ baixar, ⚡ converter) no menu do post', appDlBtn: '⬇ App', appReduceBtn: '⚡ 1080p',
       bigVideo: 'Grande demais para o decodificador do celular: ☰ → ⚡ 1080p converte no app',
+      tAppBridge: 'Falar direto com o app (servidor dele)', appToken: 'Token do app', appOk: 'App conectado', appDown: 'App sem resposta (abra o app)',
+      appBadToken: 'Token errado', appNoStore: 'Precisa do armazenamento do Violentmonkey', appQueued: 'Baixando no app',
+      appReduceQueued: 'Baixando no app, para converter', appSaved: 'Salvo pelo app', appFailed: 'O download do app falhou',
+      appConverting: 'Convertendo no app', appConverted: 'Convertido pelo app', appFits: 'Salvo: toca como está',
       tRedoBtn: 'Botão de atalho para refazer as miniaturas', navRedo: 'Limpar a memória e refazer as miniaturas', tDoubleTap: 'Toque duplo na miniatura: favoritar + votar',
       tEyeBtn: 'Botão 👁: oculta os outros botões', eyeHide: 'Ocultar os botões', eyeShow: 'Mostrar os botões',
       tFreeBtn: 'Botão de atalho para limpar a memória', navFree: 'Limpar memória e cache',
@@ -3171,19 +3180,135 @@
   // Referer, which rule34's fast host (api-cdn) wants, so the app gets the
   // origin host: slower, open to anyone. The title and position ride along.
   const APP = 'com.example.qtmediaplayer'
-  function sendToApp(mode) {
+  async function sendToApp(mode) {
     const playing = modal.fileUrl || modal.video.currentSrc
     if (!playing) { flash(t('dlWait')); return }
+    const title = `${SITE.split('.')[0]} ${postId(modal.link)}`
+    // The app's server first (appBridge), within the tap's activation (the
+    // timeout is short), so the intent link below still opens if it fails.
+    if (mode !== 'play' && await appDownload(playing, mode === 'reduce', title)) return
     const u = new URL(portableUrl(playing))
     const ms = Math.round((modal.video.currentTime || 0) * 1000)
     if (mode === 'play') modal.video.pause()
     const extras = [
       `S.${APP}.extra.MODE=${mode}`,
-      `S.android.intent.extra.TITLE=${encodeURIComponent(`${SITE.split('.')[0]} ${postId(modal.link)}`)}`,
+      `S.android.intent.extra.TITLE=${encodeURIComponent(title)}`,
       `l.position=${ms}`,
     ]
     info(`external player: post ${postId(modal.link)} sent to QtMediaPlayer to ${mode}${mode === 'play' ? ` at ${mmss(ms / 1000)}` : ''}`)
     el('a', { href: `intent://${u.host}${u.pathname}${u.search}#Intent;scheme=${u.protocol.slice(0, -1)};type=video/*;package=${APP};${extras.join(';')};end` }).click()
+  }
+
+  // ── The app's server (appBridge) ──
+  // ⬇ App and ⚡ 1080p through the app's own HTTP server on 127.0.0.1, the
+  // contract in types/qtmediaplayer.d.ts: the download takes the file from
+  // the site's fast host with the site as Referer, which an intent can't
+  // send, and its progress shows here. Off by default: the script needs
+  // nothing outside the site. Android freezes the app in the background, so
+  // the timeout is short and the intent link stays behind it. The token is
+  // kept with GM_setValue only: storeGet/storeSet fall back to the site's
+  // IndexedDB, and IBH_CFG has copies in the site's storage, all readable by
+  // the site's scripts.
+  const APP_SERVER = 'http://127.0.0.1:8745'
+  const APP_TIMEOUT_MS = 1500
+  const APP_POLL_MS = 2000
+  const APP_POLL_MISSES = 30   // a minute without an answer ends the following
+  const appToken = () => (GM_STORE ? String(GM_getValue('appToken', '') || '') : '')
+  function setAppToken(value) { if (GM_STORE) GM_setValue('appToken', String(value).trim()) }
+
+  // One request to the app: { ok, status, json } or { ok: false, stage, error },
+  // where stage is 'token' (401) or 'app' (not answering, or its own error).
+  /** @returns {Promise<{ ok: boolean, status: number, json: any, stage?: string, error?: string }>} */
+  function appCall(method, route, body) {
+    return new Promise(resolve => {
+      const down = () => resolve({ ok: false, status: 0, json: null, stage: 'app', error: 'not answering' })
+      if (!GM_XHR) { down(); return }
+      GM_xmlhttpRequest({
+        method,
+        url: `${APP_SERVER}/${route}`,
+        timeout: APP_TIMEOUT_MS,
+        headers: { Authorization: `Bearer ${appToken()}`, ...(body ? { 'Content-Type': 'application/json' } : {}) },
+        data: body ? JSON.stringify(body) : undefined,
+        onload: res => {
+          let json = null
+          try { json = JSON.parse(res.responseText) } catch (e) { /* not JSON */ }
+          if (res.status === 401) resolve({ ok: false, status: 401, json, stage: 'token', error: 'wrong token' })
+          else if (res.status >= 200 && res.status < 300 && json && json.ok) resolve({ ok: true, status: res.status, json })
+          else resolve({ ok: false, status: res.status, json, stage: 'app', error: (json && json.error) || `HTTP ${res.status}` })
+        },
+        onerror: down,
+        ontimeout: down,
+      })
+    })
+  }
+
+  // The panel's token field and the app's status (asked each time the panel
+  // is built or opened).
+  let appStatusRow = null
+  function appControls() {
+    const field = el('input', { class: 'apptoken', type: 'password', autocomplete: 'off', placeholder: t(GM_STORE ? 'appToken' : 'appNoStore') })
+    field.disabled = !GM_STORE
+    field.value = appToken()
+    field.addEventListener('change', () => { setAppToken(field.value); refreshAppStatus() })
+    appStatusRow = el('div', { class: 'lbl appstatus', text: '…' })
+    refreshAppStatus()
+    return el('div', { class: 'lang' }, [el('div', { class: 'lbl', text: t('appToken') }), field, appStatusRow])
+  }
+
+  async function refreshAppStatus() {
+    const row = appStatusRow
+    if (!row || !CFG.appBridge) return
+    if (!GM_STORE) { row.textContent = t('appNoStore'); return }
+    const r = await appCall('GET', 'v1/status')
+    const status = /** @type {AppStatus} */ (r.ok ? r.json : null)
+    row.textContent = status ? `${t('appOk')} · ${status.version}` : t(r.stage === 'token' ? 'appBadToken' : 'appDown')
+    if (status) dbg(`app server: ${status.app} ${status.version}, api ${status.api}`)
+    else if (!r.ok) info(`app server: ${r.stage} ${r.error}`)
+  }
+
+  // ⬇ App or ⚡ 1080p by the app's server; false when it can't take it, and
+  // the caller sends the intent link instead.
+  async function appDownload(fileUrl, reduce, title) {
+    if (!CFG.appBridge || !appToken()) return false
+    const post = postId(modal.link)
+    /** @type {AppDownloadRequest} */
+    const body = { url: fileUrl, referer: `${location.origin}/`, title, reduce }
+    const r = await appCall('POST', 'v1/download', body)
+    if (!r.ok) { info(`app server: ${r.stage} ${r.error}; post ${post} goes by the intent link`); return false }
+    const queued = /** @type {AppDownloadQueued} */ (r.json)
+    info(`app server: post ${post} queued as download ${queued.id}${reduce ? ', to convert' : ''}`)
+    flash(t(reduce ? 'appReduceQueued' : 'appQueued'))
+    followAppDownload(queued.id, post)
+    return true
+  }
+
+  // Asks the app how a download goes until it (and its conversion) ends,
+  // and says so on the page. The app answers while it downloads or converts
+  // (a foreground service keeps it awake), so misses mean it went away.
+  function followAppDownload(id, post) {
+    let misses = 0
+    let said = ''
+    const say = (key, line) => { if (said === key) return; said = key; flash(t(key)); info(`app server: post ${post} ${line}`) }
+    const tick = async () => {
+      const r = await appCall('GET', `v1/download/${id}`)
+      if (!r.ok) {
+        if (r.status === 404 || ++misses > APP_POLL_MISSES) { info(`app server: lost download ${id} of post ${post} (${r.error})`); return }
+        setTimeout(tick, APP_POLL_MS)
+        return
+      }
+      misses = 0
+      const s = /** @type {AppDownloadState} */ (r.json)
+      if (s.status === 'failed' || s.status === 'cancelled') { say('appFailed', `download ${s.status}${s.error ? ` — ${s.error}` : ''}`); return }
+      if (s.status !== 'done') { setTimeout(tick, APP_POLL_MS); return }
+      const c = s.reduce
+      if (!c) { say('appSaved', `saved as ${s.file}`); return }
+      if (c.status === 'fits') { say('appFits', `saved as ${s.file}, within the decoder`); return }
+      if (c.status === 'done') { say('appConverted', 'converted to 1080p'); return }
+      if (c.status === 'failed' || c.status === 'cancelled') { say('appFailed', `conversion ${c.status}`); return }
+      if (c.status === 'running') say('appConverting', 'converting')
+      setTimeout(tick, APP_POLL_MS)
+    }
+    setTimeout(tick, APP_POLL_MS)
   }
 
   // A copy of the settings in Violentmonkey and in the site's IndexedDB:
@@ -6341,7 +6466,8 @@
 
     .lang { padding: 4px 12px 8px; }
     .lang .lbl { color: #4e6469; font-size: 11px; padding-bottom: 4px; }
-    .lang select {
+    .lang .appstatus { padding: 4px 0 0; }
+    .lang select, .lang input.apptoken {
       width: 100%; box-sizing: border-box; padding: 7px 8px; font-size: 12px;
       background: #0a0e10; color: #d7dee0;
       border: 1px solid #234a45; border-radius: 6px;
@@ -6538,6 +6664,8 @@
     body.appendChild(toggle('rotateLandscape', t('tRotate')))
     body.appendChild(toggle('modalPreload', t('tPreload')))
     body.appendChild(toggle('playerButton', t('tPlayerBtn')))
+    body.appendChild(toggle('appBridge', t('tAppBridge'), null, rebuildPanel))
+    if (CFG.appBridge) body.appendChild(appControls())
     body.appendChild(toggle('copyLinkButton', t('tCopyBtn')))
     body.appendChild(toggle('seekReel', t('tSeekReel')))
     const onScreen = () => { if (modal) applyPlayRate(modal.video) }
@@ -6599,6 +6727,7 @@
     panel.hidden = !panelOpen
     if (panelOpen) {
       renderStatus()
+      refreshAppStatus()
       const fab = shadow.querySelector('.fab')
       if (fab) delete fab.dataset.alert
     }

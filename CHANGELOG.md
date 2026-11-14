@@ -12,6 +12,12 @@
 - The video reducer through the phone server is gone from the script
   (`videoReducer`, its token field and status): the app converts instead.
   The server keeps its routes
+- `appBridge` (off): ⬇ App and ⚡ 1080p go to the app's own HTTP server on
+  127.0.0.1:8745, with the token the app shows (kept with GM_setValue only),
+  so the app downloads from the site's fast host with the site as Referer,
+  and the page says when the file is saved, converting and converted. The
+  contract is `types/qtmediaplayer.d.ts`; a 1.5 s timeout (Android freezes
+  the app in the background) falls back to the intent link
 
 ## 1.13.0
 
