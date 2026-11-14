@@ -108,7 +108,7 @@ All of them live in the panel and are stored in `localStorage` under `IBH_CFG`.
 
 ### Storage
 
-Settings live in `localStorage` (`IBH_CFG`), with a copy in Violentmonkey's storage and one in the site's IndexedDB that bring them back if another script clears `localStorage`. The lists (Watch later, the favorites index, saved searches) live in Violentmonkey's storage (`GM_getValue`/`GM_setValue`), on the device, so clearing the site's data does not take them. Under a userscript manager without GM storage they stay in the site's IndexedDB.
+Settings live in `localStorage` (`IBH_CFG`), with a copy in Violentmonkey's storage and one in the site's IndexedDB that bring them back if another script clears `localStorage`. The lists (Watch later, saved searches) live in Violentmonkey's storage (`GM_getValue`/`GM_setValue`), on the device, so clearing the site's data does not take them. Under a userscript manager without GM storage they stay in the site's IndexedDB. The favorites index lives in the site's IndexedDB (it can run to megabytes, and Violentmonkey hands its storage to the script on every page): clearing the site's data takes it, and the next search reads it again.
 
 ---
 

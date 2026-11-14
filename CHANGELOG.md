@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.16.3
+
+- Favorites search on rule34 works again: the site no longer lets scripts
+  read its `user_id` cookie, so the bar never showed (and 🔖, ♥ bulk mode and
+  double tap to favorite went with it). The id now comes from the page: the
+  My Favorites link of a listing, or one's own favorites page, which only its
+  owner sees with Remove links
+- The favorites index is saved as it is read, every few seconds, and a reload
+  goes on where the read stopped: a first read of thousands of favorites
+  (6,000: 123 pages, about two minutes) started over from page 1 on every
+  reload until it got through in one go. The bar says when the index is not
+  complete yet
+- The index lives in the site's IndexedDB instead of Violentmonkey's storage,
+  which Violentmonkey hands to the script on every page of the site (6,000
+  favorites are ~7 MB). One kept in Violentmonkey's storage moves over once.
+  Clearing the site's data now takes it: it is read again
+- A search restored on an index older than 10 minutes shows its results at
+  once, from the stored index; new favorites come in behind it and the search
+  runs again with them. It used to wait for that refresh first
+
 ## 1.16.2
 
 - Inline GIFs no longer get stuck on their still until the page is reloaded

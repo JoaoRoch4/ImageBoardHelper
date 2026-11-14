@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.16.2
+// @version      1.16.3
 // @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -68,7 +68,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.16.2'
+  const VERSION = '1.16.3'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // The site's thumbnail list. Gelbooru 0.2 sites (rule34, safebooru, xbooru)
@@ -277,7 +277,7 @@
       favPlaceholder: 'search favorites: tag -tag tag* a ~ b score:>10', favGo: 'Search', favClear: 'Clear',
       favKindAll: 'All types', favKindImage: 'Images', favKindVideo: 'Videos', favKindGif: 'GIFs', favKindAnimated: 'Animated (video or GIF)',
       favSortNew: 'Newest', favSortOld: 'Oldest', favSortScore: 'Score', favSortRandom: 'Random',
-      favIndexed: 'favorites indexed', favNever: 'not indexed yet: the first search reads every page',
+      favIndexed: 'favorites indexed', favNever: 'not indexed yet: the first search reads every page', favPartial: 'not all yet: the rest comes in on its own',
       favScanning: 'reading favorites, page', favResults: 'results', favMore: 'Show more',
       favUpdate: 'Update', favRebuild: 'Rebuild index', favScanFail: 'could not read the favorites page',
       tLaterBtn: 'Watch later button', navLater: 'Watch later', laterTitle: 'Watch later',
@@ -358,7 +358,7 @@
       favPlaceholder: 'buscar nos favoritos: tag -tag tag* a ~ b score:>10', favGo: 'Buscar', favClear: 'Limpar',
       favKindAll: 'Todos os tipos', favKindImage: 'Imagens', favKindVideo: 'Vídeos', favKindGif: 'GIFs', favKindAnimated: 'Animados (vídeo ou GIF)',
       favSortNew: 'Mais novos', favSortOld: 'Mais antigos', favSortScore: 'Score', favSortRandom: 'Aleatório',
-      favIndexed: 'favoritos no índice', favNever: 'ainda sem índice: a primeira busca lê todas as páginas',
+      favIndexed: 'favoritos no índice', favNever: 'ainda sem índice: a primeira busca lê todas as páginas', favPartial: 'ainda não todos: o resto vem sozinho',
       favScanning: 'lendo favoritos, página', favResults: 'resultados', favMore: 'Mostrar mais',
       favUpdate: 'Atualizar', favRebuild: 'Refazer índice', favScanFail: 'não foi possível ler a página de favoritos',
       tLaterBtn: 'Botão Ver depois', navLater: 'Ver depois', laterTitle: 'Ver depois',
@@ -3552,7 +3552,24 @@
   function asElement(target) {
     return target && /** @type {Partial<Element>} */ (target).closest ? /** @type {Element} */ (target) : null
   }
-  const userId = () => (document.cookie.match(/(?:^|; )user_id=(\d+)/) || [])[1] || null
+  // The logged-in user's id, or null. rule34 stopped letting scripts read its
+  // user_id cookie (2026-11-14: logged in, document.cookie had none, though
+  // it still goes with every request), so the page tells instead: a
+  // listing's My Favorites link, or one's own favorites page, whose Remove
+  // links only its owner gets. Once seen it is kept for the page's life:
+  // search results replace those links. A post page shows neither.
+  /** @type {string | null} */
+  let pageUser = null
+  const userId = () => (document.cookie.match(/(?:^|; )user_id=(\d+)/) || [])[1] || pageUser || (pageUser = userFromPage())
+
+  function userFromPage() {
+    const nav = document.querySelector('#my-favorites-container a[href*="id="]')
+    const fromNav = ((nav && nav.getAttribute('href')) || '').match(/[?&]id=(\d+)/)
+    if (fromNav) return fromNav[1]
+    const q = new URLSearchParams(location.search)
+    const own = q.get('page') === 'favorites' && /^\d+$/.test(q.get('id') || '') && document.querySelector('a[onclick*="favorites&s=delete"]')
+    return own ? q.get('id') : null
+  }
 
   // The viewer's own favorites page: every post on it is a favorite.
   const onOwnFavorites = () => {
@@ -4216,7 +4233,8 @@
       let theirs = bridge[key]
       let from = 'the storage bridge'
       // The site's own data on the first try only: later ones look for the bridge.
-      if (!hasData(theirs) && tries === 0) { theirs = await siteGet(key); from = 'the site’s data' }
+      // (Not the favorites index: the site's IndexedDB is its home now, favsGet.)
+      if (!hasData(theirs) && tries === 0 && key !== 'favs') { theirs = await siteGet(key); from = 'the site’s data' }
       if (!hasData(theirs)) continue
       GM_setValue(key, mergeStored(key, mine, theirs))
       info(`storage: ${key} moved in from ${from}`)
@@ -4383,8 +4401,10 @@
   const FAV_SHOW = 60          // results added per step
   const FAV_GAP_MS = 250       // between page reads, one at a time
   const FAV_STALE_MS = 10 * 60 * 1000   // the index is refreshed in the background after this
+  const FAV_SAVE_MS = 5000     // a long read is saved this often, so a reload goes on from there
   /** @typedef {[id: string, thumb: string, tags: string, score: number | null]} FavItem */
-  /** @typedef {{ user: string | null, updated: number, items: FavItem[] }} FavIndex */
+  // next: where a read that a reload cut short goes on (a pid); absent once complete.
+  /** @typedef {{ user: string | null, updated: number, items: FavItem[], next?: number }} FavIndex */
   /** @typedef {{ item: [id: string, thumb: string, tags: string], tags: string[], set: Set<string>, score: number | null, video: boolean, gif: boolean, animated: boolean }} FavEntry */
   /** @type {FavIndex | null} */
   let favIndex = null          // { user, updated, items: [[id, thumb, tags, score]] }, newest first
@@ -4425,10 +4445,36 @@
     if (active && favBarReload) favBarReload()
   }
 
+  // The favorites index lives in the site's IndexedDB, not in GM storage:
+  // Violentmonkey hands a script its whole GM storage on every page it runs
+  // on, and an index of 6,000 favorites is ~7 MB (2026-11-14). One an older
+  // version kept in GM storage moves over once. Without IndexedDB it stays
+  // in GM storage (and without GM storage, storeGet is IndexedDB already).
+  /** @returns {Promise<FavIndex | null>} */
+  async function favsGet() {
+    const saved = await idbGet('favs')
+    if (saved === undefined) return storeGet('favs')   // no IndexedDB
+    if (saved || !GM_STORE) return saved
+    const old = await storeGet('favs')
+    if (old && await idbSet('favs', old)) {
+      await storeSet('favs', null)
+      info(`favorites: index moved from GM storage to IndexedDB (${old.items.length} favorites)`)
+    }
+    return old
+  }
+
+  /** @param {FavIndex} idx */
+  async function favsSet(idx) {
+    if (!(await idbSet('favs', idx))) await storeSet('favs', idx)
+  }
+
   /** @returns {Promise<FavIndex>} */
   async function loadFavIndex() {
     if (favIndex && favIndex.user === userId()) return favIndex
-    const saved = /** @type {FavIndex | null} */ (await storeGet('favs'))
+    const saved = await favsGet()
+    // Loaded twice at once (the restored search and the bar's status): the
+    // first one in wins, so a read in progress and the searches share one index.
+    if (favIndex && favIndex.user === userId()) return favIndex
     favIndex = saved && saved.user === userId() ? saved : { user: userId(), updated: 0, items: [] }
     favEntries = null
     return favIndex
@@ -4456,46 +4502,71 @@
     }).filter(item => /^\d+$/.test(item[0]))
   }
 
-  // Reads the favorites pages into the index: all of them (full), or only
-  // until a page holds favorites already known.
+  // Reads the favorites pages into the index. New favorites first, from the
+  // top (pages are newest first) until a page holds known ones; then a read
+  // a reload cut short goes on where it stopped (idx.next). full starts over.
+  // A long read (6,000 favorites: 123 pages, ~2 min) is saved as it goes, so
+  // a reload loses only its last seconds. Favorites removed above the stop
+  // meanwhile shift the rest up, and that many may be missed until a rebuild.
   /** @param {boolean} full */
   function updateFavIndex(full) {
     if (favScan) return favScan
     favScan = (async () => {
       const idx = await loadFavIndex()
-      const known = new Set(full ? [] : idx.items.map(item => item[0]))
-      /** @type {FavItem[]} */
-      const fresh = []
-      try {
-        for (let pid = 0; ; pid += FAV_PAGE) {
-          setFavStatus(`${t('favScanning')} ${pid / FAV_PAGE + 1}…`)
-          /** @type {FavItem[] | null} */
-          let items = null
-          for (let tries = 0; !items; tries++) {
-            try { items = await readFavPage(pid) } catch (e) {
-              if (tries >= 2) throw e
-              await new Promise(r => setTimeout(r, 1000 * (tries + 1)))
-            }
+      if (full || (!idx.items.length && idx.next === undefined)) Object.assign(idx, { items: [], next: 0, updated: 0 })
+      const before = idx.items.length
+      const known = new Set(idx.items.map(item => item[0]))
+      /** @param {FavItem[]} items @returns {FavItem[]} the ones not in the index yet */
+      const unknown = items => {
+        const added = items.filter(item => !known.has(item[0]))
+        added.forEach(item => known.add(item[0]))
+        return added
+      }
+      /** @param {number} pid */
+      const read = async pid => {
+        setFavStatus(`${t('favScanning')} ${Math.floor(pid / FAV_PAGE) + 1}…`)
+        for (let tries = 0; ; tries++) {
+          try { return await readFavPage(pid) } catch (e) {
+            if (tries >= 2) throw e
+            await new Promise(r => setTimeout(r, 1000 * (tries + 1)))
           }
-          if (!items.length) break
-          const added = items.filter(item => !known.has(item[0]))
-          added.forEach(item => known.add(item[0]))
-          fresh.push(...added)
-          if (!full && added.length < items.length) break   // reached the index
+        }
+      }
+      let saved = Date.now()
+      try {
+        if (idx.items.length) {
+          /** @type {FavItem[]} */
+          const top = []
+          for (let pid = 0; ; pid += FAV_PAGE) {
+            const items = await read(pid)
+            const added = unknown(items)
+            top.push(...added)
+            if (!items.length || added.length < items.length) break   // reached the index
+            await new Promise(r => setTimeout(r, FAV_GAP_MS))
+          }
+          idx.items = [...top, ...idx.items]
+        }
+        while (idx.next !== undefined) {
+          const items = await read(idx.next)
+          if (!items.length) { delete idx.next; break }   // past the last page
+          idx.items.push(...unknown(items))
+          idx.next += FAV_PAGE
+          favEntries = null   // a search meanwhile sees what came in
+          if (Date.now() - saved > FAV_SAVE_MS) { await favsSet(idx); saved = Date.now() }
           await new Promise(r => setTimeout(r, FAV_GAP_MS))
         }
       } catch (e) {
         warn(`favorites: ${t('favScanFail')} — ${describeError(e)}`)
         setFavStatus(t('favScanFail'))
+        if (idx.next !== undefined) await favsSet(idx)   // what was read stays: the next visit goes on from it
         return null
       } finally {
         favScan = null
       }
-      idx.items = full ? fresh : [...fresh, ...idx.items]
       idx.updated = Date.now()
       favEntries = null
-      await storeSet('favs', idx)
-      info(`favorites: index ${full ? 'rebuilt' : 'updated'}, ${fresh.length} new, ${idx.items.length} in all`)
+      await favsSet(idx)
+      info(`favorites: index ${full ? 'rebuilt' : 'updated'}, ${idx.items.length - before} new, ${idx.items.length} in all`)
       setFavStatus()
       return idx
     })()
@@ -4549,7 +4620,17 @@
     const text = `${fields.text.value} ${either.join(' ')}`.trim()
     let idx = await loadFavIndex()
     if (!idx.items.length) idx = (await updateFavIndex(true)) || idx
-    else if (Date.now() - idx.updated > FAV_STALE_MS) idx = (await updateFavIndex(false)) || idx
+    else if (idx.next !== undefined || Date.now() - idx.updated > FAV_STALE_MS) {
+      // The stored index answers now. New favorites come in behind it (one
+      // page, usually) and the search runs again with them; the rest of a
+      // read a reload cut short comes in too, without the rerun, which would
+      // scroll back to the top a minute later.
+      const had = idx.items.length
+      const partial = idx.next !== undefined
+      updateFavIndex(false).then(fresh => {
+        if (fresh && !partial && fresh.items.length > had && favPage && bar.isConnected) searchFavs()
+      })
+    }
     // A full scan reads every page: the bar (and its "more" button) may have
     // gone meanwhile (favSearch switched off), and the page stays as it is.
     if (!bar.isConnected) { info('favorites search: the bar went while the index loaded'); return }
@@ -4654,7 +4735,7 @@
     if (text) { line.textContent = text; return }
     const idx = favIndex
     line.textContent = idx && idx.items.length
-      ? `${idx.items.length} ${t('favIndexed')} · ${new Date(idx.updated).toLocaleString(LANG)}`
+      ? `${idx.items.length} ${t('favIndexed')} · ${idx.next !== undefined ? t('favPartial') : new Date(idx.updated).toLocaleString(LANG)}`
       : t('favNever')
   }
 
@@ -4717,8 +4798,9 @@
     })
     loadFavIndex().then(idx => {
       setFavStatus()
-      // New favorites since the last visit come in quietly (usually one page).
-      if (idx.items.length && Date.now() - idx.updated > FAV_STALE_MS) updateFavIndex(false)
+      // New favorites since the last visit come in quietly (usually one page),
+      // and a read a reload cut short goes on.
+      if (idx.items.length && (idx.next !== undefined || Date.now() - idx.updated > FAV_STALE_MS)) updateFavIndex(false)
     })
     info('favorites search bar added')
   }

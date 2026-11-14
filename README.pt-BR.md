@@ -108,7 +108,7 @@ Todas ficam no painel e são gravadas em `localStorage` sob a chave `IBH_CFG`.
 
 ### Armazenamento
 
-As configurações ficam no `localStorage` (`IBH_CFG`), com uma cópia no armazenamento do Violentmonkey e outra no IndexedDB do site, que as trazem de volta se outro script limpar o `localStorage`. As listas (Ver depois, índice de favoritos, buscas salvas) ficam no armazenamento do Violentmonkey (`GM_getValue`/`GM_setValue`), no aparelho, então limpar os dados do site não as leva. Num gerenciador de userscripts sem armazenamento GM, elas ficam no IndexedDB do site.
+As configurações ficam no `localStorage` (`IBH_CFG`), com uma cópia no armazenamento do Violentmonkey e outra no IndexedDB do site, que as trazem de volta se outro script limpar o `localStorage`. As listas (Ver depois, buscas salvas) ficam no armazenamento do Violentmonkey (`GM_getValue`/`GM_setValue`), no aparelho, então limpar os dados do site não as leva. Num gerenciador de userscripts sem armazenamento GM, elas ficam no IndexedDB do site. O índice de favoritos fica no IndexedDB do site (pode passar de alguns megabytes, e o Violentmonkey entrega o armazenamento dele ao script em toda página): limpar os dados do site o apaga, e a busca seguinte o lê de novo.
 
 ---
 
