@@ -86,34 +86,57 @@ function withTimeout<T>(promise: Promise<T>, ms: number, what: string): Promise<
   return Promise.race([promise, late]).finally(() => clearTimeout(timer))
 }
 
-// ─── the phone: Shizuku (rish) first, the adb connection as a fallback ───
+// ─── the phone: adb first, Shizuku (rish) as the fallback ───
 
 // The rish session (Shizuku, uid shell) lives in ./rish.mts, shared with the phone server.
 
 function adbSerial(): string | null {
   try {
-    const device = run('adb', ['devices']).split('\n').slice(1).map(l => l.trim().split(/\s+/)).find(p => p[1] === 'device')
-    return device?.[0] ?? null
+    return ff.onlineSerial()
   } catch (e) {
     return null
   }
 }
 
-// A shell command on the phone, as uid shell either way: through the rish
-// session, or adb when Shizuku is down.
-async function phoneShell(cmd: string, timeout = 20000): Promise<string> {
+// adb's serial for the phone, connecting it when there is none (ff.adbConnect:
+// mDNS, then the port Shizuku reads). A failed search is remembered for a
+// minute, so with Wireless debugging off every tool call doesn't pay for it.
+let adbMissUntil = 0
+async function adbDevice(): Promise<string | null> {
+  const online = adbSerial()
+  if (online || Date.now() < adbMissUntil) return online
   try {
-    return (await rish(cmd, timeout)).out
+    return await ff.adbConnect()
   } catch (e) {
-    const serial = adbSerial()
-    if (!serial) throw new Error(`Shizuku is not answering (${errMessage(e)}) and adb has no device: ask the user to start Shizuku or turn on Wireless debugging`, { cause: e })
-    return run('adb', ['-s', serial, 'shell', cmd], { timeout }).trim()
+    adbMissUntil = Date.now() + 60000
+    return null
   }
 }
 
-// true on, false off, null when it cannot be read (Shizuku down). Read
-// only: turning it on with `settings put` restarts adbd and kills Shizuku.
+// adb failing to reach the phone, as opposed to the command failing there.
+const ADB_LOST = /^(adb: )?(error: )?(device .*not found|device offline|no devices|closed)/
+
+// A shell command on the phone, as uid shell either way: through adb, or the
+// rish session when adb cannot reach the phone. Like rish, a command that
+// exits non-zero (grep without a match) still returns its output.
+async function phoneShell(cmd: string, timeout = 20000): Promise<string> {
+  const serial = await adbDevice()
+  if (serial) {
+    const r = await runAsync('adb', ['-s', serial, 'shell', cmd], { timeout })
+    if (r.out.includes(`(stopped after ${timeout / 1000} s)`)) throw new Error(`timed out after ${timeout / 1000} s: ${cmd}`)
+    if (r.code !== -1 && !ADB_LOST.test(r.out.trim())) return r.out.trim()
+  }
+  try {
+    return (await rish(cmd, timeout)).out
+  } catch (e) {
+    throw new Error(`adb cannot reach the phone and Shizuku is not answering (${errMessage(e)}): ask the user to turn on Wireless debugging or start Shizuku`, { cause: e })
+  }
+}
+
+// true on, false off, null when it cannot be read (no adb, Shizuku down).
+// Read only: turning it on with `settings put` restarts adbd and kills Shizuku.
 async function wirelessDebugging(): Promise<boolean | null> {
+  if (adbSerial()) return true   // adb is in through it
   try {
     const v = (await rish('settings get global adb_wifi_enabled')).out.split('\n').map(l => l.trim()).find(l => l === '0' || l === '1')
     return v === '1' ? true : v === '0' ? false : null
@@ -146,7 +169,8 @@ async function connectPhone(force: boolean, app?: string) {
   if (await wirelessDebugging() === false) {
     throw new Error('Wireless debugging is off. Ask the user to turn it on (Developer options → Wireless debugging); never with `settings put`, which kills Shizuku.')
   }
-  const { serial, socket, app: chosen } = ff.setup(app || browser)
+  const { serial, socket, app: chosen } = await ff.setup(app || browser)
+  adbMissUntil = 0
   if (app && chosen !== app) throw new Error(`${app} has no debugger socket: ask the user to open it and turn on its "Remote debugging via USB"`)
   browser = chosen
   try { fs.mkdirSync(WORK, { recursive: true }); fs.writeFileSync(BROWSER_FILE, browser) } catch (e) { /* remembered for this run only */ }
@@ -523,12 +547,12 @@ async function h264(): Promise<H264> {
 
 async function status() {
   const rows = []
-  const shizuku = await shizukuUp()
-  rows.push(`Shizuku (rish): ${shizuku ? 'running (one session kept open)' : 'not running (the user starts it in the Shizuku app; adb still works if connected)'}`)
-  const wifi = shizuku ? await wirelessDebugging() : null
-  rows.push(`Wireless debugging: ${wifi === null ? 'unknown (needs Shizuku)' : wifi ? 'on' : 'off (ask the user to turn it on; never with settings put)'}`)
   const serial = adbSerial()
-  rows.push(`adb: ${serial ? `connected (${serial})` : 'no device'}`)
+  rows.push(`adb: ${serial ? `connected (${serial}), the way in` : 'no device (connect finds Wireless debugging over mDNS, or its port through Shizuku)'}`)
+  const shizuku = await shizukuUp()
+  rows.push(`Shizuku (rish): ${shizuku ? 'running, the fallback (one session kept open)' : 'not running (needed only when adb is down; the user starts it in the Shizuku app)'}`)
+  const wifi = serial ? true : shizuku ? await wirelessDebugging() : null
+  rows.push(`Wireless debugging: ${wifi === null ? 'unknown (no adb, no Shizuku)' : wifi ? 'on' : 'off (ask the user to turn it on; never with settings put)'}`)
   const tabs = await firefoxTabs()
   rows.push(`Firefox debugger (tcp:${ff.PORT}): ${tabs ? `answering, ${tabs.length} tab(s)` : 'not reachable (the connect tool sets it up)'}`)
   rows.push(`Native Termux (tmux "${SESSION}"): ${nativeUp() ? 'up: termux_run works' : 'down (any new Termux session starts it, through its ~/.zshrc)'}`)
@@ -1208,7 +1232,7 @@ const VIDEO = { post: str('rule34 post id (its file is read through the logged-i
 
 const TOOLS: Tool[] = [
   { name: 'status', run: status, inputSchema: obj(),
-    description: 'Phone connection status: Shizuku, Wireless debugging, adb, the Firefox debugger forward, the native Termux tmux session. Read only.' },
+    description: 'Phone connection status: adb (the way in), Shizuku (the fallback), Wireless debugging, the Firefox debugger forward, the native Termux tmux session. Read only.' },
   { name: 'connect', run: ({ force = false, app }: { force?: boolean; app?: string }) => connectPhone(force, app),
     inputSchema: obj({ force: bool('set up again even if Firefox answers'), app: str('which Firefox: org.mozilla.firefox_beta (Beta), org.mozilla.fenix (Nightly), org.mozilla.firefox; remembered') }),
     description: 'Connects adb over Wireless debugging and forwards a Firefox\'s debugger to tcp:6000: the one last chosen (Beta at first), or `app`. open_url, deploy and device follow it. Other tools call it by themselves. Fails with what to ask the user when Wireless debugging is off.' },
@@ -1286,7 +1310,7 @@ const TOOLS: Tool[] = [
 const INSTRUCTIONS = 'Tools for the user\'s phone (Firefox Beta or Nightly, with Violentmonkey) where Image Board Helper is tested, and for the repo around it. ' +
   'connect app=… picks the Firefox (remembered); a Firefox in the background is frozen by Android and answers nothing until brought to the front. ' +
   'The phone server (server_call, server_control) runs natively in Termux and is not frozen: notifications, clipboard, native commands, files. ' +
-  'Each tool reconnects by itself. When Wireless debugging is off, ask the user to turn it on: never enable it with `settings put` (it kills Shizuku). ' +
+  'Each tool reconnects by itself: adb over Wireless debugging first, Shizuku (rish) when adb cannot reach the phone. When Wireless debugging is off, ask the user to turn it on: never enable it with `settings put` (it kills Shizuku). ' +
   'open_url, input, firefox_pref (set/clear) and deploy change the phone: use them when the user asked, or for the deploy that follows a change they requested. ' +
   'Leave the visible tab alone; reload only hidden ones; script logs vanish on reload, so log_snapshot before (deploy does). ' +
   'Each tool that works in a tab first writes a "[Claude] …" line there (Firefox\'s console and MobiDevTools), so the user sees it on the phone; console reads that console back. ' +

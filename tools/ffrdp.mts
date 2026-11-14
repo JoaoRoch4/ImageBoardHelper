@@ -17,9 +17,15 @@
 // TypeScript that Node runs as it is (it strips the types); tsc -p tools checks it.
 //
 // Requires: Firefox "Remote debugging via USB" on, and adb already paired with
-// the phone's own Wireless debugging (one-time `adb pair`).
+// the phone's own Wireless debugging (one-time `adb pair`). The container's
+// key and Termux's are paired apart: after a rebuild the container's
+// ~/.android/adbkey is new, and the phone refuses it until
+// `adb -P 5038 pair <ip:port> <code>` (Developer options → Wireless debugging
+// → Pair with code; a server of its own, since the one on 5037 may be
+// Termux's and would pair Termux's key).
 
 import * as net from 'node:net'
+import * as os from 'node:os'
 import { execFileSync } from 'node:child_process'
 
 export const PORT = +(process.env.FFRDP_PORT || 6000)
@@ -60,34 +66,82 @@ export function adb(...args: string[]): string {
   return execFileSync('adb', args, { encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'pipe'] }).trim()
 }
 
+const MDNS_PORT = '5038'   // an adb server of its own, for mDNS only
+const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
+// The phone as adb's server (5037) has it online, or null. Only an ip:port
+// serial (Wireless debugging): a server can also list the same phone under
+// its mDNS name.
+export function onlineSerial(): string | null {
+  return adb('devices').split('\n').slice(1)
+    .map(l => l.trim().split(/\s+/))
+    .find(([s, state]) => state === 'device' && /^[\d.]+:\d+$/.test(s ?? ''))?.[0] ?? null
+}
+
+// Wireless debugging's connect ports, as announced over mDNS. Asked of a
+// server of its own: the one on 5037 may be Termux's, which has no mDNS.
+// Discovery takes a moment after a server starts (the first answer is often
+// empty), so it asks a few times; the server is stopped afterwards.
+async function mdnsPorts(): Promise<string[]> {
+  try {
+    for (let i = 0; i < 6; i++) {
+      let out = ''
+      try { out = adb('-P', MDNS_PORT, 'mdns', 'services') } catch (e) { /* asked again below */ }
+      const ports = out.split('\n').filter(l => l.includes('_adb-tls-connect'))
+        .map(l => l.trim().split(/\s+/).pop()?.split(':')[1] ?? '').filter(Boolean)
+      if (ports.length) return [...new Set(ports)]
+      await sleep(1000)
+    }
+    return []
+  } finally {
+    try { adb('-P', MDNS_PORT, 'kill-server') } catch (e) { /* already gone */ }
+  }
+}
+
+// `adb connect` on the loopback (the phone talking to itself), confirmed by
+// the device list rather than by connect's wording, which varies.
+function connectPort(port: string): string | null {
+  const serial = `127.0.0.1:${port}`
+  try { adb('connect', serial) } catch (e) { /* refused: the check below says so */ }
+  return onlineSerial() === serial ? serial : null
+}
+
+// The fallback: `native --adb` (native-run, an installed tool) reads adbd's
+// listening ports through rish (Shizuku) and connects Termux's adb on 5037.
+function adbThroughShizuku(): string | null {
+  try {
+    execFileSync('native', ['--adb'], { cwd: os.homedir(), encoding: 'utf8', timeout: 60000, stdio: ['ignore', 'pipe', 'pipe'] })
+  } catch (e) {
+    return null
+  }
+  return onlineSerial()
+}
+
+// The phone's adb serial, connecting adb when it has none: a connection the
+// server already has, else the ports announced over mDNS (a record can
+// outlive the service, so each one is tried), else the port Shizuku finds.
+// The connect port changes every time Wireless debugging restarts.
+export async function adbConnect(): Promise<string> {
+  const online = onlineSerial()
+  if (online) return online
+  const announced = await mdnsPorts()
+  for (const port of announced) {
+    const serial = connectPort(port)
+    if (serial) return serial
+  }
+  const viaShizuku = adbThroughShizuku()
+  if (viaShizuku) return viaShizuku
+  throw new Error(announced.length
+    ? `Wireless debugging announces port ${announced.join(', ')} but refuses adb: is this adb key paired? (after a container rebuild: adb -P ${MDNS_PORT} pair <ip:port> <code>)`
+    : 'Wireless debugging is not announced over mDNS and Shizuku cannot read its port: is it on?')
+}
+
 // Connects adb to the phone's Wireless debugging and forwards a Firefox's
 // debugger socket to tcp:PORT: `app` (a package, such as org.mozilla.fenix
 // for Nightly) or FFRDP_APP when its socket exists, else the first found.
 // Returns { serial, socket, app }.
-export function setup(app = process.env.FFRDP_APP): { serial: string; socket: string; app: string } {
-  // A Wireless debugging connection adb already has (adb-wifi, an earlier
-  // setup) is used as is: Fedora's adb server, the container's, has no mDNS
-  // ("unknown host service 'mdns:services'"), so mDNS is asked only when
-  // there is none.
-  let serial: string | null = adb('devices').split('\n').slice(1)
-    .map(l => l.trim().split(/\s+/))
-    .find(([s, state]) => state === 'device' && /^[\d.]+:\d+$/.test(s ?? ''))?.[0] ?? null
-  // The connect port changes every time Wireless debugging restarts; mDNS has
-  // it. A record can outlive the service, so try each one, on the loopback
-  // address first (the phone talking to itself) and then the one advertised.
-  const records = serial ? [] : adb('mdns', 'services').split('\n').filter(l => l.includes('_adb-tls-connect'))
-  if (!serial && !records.length) throw new Error('Wireless debugging not advertised; is it on?')
-  for (const line of records) {
-    const addr = line.trim().split(/\s+/).pop() || ''
-    const port = addr.split(':')[1]
-    if (!port) continue
-    for (const candidate of [`127.0.0.1:${port}`, addr]) {
-      const out = adb('connect', candidate)
-      if (/connected to/.test(out)) { serial = candidate; break }
-    }
-    if (serial) break
-  }
-  if (!serial) throw new Error('Wireless debugging advertised but refusing connections (stale record?); is it on?')
+export async function setup(app = process.env.FFRDP_APP): Promise<{ serial: string; socket: string; app: string }> {
+  const serial = await adbConnect()
 
   // Each Firefox (release, Beta, Nightly) has a socket of its own name.
   const sockets = adb('-s', serial, 'shell', 'cat /proc/net/unix')
@@ -257,7 +311,7 @@ export async function pref(c: Connection, name: string, action: PrefAction = 'ge
 async function main() {
   const [cmd, ...args] = process.argv.slice(2)
   if (cmd === 'setup') {
-    const { serial, socket } = setup()
+    const { serial, socket } = await setup()
     console.log(`connected to ${serial}\nforward tcp:${PORT} -> ${socket}`)
     return
   }

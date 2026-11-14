@@ -5,7 +5,7 @@ description: Como testar, depurar, medir e publicar o Image Board Helper no celu
 
 # Fluxo de trabalho no celular
 
-O userscript só roda de verdade no celular do usuário: Firefox Beta com Violentmonkey, num Oppo A5 (SM6115: quatro decodificadores no máximo, vídeo por hardware até 1920×1088). Este container roda nesse mesmo celular, e o servidor MCP `phone` (`tools/phone-mcp.mts`) chega a ele por três caminhos: Shizuku (`rish`, uid shell), adb pela depuração sem fio do próprio celular, e o depurador remoto do Firefox redirecionado para tcp:6000. Toda ferramenta reconecta sozinha, então uma sessão que caiu custa uma chamada, não uma rodada de comandos.
+O userscript só roda de verdade no celular do usuário: Firefox Beta com Violentmonkey, num Oppo A5 (SM6115: quatro decodificadores no máximo, vídeo por hardware até 1920×1088). Este container roda nesse mesmo celular, e o servidor MCP `phone` (`tools/phone-mcp.mts`) chega a ele por três caminhos: adb pela depuração sem fio do próprio celular (o primeiro; uid shell), Shizuku (`rish`, também uid shell) quando o adb não alcança, e o depurador remoto do Firefox redirecionado para tcp:6000, que depende do adb. Toda ferramenta reconecta sozinha, então uma sessão que caiu custa uma chamada, não uma rodada de comandos.
 
 ## As regras, e por quê
 
@@ -22,8 +22,9 @@ Comece pelo `status`; ele lê tudo sem mudar nada.
 
 | O que o `status` ou uma ferramenta diz | O que significa | O que fazer |
 |---|---|---|
-| Wireless debugging off / not advertised | a chave do usuário está desligada, ou o Android a desligou | peça ao usuário para ligá-la, depois tente de novo |
-| Shizuku not running | o servidor do Shizuku morreu | peça ao usuário para iniciá-lo no app do Shizuku; o adb continua funcionando enquanto isso |
+| Wireless debugging is not announced over mDNS | a chave do usuário está desligada, ou o Android a desligou | peça ao usuário para ligá-la, depois tente de novo |
+| announces port … but refuses adb | a chave do adb desse lado não está pareada (o container reconstruído tem uma chave nova) | peça um print de "Parear com código" e rode `adb -P 5038 pair <ip:porta> <código>` logo, antes de o código vencer |
+| Shizuku not running | o servidor do Shizuku morreu | só importa quando o adb está fora: o adb é o caminho principal |
 | a primeira chamada ao celular numa sessão leva ~4 s | o MCP sobe a única sessão rish dele (uma máquina Java); os comandos seguintes levam ~50 ms | nada |
 | Firefox debugger not reachable | o redirecionamento sumiu | qualquer ferramenta do Firefox o refaz; `connect force=true` para insistir |
 | no tabs | o Firefox descarregou as abas (memória) ou está fechado, ou é o outro Firefox | peça ao usuário para abrir o site; o log das abas descarregadas se perdeu. O Beta e o Nightly têm os dois o script: `connect app=org.mozilla.fenix` (Nightly) ou `org.mozilla.firefox_beta`, que fica lembrado |
