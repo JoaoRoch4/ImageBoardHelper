@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.15.0
+
+- `holdVideo` (off), with the hold gesture: holding a video thumbnail plays
+  the video itself, from its start, muted, at 1× and looping, decoded by
+  Firefox on the phone's hardware decoder instead of the scene slideshow on
+  the CPU. A video past that decoder keeps the slideshow (straight to the
+  keyframes when its cover already knows the size, else by seeking once its
+  metadata says so). The slideshow's own settings hide while it is on
+
 ## 1.14.0
 
 - The external player is now the author's own QtMediaPlayer app

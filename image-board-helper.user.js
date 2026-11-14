@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.14.0
+// @version      1.15.0
 // @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -68,7 +68,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.14.0'
+  const VERSION = '1.15.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // The site's thumbnail list. Gelbooru 0.2 sites (rule34, safebooru, xbooru)
@@ -131,6 +131,7 @@
     gifMaxLive:     3,      // at most this many of them animating at once
     videoScrub:     true,   // scene preview on video thumbnails (needs reload)
     scrubMode:      'drag', // 'drag': finger position picks the scene; 'hold': hold for a slideshow
+    holdVideo:      false,  // hold mode: the video itself plays (muted, 1×, Firefox's hardware decoder) instead of the slideshow
     slideStep:      10,     // hold slideshow: jump between scenes, in % of the video
     slideDwell:     0.2,    // hold slideshow: seconds each scene stays once painted
     slideReel:      true,   // hold slideshow from keyframes only (MP4): one small read per scene, no seeking the file
@@ -247,6 +248,7 @@
       tScrub: 'Scene preview on video thumbnails',
       tScrubMode: 'scene preview gesture', modeDrag: 'Drag sideways', modeHold: 'Hold (slideshow)',
       tSlideStep: 'slideshow jump', tSlideDwell: 'time per scene', scenes: 'scenes', tSlideReel: 'Keyframes only (faster, MP4)', tWasmDecode: 'Decode keyframes in WebAssembly',
+      tHoldVideo: 'Hold plays the video (hardware)',
       tMemory: 'Release off-screen memory',
       tUrlCache: 'Remember working file URLs',
       tNav: 'Top / previous / next buttons',
@@ -327,6 +329,7 @@
       tScrub: 'Prévia de cenas nas miniaturas de vídeo',
       tScrubMode: 'gesto da prévia de cenas', modeDrag: 'Arrastar de lado', modeHold: 'Segurar (slideshow)',
       tSlideStep: 'pulo do slideshow', tSlideDwell: 'tempo por cena', scenes: 'cenas', tSlideReel: 'Só keyframes (mais rápido, MP4)', tWasmDecode: 'Decodificar keyframes em WebAssembly',
+      tHoldVideo: 'Segurar toca o vídeo (hardware)',
       tMemory: 'Liberar memória fora da tela',
       tUrlCache: 'Lembrar endereços que funcionaram',
       tNav: 'Botões topo / anterior / próximo',
@@ -1617,10 +1620,10 @@
    * @property {number} shownAt
    * @property {number} [tick]
    * @property {ReelShow | null} [reel]
-   * @property {{ rate: number, loop: boolean }} played    the video's own, while a short clip plays
+   * @property {{ rate: number, loop: boolean }} played    the video's own, while a short clip (or holdVideo) plays
    * @property {(() => void) | null} [onPlayTime]
    */
-  /** @typedef {{ t0: number, method: string | null, first: number | null, last: number, shown: number, gaps: number[], detail?: string, wasm?: string, reelError?: string }} SlideStats */
+  /** @typedef {{ t0: number, method: string | null, first: number | null, last: number, shown: number, gaps: number[], detail?: string, wasm?: string, reelError?: string, rate?: number }} SlideStats */
   /** @typedef {{ v: HTMLVideoElement, helper: boolean, f: number, ready: boolean, slow: boolean, since: number, onSeeked?: () => void }} SlideView */
 
   /** @type {Scrub | null} */
@@ -1661,10 +1664,45 @@
   function startSlideshow() {
     if (!scrub || scrub.on) return
     scrub.stats = { t0: performance.now(), method: null, first: null, last: 0, shown: 0, gaps: [] }
+    // holdVideo: the video itself, unless its cover already knows it is past
+    // the hardware decoder (then the slideshow below, as without the option).
+    if (CFG.holdVideo && !coverPastDecoder(scrub.card)) {
+      if (!startScrub()) { scrub = null; return }
+      holdVideoShow(scrub)
+      return
+    }
     if (CFG.slideReel && startReelShow(scrub)) return
     if (!startScrub()) { scrub = null; return }
     if (CFG.slideReel) chooseShow(scrub)   // WebM: no reel, but a short clip plays
     else seekShow(scrub)
+  }
+
+  // Whether the card's cover has loaded a video past the hardware decoder.
+  /** @param {HTMLElement} card */
+  function coverPastDecoder(card) {
+    const cover = /** @type {HTMLVideoElement | null} */ (card.querySelector('video[data-ibh]'))
+    return !!cover && cover.readyState >= 1 && pastDecoder(cover.videoWidth, cover.videoHeight)
+  }
+
+  // holdVideo: the video plays from its start at 1×, muted and looping, in a
+  // <video>, which Firefox decodes on the phone's hardware decoder (the GPU
+  // path) instead of the slideshow's keyframes on the CPU. One past that
+  // decoder would play on the CPU and stutter: it gets the scenes instead.
+  /** @param {Scrub} s */
+  function holdVideoShow(s) {
+    const v = s.video
+    const decide = () => {
+      if (scrub !== s) return
+      if (pastDecoder(v.videoWidth, v.videoHeight)) {
+        info(`hold: ${v.videoWidth}x${v.videoHeight} is past the hardware decoder, scenes instead of the video`)
+        seekShow(s)
+        return
+      }
+      v.currentTime = 0
+      playShow(s, 1)
+    }
+    if (v.readyState >= 1) decide()
+    else v.addEventListener('loadedmetadata', decide, { once: true })
   }
 
   // The slideshow by seeking the file itself, two videos taking turns.
@@ -1789,7 +1827,7 @@
     const avg = st.gaps.length ? Math.round(st.gaps.reduce((a, b) => a + b, 0) / st.gaps.length) : 0
     const late = st.gaps.filter(g => g > dwell + 300).length
     const shown = st.first === null ? `no scene in ${Math.round(performance.now() - st.t0)} ms`
-      : st.method === 'play' ? `playing after ${Math.round(st.first)} ms at ${PLAY_RATE}×`
+      : st.method === 'play' ? `playing after ${Math.round(st.first)} ms at ${st.rate ?? PLAY_RATE}×`
         : `${st.shown} scenes, first after ${Math.round(st.first)} ms${avg ? `, then every ${avg} ms` : ''} (dwell ${dwell}), ${late} late`
     const v = s.video
     const what = (st.detail || (v ? `${v.videoWidth}x${v.videoHeight}, ${mmss(v.duration)}, ${s.shared ? 'own video' : 'its cover'}` : '')) +
@@ -2535,17 +2573,21 @@
     else v.addEventListener('loadedmetadata', decide, { once: true })
   }
 
-  /** @param {Scrub} s */
-  function playShow(s) {
+  /**
+   * @param {Scrub} s
+   * @param {number} [rate]   PLAY_RATE for a short clip, 1 for holdVideo
+   */
+  function playShow(s, rate = PLAY_RATE) {
     s.stats.method = 'play'
+    s.stats.rate = rate
     const v = s.video
     s.played = { rate: v.playbackRate, loop: v.loop }
     v.loop = true
-    v.playbackRate = PLAY_RATE
+    v.playbackRate = rate
     s.onPlayTime = () => {
       if (scrub !== s || !v.duration) return
       s.bar.style.width = `${(v.currentTime / v.duration) * 100}%`
-      s.label.textContent = `${mmss(v.currentTime)} / ${mmss(v.duration)} · ${PLAY_RATE}×`
+      s.label.textContent = `${mmss(v.currentTime)} / ${mmss(v.duration)} · ${rate}×`
     }
     v.addEventListener('timeupdate', s.onPlayTime)
     v.addEventListener('playing', () => { if (scrub === s) noteScene(s) }, { once: true })
@@ -2706,7 +2748,7 @@
     window.addEventListener('dragstart', ev => {
       if (/** @type {EventTarget} */ (ev.target).closest && /** @type {Element} */ (ev.target).closest('[data-ibh-video]')) ev.preventDefault()
     }, true)
-    info(`video scene preview active: ${CFG.scrubMode === 'hold' ? 'hold a video thumbnail for a slideshow' : 'drag sideways on a video thumbnail'}`)
+    info(`video scene preview active: ${CFG.scrubMode !== 'hold' ? 'drag sideways on a video thumbnail' : CFG.holdVideo ? 'hold a video thumbnail to play it (hardware)' : 'hold a video thumbnail for a slideshow'}`)
   }
 
   // ═══════════════════════════════════════════════════════════
@@ -7472,6 +7514,9 @@
     body.appendChild(choiceSelect('scrubMode', t('tScrubMode'),
       [['drag', t('modeDrag')], ['hold', t('modeHold')]], rebuildPanel))
     if (CFG.scrubMode !== 'hold') return
+    // The slideshow's own settings only matter without holdVideo.
+    body.appendChild(toggle('holdVideo', t('tHoldVideo'), null, rebuildPanel))
+    if (CFG.holdVideo) return
     /** @param {number} n */
     const num = n => n.toLocaleString(LANG)
     body.appendChild(choiceSelect('slideStep', t('tSlideStep'),
