@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.16.4
+// @version      1.17.0-snapshot
 // @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -68,7 +68,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.16.4'
+  const VERSION = '1.17.0-snapshot'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // The site's thumbnail list. Gelbooru 0.2 sites (rule34, safebooru, xbooru)
@@ -130,9 +130,11 @@
     thumbBadges:    true,   // video thumbnails: the duration (bottom right) and ⚠️ past the hardware decoder (top right) (needs reload)
     gifInline:      true,   // animate GIF cards while they are on screen
     gifMaxLive:     3,      // at most this many of them animating at once
+    holdGif:        true,   // hold a GIF thumbnail: build it again, the other GIFs paused until it plays
     videoScrub:     true,   // scene preview on video thumbnails (needs reload)
     scrubMode:      'drag', // 'drag': finger position picks the scene; 'hold': hold for a slideshow
-    holdVideo:      false,  // hold mode: the video itself plays (muted, 1×, Firefox's hardware decoder) instead of the slideshow
+    holdVideo:      false,  // hold mode: the video itself plays (1×, Firefox's hardware decoder) instead of the slideshow
+    previewSound:   false,  // hold mode: a video that plays (holdVideo, a short clip) plays with sound
     slideStep:      10,     // hold slideshow: jump between scenes, in % of the video
     slideDwell:     0.2,    // hold slideshow: seconds each scene stays once painted
     slideReel:      true,   // hold slideshow from keyframes only (MP4): one small read per scene, no seeking the file
@@ -245,11 +247,11 @@
       notResolved: 'not resolved', cached: 'cached',
       /** @param {number} ok @param {number} bad @param {number} all */
       coversFmt: (ok, bad, all) => `${ok} ok · ${bad} failed · ${all} videos`,
-      tCovers: 'Video covers', tBadges: 'Duration and ⚠️ on video thumbnails', tGif: 'Animated GIFs in the grid', tGifMax: 'GIFs animating at once',
+      tCovers: 'Video covers', tBadges: 'Duration and ⚠️ on video thumbnails', tGif: 'Animated GIFs in the grid', tGifMax: 'GIFs animating at once', tHoldGif: 'Hold a GIF to rebuild it',
       tScrub: 'Scene preview on video thumbnails',
       tScrubMode: 'scene preview gesture', modeDrag: 'Drag sideways', modeHold: 'Hold (slideshow)',
       tSlideStep: 'slideshow jump', tSlideDwell: 'time per scene', scenes: 'scenes', tSlideReel: 'Keyframes only (faster, MP4)', tWasmDecode: 'Decode keyframes in WebAssembly',
-      tHoldVideo: 'Hold plays the video (hardware)', heavyMark: 'Past this phone’s hardware decoder (1080p60)',
+      tHoldVideo: 'Hold plays the video (hardware)', tPreviewSound: 'Sound when the hold plays the video', heavyMark: 'Past this phone’s hardware decoder (1080p60)',
       tMemory: 'Release off-screen memory',
       tUrlCache: 'Remember working file URLs',
       tNav: 'Top / previous / next buttons',
@@ -326,11 +328,11 @@
       notResolved: 'não resolvido', cached: 'cache',
       /** @param {number} ok @param {number} bad @param {number} all */
       coversFmt: (ok, bad, all) => `${ok} ok · ${bad} falha · ${all} vídeos`,
-      tCovers: 'Capa de vídeo', tBadges: 'Duração e ⚠️ nas miniaturas de vídeo', tGif: 'GIF animado na grade', tGifMax: 'GIFs animando ao mesmo tempo',
+      tCovers: 'Capa de vídeo', tBadges: 'Duração e ⚠️ nas miniaturas de vídeo', tGif: 'GIF animado na grade', tGifMax: 'GIFs animando ao mesmo tempo', tHoldGif: 'Segurar um GIF para reconstruí-lo',
       tScrub: 'Prévia de cenas nas miniaturas de vídeo',
       tScrubMode: 'gesto da prévia de cenas', modeDrag: 'Arrastar de lado', modeHold: 'Segurar (slideshow)',
       tSlideStep: 'pulo do slideshow', tSlideDwell: 'tempo por cena', scenes: 'cenas', tSlideReel: 'Só keyframes (mais rápido, MP4)', tWasmDecode: 'Decodificar keyframes em WebAssembly',
-      tHoldVideo: 'Segurar toca o vídeo (hardware)', heavyMark: 'Acima do decodificador de hardware do celular (1080p60)',
+      tHoldVideo: 'Segurar toca o vídeo (hardware)', tPreviewSound: 'Som quando o segurar toca o vídeo', heavyMark: 'Acima do decodificador de hardware do celular (1080p60)',
       tMemory: 'Liberar memória fora da tela',
       tUrlCache: 'Lembrar endereços que funcionaram',
       tNav: 'Botões topo / anterior / próximo',
@@ -746,6 +748,19 @@
   // The cached winner goes first; if it fails, the full ladder runs behind it.
   /** @param {string[]} urls @param {string | null | undefined} cached */
   const cachedFirst = (urls, cached) => typeof cached === 'string' ? [cached, ...urls.filter(u => u !== cached)] : urls
+
+  // One file's remembered miss gone from both stores, so its ladder runs
+  // again (a GIF held to rebuild it). A winner stays: it is still the file.
+  /** @param {string} kind @param {string | undefined} hash */
+  function forgetMiss(kind, hash) {
+    if (!CFG.urlCache || !hash) return
+    const key = `${kind}:${hash}`
+    const entry = loadUrlCache()[key]
+    if (entry && entry.u !== null) return
+    delete /** @type {UrlCache} */ (urlCache)[key]
+    urlDirty.set(key, null)   // IndexedDB may hold it even when memory does not
+    scheduleUrlFlush()
+  }
 
   // Writes are batched: serialising the cache on every swap would stutter the scroll.
   function scheduleUrlFlush() {
@@ -1383,6 +1398,7 @@
   /** @param {HTMLElement} card */
   function playGif(card) {
     if (card.dataset.ibhGif) return   // loading, playing or failed
+    if (gifRebuild && gifRebuild !== card) { gifQueue.add(card); return }   // after the held one
     if (gifsLive() >= (Number(CFG.gifMaxLive) || 3)) { gifQueue.add(card); return }   // waits its turn
     const pic = cardPicture(card)
     if (!pic) return
@@ -1415,6 +1431,8 @@
         cacheSet('gif', hash, null)
         if (card.dataset.ibhKind === 'gif') { STATE.covers.failed++; touch() }
         dbg(`gif: no host answered for ${pic.src}`)
+        if (gifRebuild === card) warn('gif: held to rebuild it, but no host answered')
+        endGifRebuild(card)
         nextGif()   // its place goes to a waiting one
         return
       }
@@ -1431,6 +1449,7 @@
       ;/** @type {Picture} */ (cardPicture(card)).set(probe.src)
       card.dataset.ibhGif = 'playing'
       watchGif(card)
+      endGifRebuild(card, GIF_REBUILD_GRACE_MS)
       if (card.dataset.ibhKind === 'gif') { STATE.covers.ok++; touch() }
       dbg(`gif: playing ${probe.src}`)
     }
@@ -1479,6 +1498,55 @@
     setTimeout(() => { if (card.isConnected && card.dataset.ibhSeen) playGif(card) }, 400)
   }
 
+  // holdGif: a GIF left broken or on its still is built again on a hold,
+  // ahead of the others. Their decoded frames are what runs the phone out
+  // of memory, so they stop and wait in the queue until this one plays (a
+  // grace for its first frames, a cap for a download that stalls), and what
+  // is off screen goes. Its retries, its failure and its remembered miss
+  // start over.
+  const GIF_REBUILD_GRACE_MS = 1000
+  const GIF_REBUILD_MAX_MS = 10000
+  /** @type {HTMLElement | null} */
+  let gifRebuild = null   // the held GIF, while the others wait for it
+  let gifRebuildTimer = 0
+
+  /** @param {HTMLElement} card */
+  function rebuildGif(card) {
+    const pic = cardPicture(card)
+    if (!pic) return
+    const freed = freeOffscreen(card)
+    let paused = 0
+    markedCards('[data-ibh-gif="playing"], [data-ibh-gif="loading"]').forEach(c => {
+      if (c === card) return
+      stopGif(c)
+      gifQueue.add(c)   // back once the held one plays
+      paused++
+    })
+    const was = card.dataset.ibhGif || 'still'
+    stopGif(card)
+    delete card.dataset.ibhGif   // stopGif leaves a failed one marked
+    delete card.dataset.ibhGifRetries
+    forgetMiss('gif', (thumbParts(pic.src) || {}).hash)
+    gifRebuild = card
+    clearTimeout(gifRebuildTimer)
+    gifRebuildTimer = setTimeout(() => endGifRebuild(card), GIF_REBUILD_MAX_MS)
+    info(`gif: held, rebuilding it (was ${was}); ${paused} other GIFs paused until it plays, freed ${freed.images} images, ${freed.gifs} GIFs, ${freed.covers} covers off screen`)
+    playGif(card)
+  }
+
+  // The others' turn, `after` ms from now. Called when the held GIF plays,
+  // fails or stops; a call for another card changes nothing.
+  /** @param {HTMLElement} card @param {number} [after] */
+  function endGifRebuild(card, after = 0) {
+    if (gifRebuild !== card) return
+    clearTimeout(gifRebuildTimer)
+    gifRebuildTimer = setTimeout(() => {
+      if (gifRebuild !== card) return
+      gifRebuild = null
+      nextGif()
+    }, after)
+  }
+
   // Release what is not on screen: upgraded images back to the thumbnail
   // (heights held), other GIFs stilled, covers closed. On screen means within
   // one screen of the viewport.
@@ -1509,6 +1577,7 @@
 
   /** @param {HTMLElement} card */
   function stopGif(card) {
+    endGifRebuild(card)
     gifQueue.delete(card)
     const cancel = gifLoads.get(card)
     if (cancel) { gifLoads.delete(card); cancel() }
@@ -2010,10 +2079,10 @@
    * @property {number} shownAt
    * @property {number} [tick]
    * @property {ReelShow | null} [reel]
-   * @property {{ rate: number, loop: boolean }} played    the video's own, while a short clip (or holdVideo) plays
+   * @property {{ rate: number, loop: boolean, muted: boolean }} played    the video's own, while a short clip (or holdVideo) plays
    * @property {(() => void) | null} [onPlayTime]
    */
-  /** @typedef {{ t0: number, method: string | null, first: number | null, last: number, shown: number, gaps: number[], detail?: string, wasm?: string, reelError?: string, rate?: number, fps?: number }} SlideStats */
+  /** @typedef {{ t0: number, method: string | null, first: number | null, last: number, shown: number, gaps: number[], detail?: string, wasm?: string, reelError?: string, rate?: number, fps?: number, sound?: string }} SlideStats */
   /** @typedef {{ v: HTMLVideoElement, helper: boolean, f: number, ready: boolean, slow: boolean, since: number, onSeeked?: () => void }} SlideView */
 
   /** @type {Scrub | null} */
@@ -2238,7 +2307,7 @@
     const avg = st.gaps.length ? Math.round(st.gaps.reduce((a, b) => a + b, 0) / st.gaps.length) : 0
     const late = st.gaps.filter(g => g > dwell + 300).length
     const shown = st.first === null ? `no scene in ${Math.round(performance.now() - st.t0)} ms`
-      : st.method === 'play' ? `playing after ${Math.round(st.first)} ms at ${st.rate ?? PLAY_RATE}×${st.fps ? `, ${Math.round(st.fps)} fps` : ''}`
+      : st.method === 'play' ? `playing after ${Math.round(st.first)} ms at ${st.rate ?? PLAY_RATE}×${st.fps ? `, ${Math.round(st.fps)} fps` : ''}${st.sound ? `, ${st.sound}` : ''}`
         : `${st.shown} scenes, first after ${Math.round(st.first)} ms${avg ? `, then every ${avg} ms` : ''} (dwell ${dwell}), ${late} late`
     const v = s.video
     const what = (st.detail || (v ? `${v.videoWidth}x${v.videoHeight}, ${mmss(v.duration)}, ${s.shared ? 'own video' : 'its cover'}` : '')) +
@@ -2999,9 +3068,14 @@
     s.stats.method = 'play'
     s.stats.rate = rate
     const v = s.video
-    s.played = { rate: v.playbackRate, loop: v.loop }
+    s.played = { rate: v.playbackRate, loop: v.loop, muted: v.muted }
     v.loop = true
     v.playbackRate = rate
+    // previewSound: the hold started on a timer, not inside the touch, so the
+    // browser allows sound only if the page was tapped before (its sticky
+    // user activation). Refused, it plays muted as before.
+    v.muted = !CFG.previewSound
+    if (CFG.previewSound) s.stats.sound = 'with sound'
     s.onPlayTime = () => {
       if (scrub !== s || !v.duration) return
       s.bar.style.width = `${(v.currentTime / v.duration) * 100}%`
@@ -3009,7 +3083,15 @@
     }
     v.addEventListener('timeupdate', s.onPlayTime)
     v.addEventListener('playing', () => { if (scrub === s) noteScene(s) }, { once: true })
-    const go = () => { if (scrub === s) v.play().catch(e => dbg(`slideshow: play refused — ${describeError(e)}`)) }
+    const go = () => {
+      if (scrub !== s) return
+      v.play().catch(e => {
+        if (e.name !== 'NotAllowedError' || v.muted || scrub !== s) { dbg(`slideshow: play refused — ${describeError(e)}`); return }
+        s.stats.sound = 'muted: sound blocked until the page is tapped'
+        v.muted = true
+        v.play().catch(e2 => dbg(`slideshow: play refused — ${describeError(e2)}`))
+      })
+    }
     if (v.readyState >= 2) go()
     else v.addEventListener('canplay', go, { once: true })
   }
@@ -3023,6 +3105,7 @@
     v.pause()
     v.playbackRate = s.played.rate
     v.loop = s.played.loop
+    v.muted = s.played.muted   // a cover goes back to muted: unmuted, it could not autoplay
   }
 
   // Called with a scrub under way.
@@ -5323,8 +5406,9 @@
   // small print of a comic. Measured on touch events: Firefox for Android
   // cancels the pointer during a long press (see chipGestures). The release
   // does not open the post, and the long-press menu stays out of the way.
+  // A GIF's thumbnail takes the same hold to be built again (holdGif).
   const RAW_HOLD_MS = 500
-  /** @type {{ img: HTMLImageElement, link: HTMLAnchorElement, x: number, y: number, scrollY: number, fired: boolean, timer: number } | null} */
+  /** @type {{ img: HTMLImageElement, link: HTMLAnchorElement, gif: boolean, x: number, y: number, scrollY: number, fired: boolean, timer: number } | null} */
   let rawHold = null
   let rawClickUntil = 0
 
@@ -5339,11 +5423,30 @@
     return /** @type {{ img: HTMLImageElement, link: HTMLAnchorElement }} */ ({ img, link })   // the link was found from img
   }
 
+  // A GIF post's thumbnail, by tag or found out (a card tagged "animated"
+  // that no video host has).
+  /** @param {EventTarget | null} target */
+  function gifTarget(target) {
+    const img = /** @type {HTMLImageElement | null | undefined} */ (asElement(target)?.closest(`${SITE_LINK} img`))
+    const link = /** @type {HTMLAnchorElement | null | undefined} */ (img && img.closest(SITE_LINK))
+    if (!link || !isGifCard(link)) return null
+    return /** @type {{ img: HTMLImageElement, link: HTMLAnchorElement }} */ ({ img, link })
+  }
+
+  // What a hold on this target does: the raw file, or the GIF built again.
+  /** @param {EventTarget | null} target */
+  function holdTarget(target) {
+    const raw = CFG.holdRaw && rawTarget(target)
+    if (raw) return { ...raw, gif: false }
+    const gif = CFG.holdGif && gifTarget(target)
+    return gif ? { ...gif, gif: true } : null
+  }
+
   /** @param {TouchEvent} ev */
   function onRawTouchStart(ev) {
     rawHold = null
-    if (!CFG.holdRaw || bulkMode || ev.touches.length !== 1 || (modal && modal.open)) return
-    const hit = rawTarget(ev.target)
+    if (!(CFG.holdRaw || CFG.holdGif) || bulkMode || ev.touches.length !== 1 || (modal && modal.open)) return
+    const hit = holdTarget(ev.target)
     if (!hit) return
     const touch = ev.touches[0]
     rawHold = { ...hit, x: touch.clientX, y: touch.clientY, scrollY: window.scrollY, fired: false, timer: 0 }
@@ -5352,7 +5455,8 @@
       if (!h || Math.abs(window.scrollY - h.scrollY) > 12) return   // the page scrolled: not a hold
       h.fired = true
       rawClickUntil = Date.now() + 800   // the click after the release opens nothing
-      loadRaw(h.img, h.link)
+      if (h.gif) rebuildGif(h.link)
+      else loadRaw(h.img, h.link)
     }, RAW_HOLD_MS)
   }
 
@@ -5378,7 +5482,7 @@
 
   /** @param {MouseEvent} ev */
   function onRawContextMenu(ev) {
-    if (CFG.holdRaw && rawTarget(ev.target)) ev.preventDefault()   // the hold is ours
+    if (holdTarget(ev.target)) ev.preventDefault()   // the hold is ours
   }
 
   // The download in flight per image, so a second hold can call it off.
@@ -8087,6 +8191,7 @@
     if (CFG.scrubMode !== 'hold') return
     // The slideshow's own settings only matter without holdVideo.
     body.appendChild(toggle('holdVideo', t('tHoldVideo'), null, rebuildPanel))
+    body.appendChild(toggle('previewSound', t('tPreviewSound')))
     if (CFG.holdVideo) return
     /** @param {number} n */
     const num = n => n.toLocaleString(LANG)
@@ -8176,6 +8281,7 @@
     body.appendChild(toggle('thumbBadges', t('tBadges'), t('noteReload')))
     body.appendChild(toggle('gifInline', t('tGif')))
     body.appendChild(choiceSelect('gifMaxLive', t('tGifMax'), [1, 2, 3, 4, 6, 10].map(n => [n, String(n)]), applyGifLimit))
+    body.appendChild(toggle('holdGif', t('tHoldGif')))
     body.appendChild(toggle('videoScrub', t('tScrub'), t('noteReload')))
     scrubModeControls(body)
     body.appendChild(toggle('memorySaver', t('tMemory'), t('noteReload')))
@@ -8900,7 +9006,7 @@
         slots: `${imagesInflight}/${IMAGE_MAX_INFLIGHT}`, slotWaiters: imageWaiters.length,
         live: `${gifsLive()}/${Number(CFG.gifMaxLive) || 3}`, queued: gifQueue.size, cards,
         previewPaused: previewPaused.length, parked: parked.length,
-        holding: [document.hidden && 'hidden tab', modal && modal.open && 'modal', scrub && 'finger on a video'].filter(Boolean),
+        holding: [document.hidden && 'hidden tab', modal && modal.open && 'modal', scrub && 'finger on a video', gifRebuild && 'a held GIF rebuilding'].filter(Boolean),
       }
     },
     set: setCfg,

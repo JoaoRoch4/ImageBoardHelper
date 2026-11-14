@@ -16,6 +16,8 @@
 //   - a scene preview that could not start paused the GIFs on screen for good.
 // And two buttons that must bring the GIFs on screen back at once (1.16.4):
 // Redo thumbnails (↻) and Free memory & cache (🗑), never with inline GIFs off.
+// And holding a GIF that failed builds it again, the others paused until it
+// plays and then back, even one whose miss the URL cache confirmed (1.17.0).
 
 'use strict'
 const fs = require('fs')
@@ -41,7 +43,8 @@ const GIF = Buffer.concat([
 // A 1×1 PNG for the thumbnails (Firefox goes by the bytes, not the .jpg).
 const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=', 'base64')
 
-// One card per entry: [hash, tags]. A hash starting with "hang" never answers.
+// One card per entry: [hash, tags]. A hash starting with "hang" never answers;
+// one starting with "flaky" answers 404 until the case sets net.broken false.
 // Cards sit 1200 px apart, so one scroll shows one card (viewport 780 px).
 /** @param {Array<[string, string]>} cards */
 function listing(cards) {
@@ -71,13 +74,15 @@ function check(name, ok, detail = '') {
 }
 
 // Opens the fake listing with these cards and this config in a fresh context.
-/** @param {import('playwright').Browser} browser @param {Array<[string, string]>} cards @param {object} cfg @param {number} [latency] ms for every image-server answer, as a real network takes */
-async function open(browser, cards, cfg, latency = 0) {
+/** @param {import('playwright').Browser} browser @param {Array<[string, string]>} cards @param {object} cfg @param {number} [latency] ms for every image-server answer, as a real network takes @param {string} [seed] code run before the script, e.g. to fill its URL cache */
+async function open(browser, cards, cfg, latency = 0, seed = '') {
   const context = await browser.newContext({ viewport: { width: 360, height: 780 }, deviceScaleFactor: 2, hasTouch: true })
+  if (seed) await context.addInitScript({ content: seed })
   // No autopager: every page of this fake site is the same list, and a second
   // copy of the cards would share their ids.
   await context.addInitScript({ content: inject({ blockAds: false, videoCovers: false, favAutopager: false, scrubMode: 'drag', ...cfg }) })
   const asked = []
+  const net = { broken: true }
   await context.route('**/*', async route => {
     const url = new URL(route.request().url())
     if (url.origin !== ORIGIN) return route.abort()
@@ -87,6 +92,7 @@ async function open(browser, cards, cfg, latency = 0) {
     if (/\/images\/.+\.gif$/.test(url.pathname)) {
       asked.push(path.basename(url.pathname))
       if (path.basename(url.pathname).startsWith('hang')) return undefined   // never answers
+      if (path.basename(url.pathname).startsWith('flaky') && net.broken) return route.fulfill({ status: 404, body: '' })
       return route.fulfill({ contentType: 'image/gif', body: GIF })
     }
     return route.fulfill({ status: 404, body: '' })
@@ -99,7 +105,7 @@ async function open(browser, cards, cfg, latency = 0) {
   page.on('pageerror', e => errors.push(e.message))
   await page.goto(LISTING, { waitUntil: 'domcontentloaded' })
   await page.waitForFunction(() => window.__ibh && window.__ibh.version, null, { timeout: 15000 })
-  return { context, page, asked, dropped, errors }
+  return { context, page, asked, dropped, errors, net }
 }
 
 // Scrolls so card n (1-based) is at the top, then lets the observers run.
@@ -254,6 +260,82 @@ const pointer = (page, n, type, dx = 0) => page.evaluate(([i, t, d]) => {
       const afterScroll = await gifState(page, 1)
       check('GIFs off: scrolled away and back, it stays on its still', isGif && afterScroll === '',
         `card 1 after: "${afterScroll}", asked: ${asked.join(' ') || 'none'}`)
+      await context.close()
+    }
+
+    // 7. holdGif: a GIF whose download failed is held. It loads again, the
+    //    other GIFs on screen stop while it does and come back after.
+    {
+      const { context, page, net } = await open(browser,
+        [['flaky1', 'animated_gif'], ['ok2', 'animated_gif'], ['ok3', 'animated_gif']],
+        { gifMaxLive: 3, holdGif: true })
+      await page.addStyleTag({ content: 'span.thumb { height: 200px !important }' })
+      await showCard(page, 1)
+      const failedFirst = await page.waitForFunction(() => document.getElementById('p1').dataset.ibhGif === 'failed', null, { timeout: 8000 })
+        .then(() => true, () => false)
+      const othersBefore = await becomesPlaying(page, 2, 5000) && await becomesPlaying(page, 3, 5000)
+      net.broken = false
+      // A still finger on its picture, as Firefox for Android reports it: touch events.
+      await page.evaluate(() => {
+        const img = document.querySelector('#p1 img')
+        const r = img.getBoundingClientRect()
+        const t = new Touch({ identifier: 1, target: img, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 })
+        img.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, cancelable: true, composed: true, touches: [t], targetTouches: [t], changedTouches: [t] }))
+      })
+      // Sampled until the hold fires (500 ms), then while it rebuilds.
+      const during = await page.evaluate(() => new Promise(resolve => {
+        const seen = []
+        const start = performance.now()
+        const tick = () => {
+          const st = n => document.getElementById(`p${n}`).dataset.ibhGif || '-'
+          seen.push(`${Math.round(performance.now() - start)}:${st(1)}/${st(2)}/${st(3)}`)
+          if (performance.now() - start > 900) resolve(seen)
+          else setTimeout(tick, 50)
+        }
+        tick()
+      }))
+      await page.evaluate(() => {
+        const img = document.querySelector('#p1 img')
+        img.dispatchEvent(new TouchEvent('touchend', { bubbles: true, cancelable: true, composed: true, touches: [], targetTouches: [], changedTouches: [] }))
+      })
+      const rebuilt = await becomesPlaying(page, 1, 3000)
+      // While it was rebuilding, the others were stopped at some sample.
+      const paused = during.some(x => /:(loading|playing)\/-\/-$/.test(x))
+      const othersBack = await becomesPlaying(page, 2, 4000) && await becomesPlaying(page, 3, 4000)
+      check('holding a failed GIF builds it again', failedFirst && othersBefore && rebuilt,
+        `failed first: ${failedFirst}, others playing: ${othersBefore}, card 1 "${await gifState(page, 1)}"\n${await gifsReport(page)}`)
+      check('the other GIFs pause while it rebuilds and come back', paused && othersBack,
+        `samples ${during.join(' ')}; back: ${othersBack}`)
+      await context.close()
+    }
+
+    // 8. holdGif on a confirmed miss (two failures a minute apart): the card
+    //    is marked failed without asking at all, and only the hold, by
+    //    forgetting that miss, gets the file asked for again.
+    {
+      const seed = `try {
+        const now = Date.now()
+        localStorage.setItem('IBH_URLCACHE_safebooru.org', JSON.stringify({ 'gif:flaky1': { u: null, t: now, f: now - 120000, n: 2 } }))
+      } catch (e) {}`
+      const { context, page, net, asked } = await open(browser, [['flaky1', 'animated_gif'], ['x2', 'tagme']],
+        { holdGif: true }, 0, seed)
+      net.broken = false   // the file is there now; only the remembered miss keeps it a still
+      // Settled heights: a page still moving makes the hold count as a scroll.
+      await page.addStyleTag({ content: 'span.thumb { height: 200px !important }' })
+      await showCard(page, 1)
+      const failedFirst = await page.waitForFunction(() => document.getElementById('p1').dataset.ibhGif === 'failed', null, { timeout: 8000 })
+        .then(() => true, () => false)
+      const askedBefore = asked.filter(f => f.startsWith('flaky1')).length
+      await page.evaluate(() => {
+        const img = document.querySelector('#p1 img')
+        const r = img.getBoundingClientRect()
+        const t = new Touch({ identifier: 1, target: img, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 })
+        img.dispatchEvent(new TouchEvent('touchstart', { bubbles: true, cancelable: true, composed: true, touches: [t], targetTouches: [t], changedTouches: [t] }))
+      })
+      const rebuilt = await becomesPlaying(page, 1, 3000)
+      const askedAfter = asked.filter(f => f.startsWith('flaky1')).length
+      check('holding a GIF with a confirmed miss asks for it again and plays it', failedFirst && askedBefore === 0 && rebuilt && askedAfter === 1,
+        `failed without asking: ${failedFirst} (${askedBefore} requests), then ${askedAfter} request(s), card 1 "${await gifState(page, 1)}"\n${await gifsReport(page)}`)
       await context.close()
     }
   } finally {

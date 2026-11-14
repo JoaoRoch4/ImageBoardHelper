@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.17.0
+
+- Hold a GIF thumbnail half a second to build it again (`holdGif`, on by
+  default): for one left broken, on its still, or failed while the network
+  was down. Its retries, its failure and its remembered miss start over;
+  the other GIFs on screen stop until it plays, then come back, and what is
+  off screen is released. Works with inline GIFs off too, for that one GIF
+- Sound in the hold preview (`previewSound`, off by default): when the hold
+  plays the video (`holdVideo`, or a short clip at 2×), it plays with sound.
+  Firefox allows it once the page has been tapped; before that it plays
+  muted, as before. Lifting the finger mutes the cover again
+
 ## 1.16.4
 
 - Free memory & cache (🗑) no longer leaves the page bare: the covers and GIFs
