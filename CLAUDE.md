@@ -71,6 +71,23 @@ Desde a 1.14.0 (2026-11-13, no `main` desde 2026-11-14) o player externo é o ap
 - **O Android congela o app em segundo plano:** sem um serviço em primeiro plano, a porta não responde enquanto o usuário está no Firefox. Por isso o timeout curto e o intent de reserva; durante um download ou conversão o serviço do app o mantém acordado, e o acompanhamento funciona. Para o servidor responder sempre, o usuário decidiu (2026-11-14) por uma notificação fixa no app: o `BridgeService`, um foreground service `specialUse` que fica ligado enquanto a opção do app está ligada.
 - **O token** fica só no `GM_setValue('appToken')`, como o do antigo conversor: o `storeGet`/`storeSet` cai para o IndexedDB do site e o `IBH_CFG` tem cópias no armazenamento do site, que os scripts do site leem. O `smoke` confere ("token kept in GM only", "no GM storage: no token kept") e que, com `appBridge` desligado, nada vai para `127.0.0.1`.
 
+### Portar recursos do app para o script
+
+O usuário quer trazer vários recursos do app para o script no futuro (2026-11-14). **O script não compila nada nem roda código nativo**: é JavaScript num arquivo só, no Firefox. Código Qt/C++ do app nunca vem como está; ele vira uma de duas coisas:
+
+- **JavaScript** no próprio `image-board-helper.user.js`, com a tipagem JSDoc checada pelo `tsc` como o resto. É o caminho para DOM, rede, armazenamento e lógica pequena.
+- **Um módulo WebAssembly** (`@resource`, ver "Sem build, sem dependências"), para cálculo pesado e puro (decodificar, converter, processar imagem) ou para portar uma biblioteca C/C++ inteira. Só C/C++ **sem Qt**, compilado pelo emsdk, ou WebAssembly escrito à mão. Se a lógica do app está misturada com Qt, primeiro separe a parte pura.
+
+**O Qt não existe aqui.** Equivalentes no navegador:
+- QML e widgets: DOM e CSS (o painel e o modal são Shadow DOM).
+- Sinais/slots e `QThread`: eventos, `Promise` e `async`.
+- `QSettings` e o `StateFile`: `GM_setValue` e o IndexedDB, pelo `storeGet`/`storeSet`.
+- QNetwork e libcurl: `GM_xmlhttpRequest` (outros hosts, Referer) ou `fetch` (o próprio site).
+- O MediaCodec direto: o `<video>`, que é o único caminho para o decodificador de hardware. O WebCodecs não funciona no Firefox para Android (Armadilhas).
+- Leitura de arquivos e processos: não existem. O que precisa disso fica no app e é pedido a ele pelo servidor (`appBridge`) ou por intent.
+
+**Uma regra que existe nos dois lados é a mesma regra:** mesma conta, mesmos casos de teste. Exemplo: `pastDecoder` (script) e `vreduce::fits` (app, `src/reduce/probe.hpp`, com `static_assert`s), o limite do decodificador. Achado em 2026-11-14 que eles divergiam: o app arredonda os fps, o script dava 4% de folga, e um 1080p a 61 fps cabia num e não no outro. A folga só se justifica no fps *medido* durante um segurar, então ela vai nesse ponto de medição, não na regra compartilhada.
+
 ---
 
 ## Mapa do arquivo
