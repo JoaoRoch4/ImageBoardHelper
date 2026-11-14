@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.16.4-snapshot
+// @version      1.16.4
 // @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -68,7 +68,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.16.4-snapshot'
+  const VERSION = '1.16.4'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // The site's thumbnail list. Gelbooru 0.2 sites (rule34, safebooru, xbooru)
@@ -808,7 +808,8 @@
             const db = req.result
             // Made by something else, without the store: left alone.
             if (!db.objectStoreNames.contains('urls')) { db.close(); resolve(null); return }
-            db.onversionchange = () => db.close()   // a later version may need it upgraded
+            // A later version may need it upgraded; the next call opens it again.
+            db.onversionchange = () => { db.close(); urlDbOpen = null }
             resolve(db)
           }
           req.onerror = () => resolve(null)
@@ -819,6 +820,10 @@
     }
     return urlDbOpen
   }
+  // Opened now, while the page loads: the first cards are scanned during
+  // that, and their wait (URLIDX_WAIT_MS) would otherwise pay the ~0.1 s
+  // an open costs.
+  if (CFG.urlCache) urlDb()
 
   // One transaction on the index store; resolves once it completes.
   /**
@@ -854,8 +859,10 @@
     urlInFlight.add(hash)
     urlWanted.add(hash)
     if (urlWanted.size > 1) return   // joins the batch already on its way
+    // A microtask, not a timer: it still runs after the rest of this scan has
+    // joined, and a timer waits behind the page's loading (~0.15 s measured).
     /** @type {Promise<void>} */
-    const batch = new Promise(resolve => setTimeout(() => readWanted().then(resolve), 0))
+    const batch = new Promise(resolve => queueMicrotask(() => readWanted().then(resolve)))
     const capped = Promise.race([batch, new Promise(resolve => setTimeout(resolve, URLIDX_WAIT_MS))])
     urlReading = /** @type {Promise<void>} */ (capped)
     capped.then(() => { if (urlReading === capped) urlReading = null })
@@ -930,7 +937,8 @@
   function syncUrlIndex(c) {
     if (!CFG.urlCache) return
     const since = Number(readJSON(URLIDX_SYNC_KEY, 0)) || 0
-    for (const [key, entry] of Object.entries(c)) if (entry.t > since && !urlDirty.has(key)) urlDirty.set(key, entry)
+    // >=: an entry written in the same millisecond the last batch was taken missed it.
+    for (const [key, entry] of Object.entries(c)) if (entry.t >= since && !urlDirty.has(key)) urlDirty.set(key, entry)
     if (urlDirty.size) scheduleUrlFlush()
     setTimeout(sweepUrlIndex, 20000)
   }
@@ -999,7 +1007,9 @@
   /** @param {boolean} missesOnly */
   function clearUrlIndex(missesOnly) {
     urlGen++
-    urlAsked.clear()   // read again what is left
+    // A hash whose read this drops may be asked again. Cards already scanned
+    // are not asked again: what they miss, their ladder writes back.
+    urlAsked.clear()
     for (const [key, entry] of urlDirty) if (!missesOnly || (entry && entry.u === null)) urlDirty.delete(key)
     urlTx('readwrite', store => {
       if (!missesOnly) { store.clear(); return }
@@ -1170,7 +1180,8 @@
     const parts = thumbParts(pic.src)
     const wait = parts && urlPending('video', parts.hash)
     if (wait) {   // its URL may still come from IndexedDB
-      wait.then(() => { if (card.isConnected && card.dataset.ibhSeen) mountCover(card) })
+      // A post opened meanwhile: resumePage() brings the cover back on close.
+      wait.then(() => { if (card.isConnected && card.dataset.ibhSeen && !(modal && modal.open)) mountCover(card) })
       return
     }
     const vcached = parts ? cacheGet('video', parts.hash) : undefined
@@ -1325,22 +1336,21 @@
   const gifQueue = new Set()
   const gifsLive = () => markedCards('[data-ibh-gif="playing"], [data-ibh-gif="loading"]').length
 
+  // How far a card's middle sits from the middle of the screen, in px.
+  /** @param {HTMLElement} card */
+  const fromMiddle = card => Math.abs(card.getBoundingClientRect().top + card.offsetHeight / 2 - window.innerHeight / 2)
+
   function nextGif() {
     // Stopped to free memory (the modal, a scene preview, a hidden tab): those
     // bring their GIFs back themselves when they end.
     if (document.hidden || (modal && modal.open) || scrub) return
     const max = Number(CFG.gifMaxLive) || 3
-    const middle = window.innerHeight / 2
     const waiting = [...gifQueue].filter(card => {
       if (card.isConnected && card.dataset.ibhSeen && !card.dataset.ibhGif) return true
       gifQueue.delete(card)
       return false
     })
-    waiting.sort((a, b) => {
-      const da = Math.abs(a.getBoundingClientRect().top + a.offsetHeight / 2 - middle)
-      const db = Math.abs(b.getBoundingClientRect().top + b.offsetHeight / 2 - middle)
-      return da - db
-    })
+    waiting.sort((a, b) => fromMiddle(a) - fromMiddle(b))
     for (const card of waiting) {
       if (gifsLive() >= max) break
       gifQueue.delete(card)
@@ -1525,8 +1535,10 @@
           if (modal && modal.open) continue
           if (isVideoCard(card) && card.dataset.ibhKind !== 'gif') {
             e.isIntersecting ? mountCover(card) : unmountCover(card)
-          } else {
-            e.isIntersecting ? playGif(card) : stopGif(card)
+          } else if (!e.isIntersecting) {
+            stopGif(card)
+          } else if (CFG.gifInline) {
+            playGif(card)   // a "video" that proved a GIF is watched for its cover: inline GIFs may be off
           }
         }
       }, { rootMargin: '200px' })
@@ -7720,13 +7732,15 @@
     // What is on screen comes back now, freshly decoded, nearest the middle
     // first; the rest when it scrolls in. Not before ↻, which restarts every
     // card itself, nor under the modal or in a hidden tab, which bring their
-    // cards back when they end.
+    // cards back when they end. The options decide, as wherever a card comes
+    // back (resumePage): a "video" that proved a GIF goes through mountCover,
+    // which plays it only with inline GIFs on.
     if (reason !== 'redo' && !document.hidden && !(modal && modal.open)) {
-      markedCards('[data-ibh-seen]').forEach(card => {
-        if (isVideoCard(card) && card.dataset.ibhKind !== 'gif') mountCover(card)
-        else gifQueue.add(card)
-      })
-      nextGif()
+      const seen = [...markedCards('[data-ibh-seen]')].sort((a, b) => fromMiddle(a) - fromMiddle(b))
+      for (const card of seen) {
+        if (CFG.videoCovers && isVideoCard(card)) mountCover(card)
+        else if (CFG.gifInline && isGifCard(card)) playGif(card)   // past the limit it queues
+      }
     }
     try {
       if (window.caches) {

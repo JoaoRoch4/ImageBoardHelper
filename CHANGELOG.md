@@ -19,6 +19,15 @@
   survives another script's `localStorage.clear()`
 - `__ibh.urlIndex()` gives the IndexedDB side's size: entries, misses and the
   cap
+- With inline GIFs off, a card taken for a video (tagged "animated" alone)
+  that proved a GIF stays on its still: scrolling back to it, or the trash
+  can of the 1.16.4 snapshot, played it anyway
+- A cover still waiting for the URL cache's answer when a post opens no
+  longer mounts under the post, where it took a video decoder from the viewer
+- The cards on screen at load get that answer in time: the database opens as
+  the script starts and the first read no longer waits behind the page's
+  loading. In the snapshot it often came past the 0.4 s, and those cards
+  walked their ladder anyway
 
 ## 1.16.3
 

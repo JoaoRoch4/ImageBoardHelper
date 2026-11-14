@@ -15,7 +15,7 @@
 //     video card (nextGif skips during a scrub, and nobody called it after);
 //   - a scene preview that could not start paused the GIFs on screen for good.
 // And two buttons that must bring the GIFs on screen back at once (1.16.4):
-// Redo thumbnails (↻) and Free memory & cache (🗑).
+// Redo thumbnails (↻) and Free memory & cache (🗑), never with inline GIFs off.
 
 'use strict'
 const fs = require('fs')
@@ -229,6 +229,31 @@ const pointer = (page, n, type, dx = 0) => page.evaluate(([i, t, d]) => {
       const back = timeline.find(([ms, n]) => ms > 0 && n >= 2)
       check(`${which === 'redo' ? '↻' : 'trash can'}: the GIFs on screen come back`, before && tapped && !!back,
         `${back ? `2 playing again after ${back[0]} ms` : 'not back in 6 s'}; timeline ${timeline.map(([ms, n]) => `${ms}:${n}`).join(' ')}\n${await gifsReport(page)}`)
+      await context.close()
+    }
+
+    // 6. Inline GIFs off, video covers on: a card tagged "animated" alone is
+    //    taken for a video, turns out a GIF when no video host has it, and
+    //    must stay a still through the trash can and a scroll away and back.
+    {
+      const { context, page, asked } = await open(browser,
+        [['anim1', 'animated'], ['x2', 'tagme'], ['x3', 'tagme']],
+        { videoCovers: true, gifInline: false })
+      await showCard(page, 1)
+      const isGif = await page.waitForFunction(() => document.getElementById('p1').dataset.ibhKind === 'gif', null, { timeout: 8000 })
+        .then(() => true, () => false)
+      const askedBefore = asked.join(' ') || 'none'   // must be none, or the case tests nothing
+      const tapped = await tapNavButton(page, 'free')
+      await page.waitForTimeout(1500)
+      const afterFree = await gifState(page, 1)
+      check('GIFs off: the trash can leaves a GIF card on its still', isGif && askedBefore === 'none' && tapped && afterFree === '',
+        `kind gif: ${isGif}, asked before: ${askedBefore}, card 1 after: "${afterFree}"`)
+      await showCard(page, 3)
+      await showCard(page, 1)
+      await page.waitForTimeout(1000)
+      const afterScroll = await gifState(page, 1)
+      check('GIFs off: scrolled away and back, it stays on its still', isGif && afterScroll === '',
+        `card 1 after: "${afterScroll}", asked: ${asked.join(' ') || 'none'}`)
       await context.close()
     }
   } finally {
