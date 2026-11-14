@@ -2,6 +2,15 @@
 
 Desde a 1.14.0 o Image Board Helper manda vídeos para o app do próprio usuário, o QtMediaPlayer, e o app é parte deste projeto: o que o script promete (tocar, baixar, converter para 1080p) só funciona com o app instalado e na versão certa. Este guia junta o que é preciso para compilar, instalar e manter o app a partir do celular. A seção "Integração com o QtMediaPlayer" do `CLAUDE.md` daqui é o contrato do lado do script; o `CLAUDE.md` do app é o do lado dele.
 
+## O script é um userscript, não um programa
+
+O Image Board Helper é **JavaScript num arquivo só, rodando no Firefox pelo Violentmonkey**, dentro da página do booru. Não tem build, não tem processo próprio, não roda comando, não lê arquivo do celular, não fala com o adb. Tudo o que ele faz com o app passa pelo que uma página consegue fazer:
+
+- **Abrir um link de intent** (`intent://…#Intent;…;end`), que o Firefox entrega ao Android. Só vale dentro de um toque do usuário (ativação), senão o bloqueador de pop-ups barra, e o Firefox só abre intents BROWSABLE. O script não sabe se o app está instalado nem se o intent deu certo.
+- **`GM_xmlhttpRequest` para `127.0.0.1:8745`** (`appBridge`), coberto pelo `@connect *`. É o único jeito de ler uma resposta do app. Se o app estiver fechado ou congelado pelo Android, a porta não responde, e o script cai no intent; ele não tem como abrir o app nem ligar o servidor sozinho.
+
+Compilar, assinar e instalar o app, cuidar do Termux e do adb, tudo o que vem abaixo, é trabalho das sessões do Claude no container, com as ferramentas do repositório do app. Nada disso entra no `image-board-helper.user.js`. As ferramentas de `tools/` daqui (o `ffrdp`, o phone MCP, o smoke) também são de desenvolvimento, para testar o script; o script nunca as importa.
+
 ## Onde está
 
 - **Repositório:** `JoaoRoch4/qtmobilemedia` (privado), em `~/projects/QtMediaPlayer` no container. App `com.example.qtmediaplayer`, "Media Player". Qt Quick (Qt 6.12), C++ e QML.
