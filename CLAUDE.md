@@ -55,6 +55,8 @@ Fatos verificados no rule34 (via `ffrdp` e XHR síncrono na aba logada). Se algu
 
 ## Integração com o QtMediaPlayer
 
+**O app é parte do projeto** (o usuário, 2026-11-14). Como compilar, instalar e manter o app pelo celular: `docs/qtmediaplayer.md`. Lá estão o `./buildApk.py` e as letras dele, as proteções contra o Android matar o Termux num build longo, o adb pela depuração sem fio, o pipeline do APK no Termux passo a passo e a recuperação de arquivos pelas transcrições. O `tools/android/termux-patch-ndk.sh` é a cópia versionada do script que adapta o NDK ao Termux; a usada fica em `~/android-sdk/` do Termux. Instruções novas, aqui e lá, em português; código, comentários, README e CHANGELOG continuam em inglês.
+
 Desde a 1.14.0 (2026-11-13, no `main` desde 2026-11-14) o player externo é o app do próprio usuário, `com.example.qtmediaplayer` (`JoaoRoch4/qtmobilemedia`, `~/projects/QtMediaPlayer`; a seção "Image Board Helper" do `CLAUDE.md` de lá é o outro lado deste contrato). Substituiu o VLC (`vlcButton` → `playerButton`) e o conversor pelo servidor do celular (`videoReducer`, o token e o status saíram do script; as rotas do `phone-server.mts` ficaram).
 
 - **Botões no ☰ de um post de vídeo:** ▶ Media Player (toca no app), ⬇ App (o app baixa, pelo yt-dlp dele, para a pasta Download) e ⚡ 1080p (o app baixa e converte com o motor do VideoReducer embutido nele; só aparece acima de 1920×1088, `pastDecoder`). O baixar do próprio navegador virou 🦊⬇, para não confundir com o ⬇ App.
