@@ -14,6 +14,8 @@
 //   - a GIF waiting its turn missed its wake-up while a finger was down on a
 //     video card (nextGif skips during a scrub, and nobody called it after);
 //   - a scene preview that could not start paused the GIFs on screen for good.
+// And two buttons that must bring the GIFs on screen back at once (1.16.4):
+// Redo thumbnails (↻) and Free memory & cache (🗑).
 
 'use strict'
 const fs = require('fs')
@@ -69,17 +71,18 @@ function check(name, ok, detail = '') {
 }
 
 // Opens the fake listing with these cards and this config in a fresh context.
-/** @param {import('playwright').Browser} browser @param {Array<[string, string]>} cards @param {object} cfg */
-async function open(browser, cards, cfg) {
+/** @param {import('playwright').Browser} browser @param {Array<[string, string]>} cards @param {object} cfg @param {number} [latency] ms for every image-server answer, as a real network takes */
+async function open(browser, cards, cfg, latency = 0) {
   const context = await browser.newContext({ viewport: { width: 360, height: 780 }, deviceScaleFactor: 2, hasTouch: true })
   // No autopager: every page of this fake site is the same list, and a second
   // copy of the cards would share their ids.
   await context.addInitScript({ content: inject({ blockAds: false, videoCovers: false, favAutopager: false, scrubMode: 'drag', ...cfg }) })
   const asked = []
-  await context.route('**/*', route => {
+  await context.route('**/*', async route => {
     const url = new URL(route.request().url())
     if (url.origin !== ORIGIN) return route.abort()
     if (url.pathname === '/index.php') return route.fulfill({ contentType: 'text/html', body: listing(cards) })
+    if (latency && /\/(images|samples)\//.test(url.pathname)) await new Promise(r => setTimeout(r, latency))
     if (/\.jpe?g$/.test(url.pathname) && !/\/images\//.test(url.pathname)) return route.fulfill({ contentType: 'image/png', body: PNG })
     if (/\/images\/.+\.gif$/.test(url.pathname)) {
       asked.push(path.basename(url.pathname))
@@ -118,6 +121,32 @@ const becomesPlaying = (page, n, ms) => page.waitForFunction(
 const gifsReport = page => page.evaluate(() =>
   `${window.__ibh.gifs ? JSON.stringify(window.__ibh.gifs()) : '(no gifs())'} ${[...document.querySelectorAll('.image-list a')].map(a =>
     `${a.id}:${a.dataset.ibhGif || '-'}${a.dataset.ibhSeen ? '+seen' : ''}`).join(' ')}\n${window.__ibh.tail(12, 'gif|scrub')}`)
+
+// Taps one of the floating page buttons, in the script's shadow root: 'free'
+// (the trash can, Free memory) or 'redo' (↻, Free memory and redo the thumbnails).
+/** @param {import('playwright').Page} page @param {'free' | 'redo'} which */
+const tapNavButton = (page, which) => page.evaluate(w => {
+  const host = [...document.querySelectorAll('*')].find(e => e.shadowRoot && e.shadowRoot.querySelector('.feednav'))
+  const row = host && [...host.shadowRoot.querySelectorAll('.feednav .row')].pop()
+  const buttons = row ? [...row.querySelectorAll('button')] : []
+  const btn = buttons[w === 'free' ? 0 : 1]
+  if (btn) btn.click()
+  return !!btn
+}, which)
+
+// How many cards show their animated .gif, every 200 ms for ms: [time, count] pairs.
+/** @param {import('playwright').Page} page @param {number} ms */
+const gifTimeline = (page, ms) => page.evaluate(total => new Promise(resolve => {
+  const out = []
+  const start = performance.now()
+  const tick = () => {
+    const shown = [...document.querySelectorAll('.image-list img')].filter(img => /\.gif/.test(img.currentSrc || '')).length
+    out.push([Math.round(performance.now() - start), shown])
+    if (performance.now() - start >= total) resolve(out)
+    else setTimeout(tick, 200)
+  }
+  tick()
+}), ms)
 
 // Fires a pointer event at the middle of card n, the way a finger would.
 /** @param {import('playwright').Page} page @param {number} n @param {string} type @param {number} dx */
@@ -182,6 +211,24 @@ const pointer = (page, n, type, dx = 0) => page.evaluate(([i, t, d]) => {
       const after = await becomesPlaying(page, 2, 3000)
       check('GIF keeps playing after a scrub that could not start', before && after,
         `card 2 before: ${before}, after: "${await gifState(page, 2)}"`)
+      await context.close()
+    }
+
+    // 4–5. The page buttons with GIFs on screen: ↻ (Free memory, then redo
+    //      every thumbnail) and the trash can (Free memory) must bring the
+    //      GIFs on screen back, and soon.
+    for (const which of /** @type {const} */ (['redo', 'free'])) {
+      const { context, page } = await open(browser,
+        [['ok1', 'animated_gif'], ['ok2', 'animated_gif'], ['ok3', 'animated_gif']],
+        { gifMaxLive: 2 }, 300)
+      await page.addStyleTag({ content: 'span.thumb { height: 200px !important }' })
+      await showCard(page, 1)
+      const before = await becomesPlaying(page, 1, 5000) && await becomesPlaying(page, 2, 5000)
+      const tapped = await tapNavButton(page, which)
+      const timeline = await gifTimeline(page, 6000)
+      const back = timeline.find(([ms, n]) => ms > 0 && n >= 2)
+      check(`${which === 'redo' ? '↻' : 'trash can'}: the GIFs on screen come back`, before && tapped && !!back,
+        `${back ? `2 playing again after ${back[0]} ms` : 'not back in 6 s'}; timeline ${timeline.map(([ms, n]) => `${ms}:${n}`).join(' ')}\n${await gifsReport(page)}`)
       await context.close()
     }
   } finally {

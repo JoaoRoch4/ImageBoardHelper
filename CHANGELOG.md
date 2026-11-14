@@ -1,5 +1,25 @@
 # Changelog
 
+## 1.16.4
+
+- Free memory & cache (🗑) no longer leaves the page bare: the covers and GIFs
+  on screen come back at once, freshly decoded, nearest the middle first. They
+  used to stay on their stills until scrolled away and back
+- It also keeps the URL cache and the image host, which hold no memory to
+  speak of and are what brings an image back with one request; wiping them
+  made every card walk its ladder of hosts and extensions again, which is
+  what made the button slow. Clear host still drops both, and Redo thumbnails
+  (↻) still forgets the remembered misses
+- The URL cache also lives in the site's IndexedDB (its own database,
+  `ibh-urls`), up to 20,000 files instead of the 1,500 that fit in
+  `localStorage`, which keeps the newest. Each card asks for its entries as
+  it is scanned, a batch at a time; a card already on screen at load waits
+  for that answer at most 0.4 s before it walks the ladder. Expired entries
+  and the oldest past the cap are swept 20 s after each page load, and the URL cache
+  survives another script's `localStorage.clear()`
+- `__ibh.urlIndex()` gives the IndexedDB side's size: entries, misses and the
+  cap
+
 ## 1.16.3
 
 - Favorites search on rule34 works again: the site no longer lets scripts

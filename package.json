@@ -9,6 +9,7 @@
     "smoke": "node tools/smoke.js",
     "test:gif": "node tools/gif-test.js",
     "test:fav": "node tools/fav-test.js",
+    "test:url": "node tools/url-test.js",
     "test:tools": "node --test tools/rish.test.mts tools/phone-server.test.mts tools/video-reducer.test.mts"
   },
   "devDependencies": {

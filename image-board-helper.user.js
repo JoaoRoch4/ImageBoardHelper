@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.16.3
+// @version      1.16.4-snapshot
 // @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -68,7 +68,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.16.3'
+  const VERSION = '1.16.4-snapshot'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // The site's thumbnail list. Gelbooru 0.2 sites (rule34, safebooru, xbooru)
@@ -607,6 +607,12 @@
   // walked the whole ladder again — jpg/png/jpeg, a dozen video hosts for a GIF
   // labelled as video, an .mp4 sniff on every modal open. This remembers the
   // winning URL per kind and file hash, and "nothing loads" for a day.
+  //
+  // Two places keep it: localStorage the newest URLCACHE_MAX, read in one go
+  // before the first thumbnail, and the site's IndexedDB every entry, up to
+  // URLIDX_MAX, read for the cards as they are scanned, before they scroll
+  // in (urlPrefetch). Free memory keeps both: they are what brings the cards
+  // back in one request each.
   // ═══════════════════════════════════════════════════════════
 
   const URLCACHE_KEY = `IBH_URLCACHE_${SITE}`
@@ -622,6 +628,32 @@
   let urlCache = null
   /** @type {number} */
   let urlCacheTimer = 0
+
+  // The IndexedDB side. A database of its own: a new store in 'ibh' would
+  // need a version change, which a tab still on an older version blocks. A
+  // script that clears localStorage leaves it alone.
+  const URLIDX_MAX = 20000
+  const URL_KINDS = ['sample', 'orig', 'gif', 'video', 'poster']
+  // When the last batch that reached IndexedDB was taken: newer entries in
+  // localStorage may have missed it (a write cut short by leaving the page).
+  const URLIDX_SYNC_KEY = `IBH_URLIDX_SYNC_${SITE}`
+  /** @type {Promise<IDBDatabase | null> | null} */
+  let urlDbOpen = null
+  /** @type {Map<string, UrlCacheEntry | null>} */
+  const urlDirty = new Map()   // kind:hash -> entry to write, or null to delete, until the next flush
+  /** @type {Set<string>} */
+  const urlAsked = new Set()   // hashes already read, or being read, from IndexedDB
+  /** @type {Set<string>} */
+  const urlWanted = new Set()  // hashes for the next batched read
+  let urlGen = 0               // bumped by a clear: reads started before it drop their answer
+  /** @type {Set<string>} */
+  const urlInFlight = new Set()   // hashes asked of IndexedDB, not answered yet
+  /** @type {Promise<void> | null} */
+  let urlReading = null           // the batch in flight, or its URLIDX_WAIT_MS if that comes first
+  // A card on screen at load is scanned and wanted in the same moment: its
+  // upgrade, GIF or cover waits this long at most for IndexedDB's answer
+  // (a few ms to tens on the phone) rather than walk a ladder it may know.
+  const URLIDX_WAIT_MS = 400
 
   /** @param {UrlCacheEntry} entry */
   const expired = entry => Date.now() - entry.t >= (entry.u === null ? URLCACHE_NEG_TTL : URLCACHE_TTL)
@@ -641,8 +673,17 @@
     if (!urlCache) {
       urlCache = /** @type {UrlCache} */ (readJSON(URLCACHE_KEY, {}) || {})
       if (dropExpired()) scheduleUrlFlush()
+      syncUrlIndex(urlCache)
     }
     return urlCache
+  }
+
+  // An entry written: in memory now, in both stores at the next flush.
+  /** @param {string} key @param {UrlCacheEntry} entry */
+  function putUrl(key, entry) {
+    /** @type {UrlCache} */ (urlCache)[key] = entry
+    urlDirty.set(key, entry)
+    scheduleUrlFlush()
   }
 
   // A miss counts only when it repeats at least a minute later: a Wi-Fi
@@ -688,21 +729,18 @@
         // Second miss: confirmed once it comes a minute or more after the first.
         if (!old.n || old.n < 2) {
           if (now - (old.f || old.t) < MISS_CONFIRM_MS) return
-          /** @type {UrlCache} */ (urlCache)[key] = { u: null, t: now, f: old.f || old.t, n: 2 }
-          scheduleUrlFlush()
+          putUrl(key, { u: null, t: now, f: old.f || old.t, n: 2 })
         }
         return
       }
-      /** @type {UrlCache} */ (urlCache)[key] = { u: null, t: now, f: now, n: 1 }
-      scheduleUrlFlush()
+      putUrl(key, { u: null, t: now, f: now, n: 1 })
       return
     }
     if (previous && url !== previous) urlStats.healed++   // the cached one had stopped working
     // Same winner seen again recently: nothing new to save. Covers remount
     // often, and re-serialising the cache each time would cost while scrolling.
     if (old && old.u === url && now - old.t < URLCACHE_NEG_TTL) return
-    /** @type {UrlCache} */ (urlCache)[key] = { u: url, t: now }
-    scheduleUrlFlush()
+    putUrl(key, { u: url, t: now })
   }
 
   // The cached winner goes first; if it fails, the full ladder runs behind it.
@@ -717,20 +755,24 @@
   /** @param {string[]} keys */
   const newestFirst = keys => keys.sort((a, b) => /** @type {UrlCache} */ (urlCache)[b].t - /** @type {UrlCache} */ (urlCache)[a].t)
 
+  /** @param {string[]} keys */
+  const pickUrls = keys => /** @type {UrlCache} */ (Object.fromEntries(keys.map(k => [k, /** @type {UrlCache} */ (urlCache)[k]])))
+
   let lastLoggedHits = -1
   function flushUrlCache() {
     clearTimeout(urlCacheTimer)
     urlCacheTimer = 0
     if (!urlCache) return
     dropExpired()
-    const keys = Object.keys(urlCache)
-    if (keys.length > URLCACHE_MAX) for (const k of newestFirst(keys).slice(URLCACHE_MAX)) delete urlCache[k]
-    if (!writeJSON(URLCACHE_KEY, urlCache)) {
-      // Storage full: keep the newer half and try once more.
-      const all = newestFirst(Object.keys(urlCache))
-      for (const k of all.slice(Math.floor(all.length / 2))) delete urlCache[k]
-      if (!writeJSON(URLCACHE_KEY, urlCache)) warn('url cache: could not save it')
+    // localStorage takes the newest only. Memory keeps the rest: entries read
+    // from IndexedDB for this page are old by date, and trimming them here
+    // would drop them before their cards scroll in.
+    const newest = newestFirst(Object.keys(urlCache)).slice(0, URLCACHE_MAX)
+    if (!writeJSON(URLCACHE_KEY, pickUrls(newest))) {
+      // Storage full: the newer half, once more.
+      if (!writeJSON(URLCACHE_KEY, pickUrls(newest.slice(0, Math.floor(newest.length / 2))))) warn('url cache: could not save it')
     }
+    flushUrlIndex()
     if (urlStats.hits !== lastLoggedHits) {
       lastLoggedHits = urlStats.hits
       dbg(`url cache: ${urlStats.hits} hits, ${urlStats.misses} misses, ${urlStats.healed} healed, ${Object.keys(urlCache).length} entries`)
@@ -742,11 +784,234 @@
     const c = loadUrlCache()
     let n = 0
     for (const k of Object.keys(c)) if (!missesOnly || c[k].u === null) { delete c[k]; n++ }
+    clearUrlIndex(missesOnly)
     flushUrlCache()
     return n
   }
 
   window.addEventListener('pagehide', flushUrlCache)
+
+  // Resolves null where IndexedDB is not available (then localStorage alone,
+  // as before 1.16.4).
+  /** @returns {Promise<IDBDatabase | null>} */
+  function urlDb() {
+    if (!urlDbOpen) {
+      urlDbOpen = new Promise(resolve => {
+        try {
+          const req = indexedDB.open('ibh-urls', 1)
+          req.onupgradeneeded = () => {
+            const store = req.result.createObjectStore('urls')
+            store.createIndex('t', 't')   // the oldest go first past URLIDX_MAX
+            store.createIndex('m', 'm')   // misses only (m: 1), for ↻ and their short life
+          }
+          req.onsuccess = () => {
+            const db = req.result
+            // Made by something else, without the store: left alone.
+            if (!db.objectStoreNames.contains('urls')) { db.close(); resolve(null); return }
+            db.onversionchange = () => db.close()   // a later version may need it upgraded
+            resolve(db)
+          }
+          req.onerror = () => resolve(null)
+        } catch (e) {
+          resolve(null)
+        }
+      })
+    }
+    return urlDbOpen
+  }
+
+  // One transaction on the index store; resolves once it completes.
+  /**
+   * @param {IDBTransactionMode} mode
+   * @param {(store: IDBObjectStore) => void} work
+   * @returns {Promise<boolean>} false without IndexedDB or when it failed
+   */
+  async function urlTx(mode, work) {
+    const db = await urlDb()
+    if (!db) return false
+    try {
+      await new Promise((resolve, reject) => {
+        const tx = db.transaction('urls', mode)
+        work(tx.objectStore('urls'))
+        tx.oncomplete = resolve
+        tx.onerror = tx.onabort = () => reject(tx.error)
+      })
+      return true
+    } catch (e) {
+      dbg(`url index: ${mode} failed — ${describeError(e)}`)
+      return false
+    }
+  }
+
+  // A card's thumbnail, as the card is scanned: its entries come from
+  // IndexedDB with the others of the same scan, in one transaction.
+  /** @param {string | null | undefined} src */
+  function urlPrefetch(src) {
+    if (!CFG.urlCache) return
+    const hash = (thumbParts(src) || {}).hash
+    if (!hash || urlAsked.has(hash)) return
+    urlAsked.add(hash)
+    urlInFlight.add(hash)
+    urlWanted.add(hash)
+    if (urlWanted.size > 1) return   // joins the batch already on its way
+    /** @type {Promise<void>} */
+    const batch = new Promise(resolve => setTimeout(() => readWanted().then(resolve), 0))
+    const capped = Promise.race([batch, new Promise(resolve => setTimeout(resolve, URLIDX_WAIT_MS))])
+    urlReading = /** @type {Promise<void>} */ (capped)
+    capped.then(() => { if (urlReading === capped) urlReading = null })
+  }
+
+  // What to wait for before a ladder for this kind and hash: the read in
+  // flight, when it may bring an entry memory does not have yet; else null.
+  /** @param {string} kind @param {string | undefined} hash */
+  function urlPending(kind, hash) {
+    if (!urlReading || !hash || !urlInFlight.has(hash)) return null
+    return urlCache && urlCache[`${kind}:${hash}`] ? null : urlReading
+  }
+
+  async function readWanted() {
+    const hashes = [...urlWanted]
+    urlWanted.clear()
+    try {
+      await readUrls(hashes)
+    } finally {
+      for (const hash of hashes) urlInFlight.delete(hash)
+    }
+  }
+
+  /** @param {string[]} hashes */
+  async function readUrls(hashes) {
+    const gen = urlGen
+    /** @type {Array<[string, UrlCacheEntry & { m?: number }]>} */
+    const found = []
+    const ok = await urlTx('readonly', store => {
+      for (const hash of hashes) {
+        for (const kind of URL_KINDS) {
+          const key = `${kind}:${hash}`
+          const req = store.get(key)
+          req.onsuccess = () => { if (req.result) found.push([key, req.result]) }
+        }
+      }
+    })
+    if (!ok || gen !== urlGen) return   // a clear came in between
+    const c = loadUrlCache()
+    let n = 0
+    for (const [key, stored] of found) {
+      // Written here since the read began, or newer in memory: that one stands.
+      if (expired(stored) || urlDirty.has(key) || (c[key] && c[key].t >= stored.t)) continue
+      const entry = { ...stored }
+      delete entry.m   // the misses' index mark, IndexedDB's only
+      c[key] = entry
+      n++
+    }
+    if (n) dbg(`url index: ${n} entries from IndexedDB for ${hashes.length} thumbnails`)
+  }
+
+  // Pending writes in one transaction. The batch's time is noted once it is
+  // in: what localStorage holds past it may not have reached IndexedDB.
+  async function flushUrlIndex() {
+    if (!urlDirty.size) return
+    const batch = [...urlDirty]
+    urlDirty.clear()
+    const taken = Date.now()
+    const ok = await urlTx('readwrite', store => {
+      for (const [key, entry] of batch) {
+        if (entry) store.put(entry.u === null ? { ...entry, m: 1 } : entry, key)
+        else store.delete(key)
+      }
+    })
+    if (ok) writeJSON(URLIDX_SYNC_KEY, taken)
+  }
+
+  // Once per page: localStorage entries newer than the last batch in go to
+  // IndexedDB (all of them the first time, when nothing was ever sent), and
+  // a moment later the index sweeps itself.
+  /** @param {UrlCache} c */
+  function syncUrlIndex(c) {
+    if (!CFG.urlCache) return
+    const since = Number(readJSON(URLIDX_SYNC_KEY, 0)) || 0
+    for (const [key, entry] of Object.entries(c)) if (entry.t > since && !urlDirty.has(key)) urlDirty.set(key, entry)
+    if (urlDirty.size) scheduleUrlFlush()
+    setTimeout(sweepUrlIndex, 20000)
+  }
+
+  // Expired entries out (misses after a day, winners after 30), then the
+  // oldest past URLIDX_MAX, one step after the other in one transaction.
+  function sweepUrlIndex() {
+    if (!CFG.urlCache) return
+    const now = Date.now()
+    let dropped = 0
+    /**
+     * Deletes what the cursor walks over, while drop() says so; then next().
+     * @param {IDBRequest<IDBCursorWithValue | null>} req
+     * @param {(value: UrlCacheEntry) => boolean} drop
+     * @param {() => void} [next]
+     */
+    const walk = (req, drop, next) => {
+      req.onsuccess = () => {
+        const cur = req.result
+        if (!cur) { if (next) next(); return }
+        if (!drop(cur.value)) { if (next) next(); return }
+        cur.delete()
+        dropped++
+        cur.continue()
+      }
+    }
+    urlTx('readwrite', store => {
+      const byAge = store.index('t')
+      /** @param {IDBRequest<IDBCursorWithValue | null>} req */
+      const expiredMisses = req => {
+        req.onsuccess = () => {
+          const cur = req.result
+          if (!cur) { oldOnes(); return }
+          if (expired(cur.value)) { cur.delete(); dropped++ }
+          cur.continue()
+        }
+      }
+      // Older than a winner lives: every one of them has expired.
+      const oldOnes = () => walk(byAge.openCursor(IDBKeyRange.upperBound(now - URLCACHE_TTL)), () => true, overCap)
+      const overCap = () => {
+        const count = store.count()
+        count.onsuccess = () => {
+          let over = count.result - URLIDX_MAX
+          if (over > 0) walk(byAge.openCursor(), () => over-- > 0)
+        }
+      }
+      expiredMisses(store.index('m').openCursor())
+    }).then(ok => { if (ok && dropped) dbg(`url index: ${dropped} old entries dropped`) })
+  }
+
+  // For __ibh.urlIndex(): what the IndexedDB side holds; null without it.
+  async function urlIndexStats() {
+    let entries = 0
+    let misses = 0
+    const ok = await urlTx('readonly', store => {
+      const all = store.count()
+      all.onsuccess = () => { entries = all.result }
+      const m = store.index('m').count()
+      m.onsuccess = () => { misses = m.result }
+    })
+    return ok ? { entries, misses, max: URLIDX_MAX } : null
+  }
+
+  // The clear behind clearUrlCache: reads in flight drop their answer, and
+  // writes not sent yet go too, or they would bring the cleared back.
+  /** @param {boolean} missesOnly */
+  function clearUrlIndex(missesOnly) {
+    urlGen++
+    urlAsked.clear()   // read again what is left
+    for (const [key, entry] of urlDirty) if (!missesOnly || (entry && entry.u === null)) urlDirty.delete(key)
+    urlTx('readwrite', store => {
+      if (!missesOnly) { store.clear(); return }
+      const req = store.index('m').openCursor()
+      req.onsuccess = () => {
+        const cur = req.result
+        if (!cur) return
+        cur.delete()
+        cur.continue()
+      }
+    })
+  }
 
   // Past a mid-range hardware decoder (this phone's stops at 1920×1088, in
   // either orientation, and at 1080p60's 489,600 macroblocks a second): such
@@ -903,6 +1168,11 @@
     // Tags call some GIFs videos ("animated" alone). Once a file proved to be
     // a GIF, go straight to the GIF path.
     const parts = thumbParts(pic.src)
+    const wait = parts && urlPending('video', parts.hash)
+    if (wait) {   // its URL may still come from IndexedDB
+      wait.then(() => { if (card.isConnected && card.dataset.ibhSeen) mountCover(card) })
+      return
+    }
     const vcached = parts ? cacheGet('video', parts.hash) : undefined
     // Known not to be a video (no host has it): straight to the GIF path.
     if (parts && (knownGifs.has(parts.hash) || vcached === null)) card.dataset.ibhKind = 'gif'
@@ -1107,6 +1377,9 @@
     const pic = cardPicture(card)
     if (!pic) return
     const hash = (thumbParts(pic.src) || {}).hash
+    // Its URL may still come from IndexedDB: in the queue until then.
+    const wait = urlPending('gif', hash)
+    if (wait) { gifQueue.add(card); wait.then(nextGif); return }
     const gcached = cacheGet('gif', hash)
     const urls = cachedFirst(fileCandidates(pic.src, ['gif']), gcached)
     if (!urls.length) { dbg('gif card outside the derivable pattern'); return }
@@ -1263,6 +1536,7 @@
   function trackCard(card) {
     if (tracked.has(card)) return
     tracked.add(card)
+    urlPrefetch(card.querySelector('img')?.getAttribute('src'))
     if (CFG.videoScrub && isVideoCard(card)) {
       card.dataset.ibhVideo = '1'   // scrub target, see F
       // On site pages the thumbnail is an <img> in a link, and a sideways drag
@@ -1439,7 +1713,10 @@
     return near[0][1]
   }
 
+  let pumpAfterRead = false
   function pumpOriginals() {
+    /** @type {HTMLImageElement[]} */
+    const later = []   // their URLs may still come from IndexedDB
     while (imagesInflight < IMAGE_MAX_INFLIGHT && originalQueue.length) {
       const el = nextQueued()
       if (!el) break
@@ -1448,10 +1725,17 @@
       const plan = upgradePlan(el, pic.src)
       /** @type {CacheKey} */
       const ck = { kind: plan.kind, hash: (thumbParts(pic.src) || {}).hash }
+      if (urlPending(ck.kind, ck.hash)) { later.push(el); continue }
       ck.cached = cacheGet(ck.kind, ck.hash)
       if (ck.cached === null) { el.dataset.ibhOrig = 'failed'; continue }   // known: nothing loads
       imagesInflight++
       probeOriginal(el, pic.src, plan.stages, giveImageSlot, ck)
+    }
+    if (!later.length) return
+    originalQueue.push(...later)
+    if (!pumpAfterRead && urlReading) {
+      pumpAfterRead = true
+      urlReading.then(() => { pumpAfterRead = false; pumpOriginals() })
     }
   }
 
@@ -1538,6 +1822,7 @@
     for (const el of found) {
       if (watchedThumbs.has(el)) continue
       watchedThumbs.add(el)
+      urlPrefetch(el.getAttribute('src'))
       originalViewport ? originalViewport.observe(el) : upgradeToOriginal(el)
     }
   }
@@ -7382,11 +7667,15 @@
   }
 
   /**
-   * Give back the memory this script holds on the page and drop its caches.
-   * The browser's HTTP cache is out of reach for any page script; settings
-   * (IBH_CFG) and the site login are left alone. `reason`: 'button' (this
-   * tab and every other tab of the site), 'tab' (asked by another tab),
-   * 'redo' (this tab only, before Redo thumbnails).
+   * Give back the memory this script holds on the page: decoded GIFs,
+   * covers, upgraded images, keyframe reels, the site's Cache Storage. What
+   * is on screen comes back at once from the browser's HTTP cache, which no
+   * page script can reach; the URL cache and the image host are kept, since
+   * they are what brings it back without walking the ladders again (they
+   * hold no memory to speak of). Settings (IBH_CFG) and the site login are
+   * left alone. `reason`: 'button' (this tab and every other tab of the
+   * site), 'tab' (asked by another tab), 'redo' (this tab only, before Redo
+   * thumbnails, which restarts the cards itself).
    */
   /**
    * @param {'button' | 'tab' | 'redo'} [reason]
@@ -7427,11 +7716,18 @@
     // page stay, so a hidden tab gets its covers back on return).
     parked.splice(0, parked.length, ...parked.filter(c => c.isConnected))
     previewPaused.splice(0, previewPaused.length, ...previewPaused.filter(c => c.isConnected))
-    knownGifs.clear()
     if (!(modal && modal.open)) suspended.length = 0
-    try { localStorage.removeItem(HOST_KEY) } catch (e) { /* ignore */ }
-    const urls = clearUrlCache(false)
-    STATE.imageBase = null
+    // What is on screen comes back now, freshly decoded, nearest the middle
+    // first; the rest when it scrolls in. Not before ↻, which restarts every
+    // card itself, nor under the modal or in a hidden tab, which bring their
+    // cards back when they end.
+    if (reason !== 'redo' && !document.hidden && !(modal && modal.open)) {
+      markedCards('[data-ibh-seen]').forEach(card => {
+        if (isVideoCard(card) && card.dataset.ibhKind !== 'gif') mountCover(card)
+        else gifQueue.add(card)
+      })
+      nextGif()
+    }
     try {
       if (window.caches) {
         const keys = await caches.keys()
@@ -7441,9 +7737,8 @@
     } catch (e) {
       warn(`could not clear Cache Storage — ${describeError(e)}`)
     }
-    imageBase()
-    info(`freed ${n.covers} covers, ${n.gifs} GIFs, ${n.images} upgraded images${reason === 'tab' ? ' (asked by another tab)' : reason === 'redo' ? ' (before redoing the thumbnails)' : ''}; host cache, ` +
-      `${urls} cached URLs and ${n.caches} Cache Storage entries cleared (browser HTTP cache untouched)`)
+    info(`freed ${n.covers} covers, ${n.gifs} GIFs, ${n.images} upgraded images${reason === 'tab' ? ' (asked by another tab)' : reason === 'redo' ? ' (before redoing the thumbnails)' : ''}; ` +
+      `${n.caches} Cache Storage entries cleared; URL cache and image host kept`)
     touch()
     return n
   }
@@ -8107,9 +8402,9 @@
   // Material Design's "refresh" icon, as path data.
   const REDO_ICON = 'M17.65 6.35C16.2 4.9 14.21 4 12 4c-4.42 0-7.99 3.58-7.99 8s3.57 8 7.99 8c3.73 0 6.84-2.55 7.73-6h-2.08c-.82 2.33-3.04 4-5.65 4-3.31 0-6-2.69-6-6s2.69-6 6-6c1.66 0 3.14.69 4.22 1.78L13 11h7V4l-2.35 2.35z'
 
-  // ↻: Free memory first (everything let go, the URL cache too), then every
-  // thumbnail starts over, failures included. Only this tab: other tabs keep
-  // what they show.
+  // ↻: Free memory first, then every thumbnail starts over, failures
+  // included (the URL cache forgets its misses and keeps its winners). Only
+  // this tab: other tabs keep what they show.
   function redoButton() {
     const btn = iconButton('trash', t('navRedo'), REDO_ICON)   // the trash can's look
     btn.addEventListener('click', () => {
@@ -8551,6 +8846,7 @@
     '  redo()                 starts every thumbnail over (Redo thumbnails)',
     '  clearHostCache()       resolves the image host again (Clear host)',
     '  urlCache(), clearUrlCache()   the cache of which address worked',
+    '  await urlIndex()       its IndexedDB side: entries, misses, the cap',
     '  stored(), moveAgain()  the stored lists; merges the old storage bridge in again',
     '  gifs()                 inline GIFs: download slots, turn queue, card states, what holds them',
   ].join('\n')
@@ -8573,6 +8869,7 @@
     clearHostCache,
     free: freeMemory,
     urlCache: () => ({ ...urlStats, entries: Object.keys(loadUrlCache()).length }),
+    urlIndex: urlIndexStats,
     clearUrlCache,
     redo: redoThumbs,
     // Where the inline GIFs stand, for one stuck on its still: the three
