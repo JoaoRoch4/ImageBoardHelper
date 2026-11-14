@@ -1,5 +1,20 @@
 # Changelog
 
+## 1.16.0
+
+- The hardware decoder's limit is 1080p60 by its rate too, not only
+  1920×1088 by size: 489,600 macroblocks a second, so a 1080p at 120 fps is
+  past it and a 720p at 120 fps is not. The frame rate comes from the
+  keyframe index the slideshow already reads (exact), or, with `holdVideo`,
+  from frames counted over the first second played
+- A video past that decoder is never played by a hold: the keyframe
+  slideshow is forced (seeking only when there is no index, as with WebM),
+  including short clips with few keyframes, which played at 2× before
+- `thumbBadges` (on): small, on video thumbnails, the duration in the
+  bottom right corner and ⚠️ in the top right one when the video is past
+  the decoder (found by its cover, its keyframe index or a hold); the mark
+  also brings the ⚡ 1080p button to that post's ☰ menu
+
 ## 1.15.0
 
 - `holdVideo` (off), with the hold gesture: holding a video thumbnail plays

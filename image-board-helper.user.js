@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.15.0
+// @version      1.16.0
 // @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -68,7 +68,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.15.0'
+  const VERSION = '1.16.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // The site's thumbnail list. Gelbooru 0.2 sites (rule34, safebooru, xbooru)
@@ -127,6 +127,7 @@
     debug:          false,  // mirror the log into the browser console
     panel:          true,   // floating button and status panel
     videoCovers:    true,   // overlay the real video frame on the card
+    thumbBadges:    true,   // video thumbnails: the duration (bottom right) and ⚠️ past the hardware decoder (top right) (needs reload)
     gifInline:      true,   // animate GIF cards while they are on screen
     gifMaxLive:     3,      // at most this many of them animating at once
     videoScrub:     true,   // scene preview on video thumbnails (needs reload)
@@ -176,7 +177,7 @@
 
   // Options that only take effect when the page loads.
   /** @type {Set<string>} */
-  const NEEDS_RELOAD = new Set(['originalThumbs', 'memorySaver', 'feedNav', 'videoModal', 'videoScrub', 'blockAds'])
+  const NEEDS_RELOAD = new Set(['originalThumbs', 'memorySaver', 'feedNav', 'videoModal', 'videoScrub', 'blockAds', 'thumbBadges'])
 
   // Whether this page found the settings at all: a script that clears the
   // site's localStorage (one did, on its reset) takes them along, and the
@@ -244,11 +245,11 @@
       notResolved: 'not resolved', cached: 'cached',
       /** @param {number} ok @param {number} bad @param {number} all */
       coversFmt: (ok, bad, all) => `${ok} ok · ${bad} failed · ${all} videos`,
-      tCovers: 'Video covers', tGif: 'Animated GIFs in the grid', tGifMax: 'GIFs animating at once',
+      tCovers: 'Video covers', tBadges: 'Duration and ⚠️ on video thumbnails', tGif: 'Animated GIFs in the grid', tGifMax: 'GIFs animating at once',
       tScrub: 'Scene preview on video thumbnails',
       tScrubMode: 'scene preview gesture', modeDrag: 'Drag sideways', modeHold: 'Hold (slideshow)',
       tSlideStep: 'slideshow jump', tSlideDwell: 'time per scene', scenes: 'scenes', tSlideReel: 'Keyframes only (faster, MP4)', tWasmDecode: 'Decode keyframes in WebAssembly',
-      tHoldVideo: 'Hold plays the video (hardware)',
+      tHoldVideo: 'Hold plays the video (hardware)', heavyMark: 'Past this phone’s hardware decoder (1080p60)',
       tMemory: 'Release off-screen memory',
       tUrlCache: 'Remember working file URLs',
       tNav: 'Top / previous / next buttons',
@@ -325,11 +326,11 @@
       notResolved: 'não resolvido', cached: 'cache',
       /** @param {number} ok @param {number} bad @param {number} all */
       coversFmt: (ok, bad, all) => `${ok} ok · ${bad} falha · ${all} vídeos`,
-      tCovers: 'Capa de vídeo', tGif: 'GIF animado na grade', tGifMax: 'GIFs animando ao mesmo tempo',
+      tCovers: 'Capa de vídeo', tBadges: 'Duração e ⚠️ nas miniaturas de vídeo', tGif: 'GIF animado na grade', tGifMax: 'GIFs animando ao mesmo tempo',
       tScrub: 'Prévia de cenas nas miniaturas de vídeo',
       tScrubMode: 'gesto da prévia de cenas', modeDrag: 'Arrastar de lado', modeHold: 'Segurar (slideshow)',
       tSlideStep: 'pulo do slideshow', tSlideDwell: 'tempo por cena', scenes: 'cenas', tSlideReel: 'Só keyframes (mais rápido, MP4)', tWasmDecode: 'Decodificar keyframes em WebAssembly',
-      tHoldVideo: 'Segurar toca o vídeo (hardware)',
+      tHoldVideo: 'Segurar toca o vídeo (hardware)', heavyMark: 'Acima do decodificador de hardware do celular (1080p60)',
       tMemory: 'Liberar memória fora da tela',
       tUrlCache: 'Lembrar endereços que funcionaram',
       tNav: 'Botões topo / anterior / próximo',
@@ -748,9 +749,55 @@
   window.addEventListener('pagehide', flushUrlCache)
 
   // Past a mid-range hardware decoder (this phone's stops at 1920×1088, in
-  // either orientation): such a video decodes on the CPU, slowly.
-  /** @param {number} w @param {number} h */
-  const pastDecoder = (w, h) => Math.max(w, h) > 1920 || Math.min(w, h) > 1088
+  // either orientation, and at 1080p60's 489,600 macroblocks a second): such
+  // a video decodes on the CPU, slowly. Without fps only the size counts. A
+  // rate measured while playing wobbles, so it gets 4% of slack: 1080p60
+  // measured as 60.6 fps fits, 1080p120 doesn't.
+  const MB_PER_S = 489600
+  /** @param {number} w @param {number} h @param {number} [fps] */
+  const pastDecoder = (w, h, fps) => Math.max(w, h) > 1920 || Math.min(w, h) > 1088 ||
+    (!!fps && Math.ceil(w / 16) * Math.ceil(h / 16) * fps > MB_PER_S * 1.04)
+
+  // ⚠️ in the corner of a card whose video is past the hardware decoder,
+  // found by its cover (size), its reel's index (size and fps) or a hold that
+  // played it (fps measured). Kept on the card: the mark also skips the cover.
+  /**
+   * @param {HTMLElement} card
+   * @param {string} what   "3840x2160" or "1920x1080 at 120 fps", for the log and the title
+   */
+  function markPastDecoder(card, what) {
+    if (card.dataset.ibhBigVideo === what) return
+    card.dataset.ibhBigVideo = what
+    dbg(`card: post ${postId(card)} marked past the hardware decoder (${what})`)
+    const badge = cardBadge(card, 'ibh-heavy', 'top:3px;right:3px;font-size:11px;line-height:1;filter:drop-shadow(0 0 1px #000)')
+    if (!badge) return
+    badge.textContent = '⚠️'
+    badge.title = `${t('heavyMark')}: ${what}`
+  }
+
+  // A video card's duration, small in its bottom right corner (thumbBadges).
+  /** @param {HTMLElement} card @param {number} secs */
+  function markDuration(card, secs) {
+    if (!Number.isFinite(secs) || secs <= 0) return
+    const badge = cardBadge(card, 'ibh-dur', 'bottom:3px;right:3px;padding:0 3px;border-radius:3px;' +
+      'font:10px/1.4 ui-monospace,monospace;color:#fff;background:rgba(0,0,0,.65)')
+    if (badge) badge.textContent = mmss(secs)
+  }
+
+  // The card's badge of that class, made once (the observer comes back to the
+  // same card); null with thumbBadges off. Painted by us: the theme skips it,
+  // and z-index keeps it over the cover video and the slideshow's canvas.
+  /** @param {HTMLElement} card @param {string} cls @param {string} css */
+  function cardBadge(card, cls, css) {
+    if (!CFG.thumbBadges) return null
+    const had = /** @type {HTMLElement | null} */ (card.querySelector(`.${cls}`))
+    if (had) return had
+    if (getComputedStyle(card).position === 'static') card.style.position = 'relative'
+    const badge = el('span', { class: cls, 'data-ibh-ui': '' })
+    badge.style.cssText = `position:absolute;z-index:4;pointer-events:none;${css}`
+    card.appendChild(badge)
+    return badge
+  }
 
   // ═══════════════════════════════════════════════════════════
   // A. Real video covers
@@ -903,12 +950,13 @@
     }
     v.addEventListener('loadedmetadata', () => {
       if (parts) cacheSet('video', parts.hash, urls[i - 1], vcached)
+      markDuration(card, v.duration)
       // Past a mid-range hardware decoder (this phone's stops at 1920×1088):
       // decoding a frame falls to the CPU, for a still the poster already
       // gives. Drop the cover and leave the picture (the feed upgrades it to
       // the full-size poster frame).
       if (pastDecoder(v.videoWidth, v.videoHeight)) {
-        card.dataset.ibhBigVideo = `${v.videoWidth}x${v.videoHeight}`
+        markPastDecoder(card, `${v.videoWidth}x${v.videoHeight}`)
         dbg(`cover: ${v.videoWidth}x${v.videoHeight} is past the hardware decoder, poster kept instead`)
         v.removeAttribute('src')
         v.load()
@@ -1623,7 +1671,7 @@
    * @property {{ rate: number, loop: boolean }} played    the video's own, while a short clip (or holdVideo) plays
    * @property {(() => void) | null} [onPlayTime]
    */
-  /** @typedef {{ t0: number, method: string | null, first: number | null, last: number, shown: number, gaps: number[], detail?: string, wasm?: string, reelError?: string, rate?: number }} SlideStats */
+  /** @typedef {{ t0: number, method: string | null, first: number | null, last: number, shown: number, gaps: number[], detail?: string, wasm?: string, reelError?: string, rate?: number, fps?: number }} SlideStats */
   /** @typedef {{ v: HTMLVideoElement, helper: boolean, f: number, ready: boolean, slow: boolean, since: number, onSeeked?: () => void }} SlideView */
 
   /** @type {Scrub | null} */
@@ -1666,7 +1714,7 @@
     scrub.stats = { t0: performance.now(), method: null, first: null, last: 0, shown: 0, gaps: [] }
     // holdVideo: the video itself, unless its cover already knows it is past
     // the hardware decoder (then the slideshow below, as without the option).
-    if (CFG.holdVideo && !coverPastDecoder(scrub.card)) {
+    if (CFG.holdVideo && !scrub.card.dataset.ibhBigVideo) {
       if (!startScrub()) { scrub = null; return }
       holdVideoShow(scrub)
       return
@@ -1677,29 +1725,47 @@
     else seekShow(scrub)
   }
 
-  // Whether the card's cover has loaded a video past the hardware decoder.
-  /** @param {HTMLElement} card */
-  function coverPastDecoder(card) {
-    const cover = /** @type {HTMLVideoElement | null} */ (card.querySelector('video[data-ibh]'))
-    return !!cover && cover.readyState >= 1 && pastDecoder(cover.videoWidth, cover.videoHeight)
-  }
 
   // holdVideo: the video plays from its start at 1×, muted and looping, in a
   // <video>, which Firefox decodes on the phone's hardware decoder (the GPU
   // path) instead of the slideshow's keyframes on the CPU. One past that
-  // decoder would play on the CPU and stutter: it gets the scenes instead.
+  // decoder would play on the CPU and stutter: it gets the scenes instead,
+  // by its size at once, or by its frame rate a second into playing (a
+  // <video> doesn't tell its fps: frames counted over the time played).
   /** @param {Scrub} s */
   function holdVideoShow(s) {
     const v = s.video
+    // Past the decoder the slideshow is forced: from keyframes when the file
+    // has an index to read (MP4), else by seeking the file.
+    /** @param {string} what */
+    const tooHeavy = what => {
+      markPastDecoder(s.card, what)
+      info(`hold: ${what} is past the hardware decoder, the slideshow instead of the video`)
+      if (!(CFG.slideReel && startReelShow(s))) seekShow(s)
+    }
     const decide = () => {
       if (scrub !== s) return
-      if (pastDecoder(v.videoWidth, v.videoHeight)) {
-        info(`hold: ${v.videoWidth}x${v.videoHeight} is past the hardware decoder, scenes instead of the video`)
-        seekShow(s)
-        return
-      }
+      markDuration(s.card, v.duration)
+      if (pastDecoder(v.videoWidth, v.videoHeight)) { tooHeavy(`${v.videoWidth}x${v.videoHeight}`); return }
       v.currentTime = 0
       playShow(s, 1)
+      const frames = () => (v.getVideoPlaybackQuality ? v.getVideoPlaybackQuality().totalVideoFrames : 0)
+      /** @type {{ f: number, t: number } | null} */
+      let start = null
+      const measure = () => {
+        if (scrub !== s || s.stats.method !== 'play') { v.removeEventListener('timeupdate', measure); return }
+        if (!start) { start = { f: frames(), t: v.currentTime }; return }
+        const dt = v.currentTime - start.t
+        if (dt < 0) { start = null; return }   // looped back: count again
+        if (dt < 1) return
+        v.removeEventListener('timeupdate', measure)
+        const fps = (frames() - start.f) / dt
+        s.stats.fps = fps
+        if (!pastDecoder(v.videoWidth, v.videoHeight, fps)) return
+        endPlayShow(s)
+        tooHeavy(`${v.videoWidth}x${v.videoHeight} at ${Math.round(fps)} fps`)
+      }
+      v.addEventListener('timeupdate', measure)
     }
     if (v.readyState >= 1) decide()
     else v.addEventListener('loadedmetadata', decide, { once: true })
@@ -1827,7 +1893,7 @@
     const avg = st.gaps.length ? Math.round(st.gaps.reduce((a, b) => a + b, 0) / st.gaps.length) : 0
     const late = st.gaps.filter(g => g > dwell + 300).length
     const shown = st.first === null ? `no scene in ${Math.round(performance.now() - st.t0)} ms`
-      : st.method === 'play' ? `playing after ${Math.round(st.first)} ms at ${st.rate ?? PLAY_RATE}×`
+      : st.method === 'play' ? `playing after ${Math.round(st.first)} ms at ${st.rate ?? PLAY_RATE}×${st.fps ? `, ${Math.round(st.fps)} fps` : ''}`
         : `${st.shown} scenes, first after ${Math.round(st.first)} ms${avg ? `, then every ${avg} ms` : ''} (dwell ${dwell}), ${late} late`
     const v = s.video
     const what = (st.detail || (v ? `${v.videoWidth}x${v.videoHeight}, ${mmss(v.duration)}, ${s.shared ? 'own video' : 'its cover'}` : '')) +
@@ -1910,6 +1976,7 @@
    * @property {number} width
    * @property {number} height
    * @property {number} duration         s
+   * @property {number} fps              frames a second, from the index (0 unknown)
    * @property {boolean} [kept]          kept from an earlier hold
    */
   /** @typedef {Reel & { avcC: Uint8Array }} H264Reel  a reel the WebAssembly decoder can open */
@@ -2031,6 +2098,8 @@
         duration: v1 ? u64(mdhd.body + 24) : u32(mdhd.body + 16),
         width: u32(tkhd.body + (tv1 ? 88 : 76)) >>> 16,
         height: u32(tkhd.body + (tv1 ? 92 : 80)) >>> 16,
+        // Frames over seconds, from the sample table: exact, no decoding.
+        samples: runs.reduce((sum, [count]) => sum + count, 0),
         stsd: b.slice(stsd.start, stsd.end),
         /**
          * The sample showing at time t (timescale units).
@@ -2203,7 +2272,7 @@
     // went to seeking, half the scenes late). Past the hardware decoder any
     // keyframes beat decoding up to every scene on the CPU.
     const need = Math.min(steps.length, 3)
-    if (keys.length < need && !pastDecoder(track.width, track.height)) {
+    if (keys.length < need && !pastDecoder(track.width, track.height, track.duration ? track.samples * track.timescale / track.duration : 0)) {
       throw Object.assign(new Error(`only ${keys.length} keyframes for ${steps.length} scenes`), { sparse: true, duration: track.duration / track.timescale })
     }
     let places = keys.map(k => track.place(k))
@@ -2229,6 +2298,7 @@
       width: track.width,
       height: track.height,
       duration: secs,
+      fps: secs ? track.samples / secs : 0,
     }
   }
 
@@ -2303,6 +2373,8 @@
   /** @param {Scrub} s @param {Reel} reel */
   function showReel(s, reel) {
     /** @type {ReelShow} */ (s.reel).info = reel   // set by startReelShow, cleared only once this hold is over
+    markDuration(s.card, reel.duration)
+    if (pastDecoder(reel.width, reel.height, reel.fps)) markPastDecoder(s.card, `${reel.width}x${reel.height} at ${Math.round(reel.fps)} fps`)
     s.stats.detail = `${reel.width}x${reel.height}, ${mmss(reel.duration)}, ${reel.scenes.length} keyframes, ` +
       `${Math.round(reel.bytes / 1024)} KB, ${reel.kept ? 'kept from before' : `read in ${reel.ms} ms`}`
     if (CFG.wasmDecode && reel.avcC && !h264Broken) showReelWasm(s, /** @type {H264Reel} */ (reel)).catch(e => { if (scrub === s) wasmFailed(s, reel, e) })
@@ -2566,7 +2638,8 @@
     const v = s.video
     const decide = () => {
       if (scrub !== s) return
-      if (v.duration <= PLAY_MAX_S && !pastDecoder(v.videoWidth, v.videoHeight)) playShow(s)
+      markDuration(s.card, v.duration)
+      if (v.duration <= PLAY_MAX_S && !pastDecoder(v.videoWidth, v.videoHeight) && !s.card.dataset.ibhBigVideo) playShow(s)
       else seekShow(s)
     }
     if (v.readyState >= 1) decide()
@@ -6446,7 +6519,7 @@
         modal.playerBtn.hidden = false
         modal.appDlBtn.hidden = false
         // The phone would decode it on the CPU, slowly: the app converts it.
-        modal.appReduceBtn.hidden = !pastDecoder(v.videoWidth, v.videoHeight)
+        modal.appReduceBtn.hidden = !pastDecoder(v.videoWidth, v.videoHeight) && !(modal.link && modal.link.dataset.ibhBigVideo)
         if (!modal.appReduceBtn.hidden) flash(t('bigVideo'))
       }
       if (modal.seq === seq && !modal.sheet.hidden && modal.sheetTab === 'info') renderInfo(modal.link, seq)
@@ -7602,6 +7675,7 @@
     body.appendChild(choiceSelect('seekStep', t('tSeekStep'), SEEK_JUMPS.map(s => [s, `${s} s`])))
     body.appendChild(choiceSelect('modalOriginal', t('tModalOrig'), [['zoom', t('origZoom')], ['always', t('origAlways')]]))
     body.appendChild(toggle('videoCovers', t('tCovers')))
+    body.appendChild(toggle('thumbBadges', t('tBadges'), t('noteReload')))
     body.appendChild(toggle('gifInline', t('tGif')))
     body.appendChild(choiceSelect('gifMaxLive', t('tGifMax'), [1, 2, 3, 4, 6, 10].map(n => [n, String(n)]), applyGifLimit))
     body.appendChild(toggle('videoScrub', t('tScrub'), t('noteReload')))
