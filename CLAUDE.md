@@ -53,6 +53,18 @@ Fatos verificados no rule34 (via `ffrdp` e XHR síncrono na aba logada). Se algu
 
 ---
 
+## Integração com o QtMediaPlayer
+
+Desde a 1.14.0 (2026-11-13, branch `qtmediaplayer-app` até o merge) o player externo é o app do próprio usuário, `com.example.qtmediaplayer` (`JoaoRoch4/qtmobilemedia`, `~/projects/QtMediaPlayer`; a seção "Image Board Helper" do `CLAUDE.md` de lá é o outro lado deste contrato). Substituiu o VLC (`vlcButton` → `playerButton`) e o conversor pelo servidor do celular (`videoReducer`, o token e o status saíram do script; as rotas do `phone-server.mts` ficaram).
+
+- **Botões no ☰ de um post de vídeo:** ▶ Media Player (toca no app), ⬇ App (o app baixa, pelo yt-dlp dele, para a pasta Download) e ⚡ 1080p (o app baixa e converte com o motor do VideoReducer embutido nele; só aparece acima de 1920×1088, `pastDecoder`). O baixar do próprio navegador virou 🦊⬇, para não confundir com o ⬇ App.
+- **O contrato** (`sendToApp(mode)`): um link `intent://` com `ACTION_VIEW`, `type=video/*`, `package=com.example.qtmediaplayer` e o extra `S.com.example.qtmediaplayer.extra.MODE` = `play`, `download` ou `reduce`, mais `S.android.intent.extra.TITLE` e `l.position` (ms; o app ainda não lê). Cai no filtro BROWSABLE de links de stream do app: o Firefox só abre intents BROWSABLE, e por isso a entrada "Download video" do compartilhar (`ACTION_SEND`, não BROWSABLE) não serve daqui. App sem o `MODE` toca o link. Mudou o nome ou os valores do extra, muda nos dois repositórios juntos.
+- **Por que baixar antes de converter:** o motor de conversão do app lê só arquivo local (`src/reduce/input.hpp`), não link.
+- **Referer:** intent não leva o site como Referer, que o servidor rápido do rule34 (`api-cdn`) exige, então o app recebe o servidor de origem (`portableUrl`, mais lento).
+- **Planejado** (combinado em 2026-11-13, não começado): um servidor HTTP dentro do app em `127.0.0.1`, com token, que o script chama pelo `GM_xmlhttpRequest` (baixar com o Referer do site, converter, acompanhar o progresso, sem sair do navegador), com a API tipada em TypeScript deste lado (`types/`, checada pelo `tsc`); o intent fica de reserva quando o app não está aberto.
+
+---
+
 ## Mapa do arquivo
 
 `image-board-helper.user.js`, seções na ordem:
@@ -67,7 +79,7 @@ Fatos verificados no rule34 (via `ffrdp` e XHR síncrono na aba logada). Se algu
 8. **B.** Miniatura nítida e feed — `upgradeToOriginal`, `upgradePlan`, `sampleCandidates`, `probeOriginal`, `raceImage`, `scanThumbs`
 9. **C.** Prévia de cenas — arraste na miniatura (ou segurar, `scrubMode`) e prévia na barra do modal (com `seekReel`, o keyframe mais próximo de uma fita de 40, decodificado em WebAssembly por `drawKeyframe`, até o `<video>` chegar ao quadro exato): `seekFraction`, `previewLoad`, `previewStop`, `borrowDecoder`, `onScrubDown/Move/Up`. O segurar usa a fita de keyframes (`slideReel`: `buildReel` lê o `moov` e os keyframes com Range pelo `GM_xmlhttpRequest`, `mp4VideoTrack`; `showReelWasm` decodifica cada keyframe no WebAssembly — `h264Decoder`, `decodeKeyframe`, `avcConfig` — e desenha num canvas; sem ele, `showReelVideo` toca o MP4 montado por `reelBlob`) e, se ela falha, `reelFailed` cai no slideshow por seek (`seekShow`, dois vídeos em revezamento, `tickSlide`); `logSlideStats` registra cada hold
 10. **D.** Gerenciamento de memória — `farViewport`, `releaseFar`, `pinHeight`, `onNodesRemoved`, `releaseAll`, varredura a cada 15 s
-11. **E.** Modal de post (vídeo, GIF, imagem, swipe) — `openModal`, `closeModal`, `stepModal`, `showVideo`, `showImage`, `sniffVideo`, `installModalSwipe`, `installImageZoom`, `suspendPage`, `resumePage`; no mesmo bloco: estado de ♥/▲ (`postInfo`, `favoritePost`, `upvotePost`), armazenamento (`storeGet/storeSet`, `storeReady`/`moveIn`, IndexedDB `idbGet/idbSet`, `restoreCfg`), Baixar (`modalDownload`, `saveFile`), Ver depois (`showLater`), busca nos favoritos (`searchFavs`, `updateFavIndex`), favoritar em massa (`onBulkClick`), segurar para o raw (`holdRaw`), buscas salvas (`savedControls`), barra de busca do site (`ensureSiteSearch`, `homeSearchForm`, `orTags`), autopager (`favPagerNext`, `pageTarget`), menu de tags e abas Info/Comentários (`renderTags`, `readComments`, `voteComment`), próximo post pronto (`preloadAhead`)
+11. **E.** Modal de post (vídeo, GIF, imagem, swipe) — `openModal`, `closeModal`, `stepModal`, `showVideo`, `showImage`, `sniffVideo`, `installModalSwipe`, `installImageZoom`, `suspendPage`, `resumePage`; no mesmo bloco: estado de ♥/▲ (`postInfo`, `favoritePost`, `upvotePost`), armazenamento (`storeGet/storeSet`, `storeReady`/`moveIn`, IndexedDB `idbGet/idbSet`, `restoreCfg`), Baixar (`modalDownload`, `saveFile`), o app QtMediaPlayer (`sendToApp`, `APP`), Ver depois (`showLater`), busca nos favoritos (`searchFavs`, `updateFavIndex`), favoritar em massa (`onBulkClick`), segurar para o raw (`holdRaw`), buscas salvas (`savedControls`), barra de busca do site (`ensureSiteSearch`, `homeSearchForm`, `orTags`), autopager (`favPagerNext`, `pageTarget`), menu de tags e abas Info/Comentários (`renderTags`, `readComments`, `voteComment`), próximo post pronto (`preloadAhead`)
 12. Diagnóstico — `probeVideoUrls`, `logSnapshot`, `freeMemory`, `redoThumbs`
 13. Painel — Shadow DOM, `renderStatus`, `copyLog`; botões flutuantes (`buildFeedNav`, `jumpPost`)
 14. Arranque — `feedCss`/`applyFeed`, `THEME_CSS`/`applySiteTheme`, o `MutationObserver` e `__ibh` (na `unsafeWindow`)
@@ -186,6 +198,9 @@ O servidor MCP `phone` (`tools/phone-mcp.mts`, sem dependências em tempo de exe
 ---
 
 ## Tarefas abertas
+
+- **Conferir a 1.14.0 com o app novo no aparelho:** o app com o `MODE` (qtmobilemedia `55c4ec0`) não foi compilado (o Actions deu `startup_failure` em todo run em 2026-11-13, provavelmente minutos ou limite de gasto da conta) nem instalado. Com ele instalado: ▶ toca, ⬇ App baixa e devolve a tela ao Firefox, ⚡ 1080p baixa e aparece em Conversões. Até lá, num app antigo, ⬇ e ⚡ só tocam o vídeo. Depois, fazer o merge da branch `qtmediaplayer-app`.
+- **Servidor HTTP no app** (ver "Integração com o QtMediaPlayer").
 
 - **Conferir a 1.9.0 no aparelho** (instalada no Nightly em 2026-10-07 pelo `server_call open`, sem confirmar a versão: a depuração sem fio estava desligada). Num post de vídeo: a cápsula de vidro e o ▶ grande (print pelo `server_call screenshot`), a linha `seek preview: wasm reel of 40 scenes in … ms` no log ao arrastar a barra, o keyframe na hora e o quadro exato com o dedo parado; e medir os quadros perdidos (`getVideoPlaybackQuality`) com e sem o desfoque (`try_css shadow=true` com `.vctl, .vbig { backdrop-filter: none !important }`): se o desfoque pesar no Adreno 610, tirar do CSS.
 - **Resolver o CAPTCHA pelo celular (`tools/test.mts`)**, deixado de lado em 2026-10-07 a pedido do usuário. Funciona: o desafio é detectado, a tela virtual sobe e o `am start` abre o noVNC no Nightly ou no Beta (`shown in …`). Não confirmado: se o usuário vê a tela e consegue tocar no CAPTCHA por ela, e se o passe fica no perfil. Numa tentativa a página do Firefox visível fechou logo depois de abrir no celular (causa desconhecida; daí o modo quiosque e o `current()` que reabre a página); noutra o `goto` esperando `domcontentloaded` estourou 60 s na página de desafio, que fica carregando de propósito (agora espera só o `commit` e abre a tela antes). Próximo passo: rodar com o usuário olhando o Firefox, tirar um `screenshot` do celular com o noVNC aberto e acompanhar até passar.
