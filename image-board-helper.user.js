@@ -86,6 +86,17 @@
   // appended (JSON: [{label: "tag (count)", value, type}], or gelbooru's
   // [{value, post_count, category}]).
   const TEAL = { accent: '#5eead4', line: '#39ff14', dark: '#1d3b38', mid: '#2f7d72' }
+  /**
+   * @typedef {object} SiteProfile
+   * @property {string} list
+   * @property {string} card
+   * @property {string} item
+   * @property {string[]} scriptHosts
+   * @property {string[]} adSlots
+   * @property {typeof TEAL} colors
+   * @property {string} suggest
+   */
+  /** @type {Record<string, Partial<SiteProfile>>} */
   const SITE_PROFILES = {
     'gelbooru.com': {
       list: '.thumbnail-container', card: 'article.thumbnail-preview', item: 'article', scriptHosts: ['https://ajax.googleapis.com'],
@@ -96,6 +107,7 @@
     },
     'safebooru.org': { suggest: '/autocomplete.php?q=' },
   }
+  /** @type {SiteProfile} */
   const PROFILE = { list: '.image-list', card: 'span.thumb', item: 'span', scriptHosts: [], adSlots: [], colors: TEAL,
     suggest: '/public/autocomplete.php?q=', ...SITE_PROFILES[SITE] }   // suggest: rule34's and xbooru's
   const { accent: ACCENT, line: LINE, dark: ACCENT_DARK, mid: ACCENT_MID } = PROFILE.colors
@@ -157,15 +169,27 @@
     feedLayout:     'masonry', // 'masonry': whole images in columns; 'grid': even square tiles
   }
 
+  // The settings as stored: DEFAULTS' own shape, with the two keys whose
+  // default does not show every value they take.
+  /** @typedef {Omit<typeof DEFAULTS, 'lang' | 'feedColumns'> & { lang: Lang | null, feedColumns: number | 'auto' }} Config */
+
   // Options that only take effect when the page loads.
+  /** @type {Set<string>} */
   const NEEDS_RELOAD = new Set(['originalThumbs', 'memorySaver', 'feedNav', 'videoModal', 'videoScrub', 'blockAds'])
 
   // Whether this page found the settings at all: a script that clears the
   // site's localStorage (one did, on its reset) takes them along, and the
   // copy in Violentmonkey's storage brings them back (restoreCfg).
   const CFG_FOUND = (() => { try { return localStorage.getItem(CFG_KEY) !== null } catch (e) { return true } })()
+  /** @type {Config} */
   const CFG = Object.assign({}, DEFAULTS, readJSON(CFG_KEY, {}))
 
+  /**
+   * Whatever was stored under the key, unchecked (any): the caller knows its shape.
+   * @param {string} key
+   * @param {unknown} fallback
+   * @returns {any}
+   */
   function readJSON(key, fallback) {
     try {
       const raw = localStorage.getItem(key)
@@ -175,6 +199,10 @@
     }
   }
 
+  /**
+   * @param {string} key
+   * @param {unknown} value
+   */
   function writeJSON(key, value) {
     try {
       localStorage.setItem(key, JSON.stringify(value))
@@ -184,6 +212,11 @@
     }
   }
 
+  /**
+   * @template {keyof Config} K
+   * @param {K} key
+   * @param {Config[K]} value
+   */
   function setCfg(key, value) {
     CFG[key] = value
     writeJSON(CFG_KEY, CFG)
@@ -208,6 +241,7 @@
       
       failed: 'failed', 
       notResolved: 'not resolved', cached: 'cached',
+      /** @param {number} ok @param {number} bad @param {number} all */
       coversFmt: (ok, bad, all) => `${ok} ok · ${bad} failed · ${all} videos`,
       tCovers: 'Video covers', tGif: 'Animated GIFs in the grid', tGifMax: 'GIFs animating at once',
       tScrub: 'Scene preview on video thumbnails',
@@ -287,6 +321,7 @@
       
       failed: 'falhou', 
       notResolved: 'não resolvido', cached: 'cache',
+      /** @param {number} ok @param {number} bad @param {number} all */
       coversFmt: (ok, bad, all) => `${ok} ok · ${bad} falha · ${all} vídeos`,
       tCovers: 'Capa de vídeo', tGif: 'GIF animado na grade', tGifMax: 'GIFs animando ao mesmo tempo',
       tScrub: 'Prévia de cenas nas miniaturas de vídeo',
@@ -361,7 +396,13 @@
     },
   }
 
-  /** Active language: explicit choice first, otherwise the browser's. */
+  /** @typedef {keyof typeof I18N} Lang */
+  /** @typedef {typeof I18N.en} Strings */
+
+  /**
+   * Active language: explicit choice first, otherwise the browser's.
+   * @returns {Lang}
+   */
   function resolveLang() {
     if (CFG.lang && I18N[CFG.lang]) return CFG.lang
     return String(navigator.language || 'en').toLowerCase().startsWith('pt')
@@ -371,6 +412,7 @@
 
   let LANG = resolveLang()
 
+  /** @type {<K extends keyof Strings>(key: K) => Strings[K]} */
   const t = key => {
     const value = I18N[LANG][key]
     return value === undefined ? I18N.en[key] : value
@@ -380,10 +422,18 @@
   // Log
   // ═══════════════════════════════════════════════════════════
 
+  /** @typedef {'debug' | 'info' | 'warn' | 'error'} LogLevel */
+  /** @typedef {{ t: number, level: LogLevel, msg: string }} LogEntry */
+  /** @type {LogEntry[]} */
   const LOG = []
   const LOG_MAX = 250
+  /** @type {((entry: LogEntry) => void) | null} */
   let onLogEntry = null   // the panel subscribes here once mounted
 
+  /**
+   * @param {LogLevel} level
+   * @param {unknown} msg
+   */
   function log(level, msg) {
     const entry = { t: Date.now(), level, msg: String(msg) }
     LOG.push(entry)
@@ -397,26 +447,34 @@
     if (onLogEntry) onLogEntry(entry)
   }
 
+  /** @param {string} m */
   const dbg   = m => log('debug', m)
+  /** @param {string} m */
   const info  = m => log('info', m)
+  /** @param {string} m */
   const warn  = m => log('warn', m)
+  /** @param {string} m */
   const error = m => log('error', m)
 
+  /** @param {any} e  whatever was thrown or rejected */
   const describeError = e => (e && e.message ? e.message : String(e))
 
   // A log entry as one line of text, as Copy log and the console's tail() give it.
+  /** @param {LogEntry} e */
   const logLine = e => `${new Date(e.t).toTimeString().slice(0, 8)} [${e.level}] ${e.msg}`
 
   // ═══════════════════════════════════════════════════════════
   // State observed by the panel
   // ═══════════════════════════════════════════════════════════
 
+  /** @type {{ imageBase: string | null, baseCached: boolean, covers: { tracked: number, ok: number, failed: number } }} */
   const STATE = {
     imageBase: null,
     baseCached: false,
     covers: { tracked: 0, ok: 0, failed: 0 },
   }
 
+  /** @type {(() => void) | null} */
   let onStateChange = null
   const touch = () => { if (onStateChange) onStateChange() }
 
@@ -428,6 +486,8 @@
   // gives a silent 404. Resolve the host once, skipping known mirrors.
   // ═══════════════════════════════════════════════════════════
 
+  /** @typedef {{ thumbsOnly: string[], fallback: string, videoHosts: string[] }} HostConfig */
+  /** @type {Record<string, HostConfig>} */
   const HOSTS = {
     'rule34.xxx': {
       thumbsOnly: ['miami.rule34.xxx', 'ny.rule34.xxx'],
@@ -447,10 +507,12 @@
     },
   }
 
+  /** @type {Partial<HostConfig>} */
   const HOST_CFG = HOSTS[SITE] || {}
   const HOST_KEY = `IBH_IMGBASE_${SITE}`
   const HOST_TTL = 7 * 24 * 60 * 60 * 1000
 
+  /** @returns {string | null} */
   function imageBase() {
     const cached = readJSON(HOST_KEY, null)
     if (cached && Date.now() < cached.exp) {
@@ -459,6 +521,7 @@
       return cached.base
     }
 
+    /** @type {string | null} */
     let base = null
     const thumb = document.querySelector('img[src*="/thumbnails/"]')
     if (thumb) {
@@ -495,7 +558,11 @@
     imageBase()
   }
 
-  /** Pull DIR and HASH out of .../thumbnails/DIR/thumbnail_HASH.jpg or .../samples/DIR/sample_HASH.jpg */
+  /**
+   * Pull DIR and HASH out of .../thumbnails/DIR/thumbnail_HASH.jpg or .../samples/DIR/sample_HASH.jpg
+   * @param {string | null | undefined} thumbUrl
+   * @returns {{ dir: string, hash: string } | null}
+   */
   function thumbParts(thumbUrl) {
     if (!thumbUrl) return null
     const m = thumbUrl.replace(/\?.*$/, '')
@@ -504,7 +571,12 @@
     return m ? { dir: m[1].replace(/^\/+|\/+$/g, ''), hash: m[2] } : null
   }
 
-  /** URLs to try, most likely first. */
+  /**
+   * URLs to try, most likely first.
+   * @param {string} thumbUrl
+   * @param {string[]} exts
+   * @returns {string[]}
+   */
   function fileCandidates(thumbUrl, exts) {
     const p = thumbParts(thumbUrl)
     if (!p) return []
@@ -538,22 +610,32 @@
   const URLCACHE_TTL = 30 * 24 * 60 * 60 * 1000   // a winning URL
   const URLCACHE_NEG_TTL = 24 * 60 * 60 * 1000    // "nothing loads": short, a CDN hiccup must not stick
   const urlStats = { hits: 0, misses: 0, healed: 0 }
+  // An entry: u the winning URL (null: nothing loads), t when it was written,
+  // and for a miss f when it was first seen and n how many times.
+  /** @typedef {{ u: string | null, t: number, f?: number, n?: number }} UrlCacheEntry */
+  /** @typedef {Record<string, UrlCacheEntry>} UrlCache  kind:hash -> entry */
+  /** @type {UrlCache | null} */
   let urlCache = null
+  /** @type {number} */
   let urlCacheTimer = 0
 
+  /** @param {UrlCacheEntry} entry */
   const expired = entry => Date.now() - entry.t >= (entry.u === null ? URLCACHE_NEG_TTL : URLCACHE_TTL)
 
   // Auto-delete: expired entries go on load and on every write, not only when
   // read again, so files never seen again do not linger.
+  // Only called with the cache loaded.
   function dropExpired() {
     let n = 0
-    for (const k of Object.keys(urlCache)) if (expired(urlCache[k])) { delete urlCache[k]; n++ }
+    for (const k of Object.keys(/** @type {UrlCache} */ (urlCache)))
+      if (expired(/** @type {UrlCache} */ (urlCache)[k])) { delete /** @type {UrlCache} */ (urlCache)[k]; n++ }
     return n
   }
 
+  /** @returns {UrlCache} */
   function loadUrlCache() {
     if (!urlCache) {
-      urlCache = readJSON(URLCACHE_KEY, {}) || {}
+      urlCache = /** @type {UrlCache} */ (readJSON(URLCACHE_KEY, {}) || {})
       if (dropExpired()) scheduleUrlFlush()
     }
     return urlCache
@@ -564,7 +646,12 @@
   // must not hide a real file for a day.
   const MISS_CONFIRM_MS = 60 * 1000
 
-  /** A URL string, null for a confirmed miss, or undefined when nothing usable is cached. */
+  /**
+   * A URL string, null for a confirmed miss, or undefined when nothing usable is cached.
+   * @param {string} kind
+   * @param {string | undefined} hash
+   * @returns {string | null | undefined}
+   */
   function cacheGet(kind, hash) {
     if (!CFG.urlCache || !hash) return undefined
     const key = `${kind}:${hash}`
@@ -574,12 +661,18 @@
       urlStats.hits++
       return entry.u
     }
-    if (entry) { delete urlCache[key]; scheduleUrlFlush() }
+    if (entry) { delete /** @type {UrlCache} */ (urlCache)[key]; scheduleUrlFlush() }
     urlStats.misses++
     return undefined
   }
 
-  /** Record the outcome of a ladder. Only definitive ones: a winner, or "none loads". */
+  /**
+   * Record the outcome of a ladder. Only definitive ones: a winner, or "none loads".
+   * @param {string} kind
+   * @param {string | undefined} hash
+   * @param {string | null} url
+   * @param {string | null} [previous]  what cacheGet gave before the ladder
+   */
   function cacheSet(kind, hash, url, previous) {
     if (!CFG.urlCache || !hash) return
     const key = `${kind}:${hash}`
@@ -591,12 +684,12 @@
         // Second miss: confirmed once it comes a minute or more after the first.
         if (!old.n || old.n < 2) {
           if (now - (old.f || old.t) < MISS_CONFIRM_MS) return
-          urlCache[key] = { u: null, t: now, f: old.f || old.t, n: 2 }
+          /** @type {UrlCache} */ (urlCache)[key] = { u: null, t: now, f: old.f || old.t, n: 2 }
           scheduleUrlFlush()
         }
         return
       }
-      urlCache[key] = { u: null, t: now, f: now, n: 1 }
+      /** @type {UrlCache} */ (urlCache)[key] = { u: null, t: now, f: now, n: 1 }
       scheduleUrlFlush()
       return
     }
@@ -604,11 +697,12 @@
     // Same winner seen again recently: nothing new to save. Covers remount
     // often, and re-serialising the cache each time would cost while scrolling.
     if (old && old.u === url && now - old.t < URLCACHE_NEG_TTL) return
-    urlCache[key] = { u: url, t: now }
+    /** @type {UrlCache} */ (urlCache)[key] = { u: url, t: now }
     scheduleUrlFlush()
   }
 
   // The cached winner goes first; if it fails, the full ladder runs behind it.
+  /** @param {string[]} urls @param {string | null | undefined} cached */
   const cachedFirst = (urls, cached) => typeof cached === 'string' ? [cached, ...urls.filter(u => u !== cached)] : urls
 
   // Writes are batched: serialising the cache on every swap would stutter the scroll.
@@ -616,7 +710,8 @@
     if (!urlCacheTimer) urlCacheTimer = setTimeout(flushUrlCache, 3000)
   }
 
-  const newestFirst = keys => keys.sort((a, b) => urlCache[b].t - urlCache[a].t)
+  /** @param {string[]} keys */
+  const newestFirst = keys => keys.sort((a, b) => /** @type {UrlCache} */ (urlCache)[b].t - /** @type {UrlCache} */ (urlCache)[a].t)
 
   let lastLoggedHits = -1
   function flushUrlCache() {
@@ -638,6 +733,7 @@
     }
   }
 
+  /** @param {boolean} missesOnly */
   function clearUrlCache(missesOnly) {
     const c = loadUrlCache()
     let n = 0
@@ -650,6 +746,7 @@
 
   // Past a mid-range hardware decoder (this phone's stops at 1920×1088, in
   // either orientation): such a video decodes on the CPU, slowly.
+  /** @param {number} w @param {number} h */
   const pastDecoder = (w, h) => Math.max(w, h) > 1920 || Math.min(w, h) > 1088
 
   // ═══════════════════════════════════════════════════════════
@@ -657,12 +754,14 @@
   // ═══════════════════════════════════════════════════════════
 
 
+  /** @type {WeakSet<HTMLElement>} */
   const tracked = new WeakSet()
 
   // A card is the link around a thumbnail (Gelbooru 0.2 markup). The kind
   // comes from the tags in the thumbnail's title or alt, or the site's own
   // .webm-thumb mark. "animated" alone may be either kind: it counts as video,
   // and the cover falls back to the GIF when no video host answers.
+  /** @param {HTMLElement} card */
   const nativeTags = card => {
     const img = card.querySelector('img')
     return ` ${(img && (img.title || img.alt)) || ''} `
@@ -670,10 +769,13 @@
   const NATIVE_GIF = /\s(gif|animated_gif)\s/i
   const NATIVE_VIDEO = /\s(video|mp4|webm|animated)\s/i
   const NATIVE_REAL_VIDEO = /\s(video|mp4|webm)\s/i   // "animated" alone may be a GIF
+  /** @param {HTMLElement} card */
   const isVideoCard = card => !!card.querySelector('img.webm-thumb') ||   // the site's own video mark
     (NATIVE_VIDEO.test(nativeTags(card)) && !NATIVE_GIF.test(nativeTags(card)))
+  /** @param {HTMLElement} card */
   const isGifCard = card => card.dataset.ibhKind === 'gif' || NATIVE_GIF.test(nativeTags(card))
 
+  /** @param {HTMLElement} card */
   const cardPicture = card => { const img = card.querySelector('img'); return img ? imgPicture(img) : null }
 
   // On an <img>, the better file goes in srcset and src is left alone: the
@@ -681,6 +783,11 @@
   // URL for everything that reads it (Imagus and other hover-zoom tools match
   // on the thumbnail_ pattern). Setting the thumbnail back (or nothing) clears
   // srcset.
+  /** @typedef {{ src: string, set: (url: string | null | undefined) => void }} Picture */
+  /**
+   * @param {HTMLImageElement} img
+   * @returns {Picture | null}
+   */
   function imgPicture(img) {
     if (!img.src) return null
     return {
@@ -699,10 +806,12 @@
   const COVER_MAX_LIVE = 3
   const COVER_POINT = 0.35   // where in the video the cover frame is taken
   let liveCovers = 0
+  /** @type {Set<HTMLElement>} */
   const coverQueue = new Set()
 
   // A card element can be rebuilt (the autopager, a page restored from the
   // back button), so "this is a GIF" is remembered by file hash, not on it.
+  /** @type {Set<string>} */
   const knownGifs = new Set()
 
   function releaseCover() {
@@ -714,6 +823,7 @@
     }
   }
 
+  /** @param {HTMLElement} card */
   function mountCover(card) {
     if (card.dataset.ibhCover || card.dataset.ibhBigVideo) return
     const pic = cardPicture(card)
@@ -828,6 +938,7 @@
     else card.appendChild(v)
   }
 
+  /** @param {HTMLElement} card */
   function unmountCover(card) {
     coverQueue.delete(card)
     const v = card.querySelector('video[data-ibh]')
@@ -844,8 +955,10 @@
   // slow connection. A GIF waiting for a slot goes before queued upgrades.
   const IMAGE_MAX_INFLIGHT = 3
   let imagesInflight = 0
+  /** @type {Array<() => void>} */
   const imageWaiters = []
 
+  /** @param {() => void} start */
   function takeImageSlot(start) {
     if (imagesInflight < IMAGE_MAX_INFLIGHT) { imagesInflight++; start() }
     else imageWaiters.push(start)
@@ -865,6 +978,7 @@
   // phone runs out of memory and Firefox drops them (the broken-GIF rebuild,
   // see watchGif). Cards past the limit wait as stills, nearest the middle of
   // the screen first, and take the place of one that scrolls away.
+  /** @type {Set<HTMLElement>} */
   const gifQueue = new Set()
   const gifsLive = () => document.querySelectorAll('[data-ibh-gif="playing"], [data-ibh-gif="loading"]').length
 
@@ -906,6 +1020,7 @@
     nextGif()
   }
 
+  /** @param {HTMLElement} card */
   function playGif(card) {
     if (card.dataset.ibhGif) return   // loading, playing or failed
     if (gifsLive() >= (Number(CFG.gifMaxLive) || 3)) { gifQueue.add(card); return }   // waits its turn
@@ -940,7 +1055,9 @@
       cacheSet('gif', hash, probe.src, gcached)
       if (card.dataset.ibhGif !== 'loading') return
       card.dataset.ibhStill = pic.src
-      cardPicture(card).set(probe.src)
+      // The card's <img> had a src when the probe started, and nothing in the
+      // script takes either away (resets change srcset only).
+      ;/** @type {Picture} */ (cardPicture(card)).set(probe.src)
       card.dataset.ibhGif = 'playing'
       watchGif(card)
       if (card.dataset.ibhKind === 'gif') { STATE.covers.ok++; touch() }
@@ -955,10 +1072,12 @@
   // when it breaks, free more memory and build the GIF again, twice at most.
   const GIF_RETRIES = 2
 
+  /** @param {HTMLElement} card */
   function watchGif(card) {
     const img = card.querySelector('img')
     if (!img || img.dataset.ibhGifWatch) return
     img.dataset.ibhGifWatch = '1'
+    /** @param {Event} ev */
     const check = ev => {
       if (card.dataset.ibhGif !== 'playing' || !img.srcset) return   // stopped or back to the still
       // "load" with no width is how a broken decode shows up.
@@ -968,6 +1087,7 @@
     img.addEventListener('load', check)
   }
 
+  /** @param {HTMLElement} card */
   function gifBroken(card) {
     const tries = Number(card.dataset.ibhGifRetries || 0)
     if (tries >= GIF_RETRIES) {
@@ -987,8 +1107,10 @@
   // Release what is not on screen: upgraded images back to the thumbnail
   // (heights held), other GIFs stilled, covers closed. On screen means within
   // one screen of the viewport.
+  /** @param {HTMLElement | null} keep */
   function freeOffscreen(keep) {
     const n = { images: 0, gifs: 0, covers: 0 }
+    /** @param {Element} el */
     const far = el => {
       const r = el.getBoundingClientRect()
       return r.bottom < -window.innerHeight || r.top > window.innerHeight * 2
@@ -1010,6 +1132,7 @@
     return n
   }
 
+  /** @param {HTMLElement} card */
   function stopGif(card) {
     gifQueue.delete(card)
     const state = card.dataset.ibhGif
@@ -1027,7 +1150,7 @@
   const viewport = 'IntersectionObserver' in window
     ? new IntersectionObserver(entries => {
         for (const e of entries) {
-          const card = e.target
+          const card = /** @type {HTMLElement} */ (e.target)   // what trackCard observes
           if (e.isIntersecting) card.dataset.ibhSeen = '1'
           else delete card.dataset.ibhSeen
           // The page scrolls under the modal as it steps (H): keep it unloaded;
@@ -1042,6 +1165,7 @@
       }, { rootMargin: '200px' })
     : null
 
+  /** @param {HTMLElement} card */
   function trackCard(card) {
     if (tracked.has(card)) return
     tracked.add(card)
@@ -1064,6 +1188,11 @@
   // On site pages the link around each thumbnail plays the part of the card.
   const NATIVE_THUMB = `${THUMB} img`
 
+  // A node of any kind, as a mutation brings it: only elements and documents
+  // have these, checked before they are called.
+  /** @typedef {Node & Partial<Pick<Element, 'querySelectorAll' | 'matches'>>} AnyNode */
+
+  /** @param {AnyNode} root */
   function scanCards(root) {
     if (!root || !root.querySelectorAll) return
     const imgs = [...root.querySelectorAll(NATIVE_THUMB)]
@@ -1100,14 +1229,16 @@
   // In the one-column feed a 150 px thumbnail is stretched to the screen width.
   // The sample (about 850 px) is already sharp there and far lighter than the
   // original; posts too small to have a sample fall through to the original.
+  /** @param {Element} el */
   const inFeed = el => CFG.nativeFeed && !!el.closest(LIST)
 
+  /** @param {string} src */
   function sampleCandidates(src) {
     const p = thumbParts(src)
     if (!p) return []
     const bases = [imageBase()]
     try { bases.push(`${new URL(src).origin}/images`) } catch (e) { /* ignore */ }
-    return [...new Set(bases.filter(Boolean))]
+    return [...new Set(/** @type {string[]} */ (bases.filter(Boolean)))]
       .map(b => `${b.replace(/\/images$/, '/samples')}/${p.dir}/sample_${p.hash}.jpg`)
   }
 
@@ -1123,11 +1254,17 @@
   // box is wider than the sample (a desktop screen).
   const SAMPLE_WIDTH = 850
 
+  /** @param {HTMLElement} el */
   function displayPixels(el) {
     const box = el.closest(THUMB) || el
     return (box.clientWidth || el.clientWidth || 0) * (window.devicePixelRatio || 1)
   }
 
+  /**
+   * @param {HTMLElement} el
+   * @param {string} src
+   * @returns {{ kind: string, stages: string[][] }}
+   */
   function upgradePlan(el, src) {
     if (thumbKind(el) === 'video') return { kind: 'poster', stages: [fileCandidates(src, ['jpg'])] }
     const originals = fileCandidates(src, ORIGINAL_EXTS)
@@ -1141,16 +1278,19 @@
   // with GIFs (IMAGE_MAX_INFLIGHT, see B) cap how many the script starts at once.
   // Targets are the thumbnails (and samples) on the site's pages.
   const ORIGINAL_SELECTOR = 'img[src*="/thumbnails/"], img[src*="/samples/"]'
+  /** @type {HTMLImageElement[]} */
   const originalQueue = []
   let upgradeGen = 0   // bumped by freeMemory(): upgrades already in flight drop their result
 
 
+  /** @param {HTMLImageElement} el */
   function pictureOf(el) {
     return imgPicture(el)
   }
 
   // The kind of post a thumbnail shows, taken from its link, which is what the
   // cover and GIF code treat as the card (the tags sit in title/alt).
+  /** @param {Element} el */
   function thumbKind(el) {
     const card = el.closest('a') || el.parentElement
     if (card && isGifCard(card)) return 'gif'
@@ -1158,7 +1298,10 @@
     return 'image'
   }
 
-  /** Returns true once the element needs no more watching. */
+  /**
+   * Returns true once the element needs no more watching.
+   * @param {HTMLImageElement} el
+   */
   function upgradeToOriginal(el) {
     if (el.dataset.ibhOrig) return true   // already queued, done or failed
     // Without originalThumbs, only feed images on site pages get upgraded.
@@ -1180,6 +1323,7 @@
   // passed by.
   function nextQueued() {
     const h = window.innerHeight
+    /** @type {Array<[number, HTMLImageElement]>} */
     const near = []
     for (const el of originalQueue) {
       if (!el.isConnected) continue
@@ -1206,6 +1350,7 @@
       const pic = pictureOf(el)
       if (!pic) continue
       const plan = upgradePlan(el, pic.src)
+      /** @type {CacheKey} */
       const ck = { kind: plan.kind, hash: (thumbParts(pic.src) || {}).hash }
       ck.cached = cacheGet(ck.kind, ck.hash)
       if (ck.cached === null) { el.dataset.ibhOrig = 'failed'; continue }   // known: nothing loads
@@ -1216,8 +1361,18 @@
 
   // The candidates race (raceImage): a wrong extension costs nothing, where
   // trying them in turn held a download slot ~0.5 s per miss.
+  // ck: where the winner is cached, and what cacheGet had for it.
+  /** @typedef {{ kind: string, hash: string | undefined, cached?: string | null }} CacheKey */
+  /**
+   * @param {HTMLImageElement} el
+   * @param {string} from
+   * @param {string[][]} stages
+   * @param {() => void} done
+   * @param {CacheKey} [ck]
+   */
   function probeOriginal(el, from, stages, done, ck) {
     const gen = upgradeGen
+    /** @type {HTMLImageElement | null} */
     let probe = null
     raceImage(stages, ck ? ck.cached : undefined, winner => {
       probe = winner
@@ -1254,12 +1409,12 @@
       }
       if (el.tagName === 'IMG') el.decoding = 'async'
       const pic = pictureOf(el)
-      if (pic) pic.set(probe.src)   // already in cache and decoded, so this paints at once
+      if (pic) pic.set(/** @type {HTMLImageElement} */ (probe).src)   // already in cache and decoded, so this paints at once
       el.dataset.ibhThumb = from    // what freeMemory() and redoThumbs() put back
       el.dataset.ibhOrig = 'done'
       unpinHeight(el)
       watchDistance(el)   // released again once it is far off screen, see G
-      dbg(`original: ${probe.src}`)
+      dbg(`original: ${/** @type {HTMLImageElement} */ (probe).src}`)   // swap runs once the race won
       done()
     }
   }
@@ -1269,14 +1424,17 @@
         for (const e of entries) {
           if (!e.isIntersecting) continue
           // Scrolled in under the modal: wait for it to close (resumePage observes again).
-          if (modal && modal.open) { originalViewport.unobserve(e.target); suspended.push(e.target); continue }
-          if (upgradeToOriginal(e.target)) originalViewport.unobserve(e.target)
+          // The observer is this very one, and what it watches are scanThumbs' images.
+          if (modal && modal.open) { /** @type {IntersectionObserver} */ (originalViewport).unobserve(e.target); suspended.push(/** @type {HTMLImageElement} */ (e.target)); continue }
+          if (upgradeToOriginal(/** @type {HTMLImageElement} */ (e.target))) /** @type {IntersectionObserver} */ (originalViewport).unobserve(e.target)
         }
       }, { rootMargin: '300px' })
     : null
 
+  /** @type {WeakSet<Element>} */
   const watchedThumbs = new WeakSet()
 
+  /** @param {AnyNode} root */
   function scanThumbs(root) {
     if (!(CFG.originalThumbs || CFG.nativeFeed) || !root || !root.querySelectorAll) return
     const found = [...root.querySelectorAll(ORIGINAL_SELECTOR)]
@@ -1309,30 +1467,41 @@
   // fastSeek barely changed the frame); longer ones use fastSeek.
   const EXACT_SEEK_MAX_S = 60
   const REST_MS = 180
+  // wanted: the seek to start once the one in flight lands; pending: the
+  // fraction asked before the duration was known; rest: the finger-rest timer.
+  /** @typedef {{ wanted: number | null, pending: number | null, rest: number }} SeekState */
+  /** @type {WeakMap<HTMLVideoElement, SeekState>} */
   const seekState = new WeakMap()
 
+  /** @param {HTMLVideoElement} v @param {number} t */
   const isBuffered = (v, t) => {
     for (let i = 0; i < v.buffered.length; i++) if (t >= v.buffered.start(i) && t <= v.buffered.end(i)) return true
     return false
   }
 
   // `now`: no finger moving (the slideshow), so the rest wait is only a delay.
+  /**
+   * @param {HTMLVideoElement} v
+   * @param {number} f
+   * @param {boolean} [now]
+   */
   function seekFraction(v, f, now = false) {
     let st = seekState.get(v)
     if (!st) {
       st = { wanted: null, pending: null, rest: 0 }
       seekState.set(v, st)
+      // These run with st set for good (no narrowing reaches into them).
       v.addEventListener('seeked', () => {
-        if (st.wanted === null) return
-        const t = st.wanted
-        st.wanted = null
+        if (/** @type {SeekState} */ (st).wanted === null) return
+        const t = /** @type {number} */ (/** @type {SeekState} */ (st).wanted)
+        ;/** @type {SeekState} */ (st).wanted = null
         seekTo(v, t)
       })
       // Asked before the duration was known: seek once it is.
       v.addEventListener('loadedmetadata', () => {
-        if (st.pending === null) return
-        const p = st.pending
-        st.pending = null
+        if (/** @type {SeekState} */ (st).pending === null) return
+        const p = /** @type {number} */ (/** @type {SeekState} */ (st).pending)
+        ;/** @type {SeekState} */ (st).pending = null
         seekFraction(v, p, true)
       })
     }
@@ -1346,14 +1515,21 @@
     return { t, d }
   }
 
+  /** @param {HTMLVideoElement} v @param {number} t */
   function seekTo(v, t) {
     if (v.duration > EXACT_SEEK_MAX_S && typeof v.fastSeek === 'function') v.fastSeek(t)
     else v.currentTime = t   // exact: decodes from the keyframe up to this frame
   }
 
   // The shared preview video.
+  /** @type {HTMLVideoElement | null} */
   let previewEl = null
 
+  /**
+   * @param {HTMLElement} container
+   * @param {string[]} urls
+   * @param {string | null | undefined} hash   the file's, to cache the host that has it
+   */
   function previewLoad(container, urls, hash) {
     if (!previewEl) {
       previewEl = document.createElement('video')
@@ -1385,6 +1561,7 @@
   // A count: the slideshow borrows a second decoder for its helper video.
   let decodersBorrowed = 0
 
+  /** @param {HTMLElement} card */
   function borrowDecoder(card) {
     decodersBorrowed++
     liveCovers++
@@ -1402,6 +1579,7 @@
   }
 
   // Right above the picture, under anything the site lays over it.
+  /** @param {HTMLElement} card @param {Node} node */
   function placeOverPicture(card, node) {
     if (getComputedStyle(card).position === 'static') card.style.position = 'relative'
     const picEl = card.querySelector(':scope > img')
@@ -1411,15 +1589,53 @@
 
   // ── Scrubbing a thumbnail ──
   const SCRUB_SLOP = 8   // px of travel before a drag counts as a scrub or a scroll
+
+  /**
+   * A finger on a video card, from the touch to the lift. It starts with the
+   * pointer's fields; scrubSource, scrubUi and the slideshow fill in the rest
+   * before reading them.
+   * @typedef {object} Scrub
+   * @property {HTMLElement} card
+   * @property {number} id          the pointer
+   * @property {number} x0
+   * @property {number} y0
+   * @property {boolean} on         previewing: the bar and the label are up
+   * @property {number} holdTimer
+   * @property {HTMLVideoElement} video   what it seeks: the card's cover, or the shared preview
+   * @property {HTMLElement} [holder]     the shared preview's box
+   * @property {boolean} [shared]         video is the shared preview
+   * @property {HTMLElement} bar
+   * @property {HTMLElement} label
+   * @property {SlideStats} stats         a hold's slideshow, for the log
+   * @property {number[]} steps           the seeking slideshow's scenes, as fractions of the video
+   * @property {number} step              the next one
+   * @property {number} dwell             ms a scene stays once painted
+   * @property {SlideView[]} views
+   * @property {SlideView[]} queue        views seeking a scene, in the order they will show
+   * @property {SlideView | null} front   the view on screen
+   * @property {SlideView | null} [helper]
+   * @property {number} shownAt
+   * @property {number} [tick]
+   * @property {ReelShow | null} [reel]
+   * @property {{ rate: number, loop: boolean }} played    the video's own, while a short clip plays
+   * @property {(() => void) | null} [onPlayTime]
+   */
+  /** @typedef {{ t0: number, method: string | null, first: number | null, last: number, shown: number, gaps: number[], detail?: string, wasm?: string, reelError?: string }} SlideStats */
+  /** @typedef {{ v: HTMLVideoElement, helper: boolean, f: number, ready: boolean, slow: boolean, since: number, onSeeked?: () => void }} SlideView */
+
+  /** @type {Scrub | null} */
   let scrub = null
   let scrubClickUntil = 0
 
+  /** @param {PointerEvent} ev */
   function onScrubDown(ev) {
     if (scrub || insidePanel(ev) || (modal && modal.open)) return
     if (ev.pointerType === 'mouse' && ev.button !== 0) return
-    const card = ev.target.closest && ev.target.closest('[data-ibh-video]')
+    // A pointer event's target is set; one with closest() is an element.
+    const card = /** @type {HTMLElement | null | undefined} */ (
+      /** @type {EventTarget} */ (ev.target).closest && /** @type {Element} */ (ev.target).closest('[data-ibh-video]'))
     if (!card || card.dataset.ibhKind === 'gif') return
-    scrub = { card, id: ev.pointerId, x0: ev.clientX, y0: ev.clientY, on: false, holdTimer: 0 }
+    scrub = /** @type {Scrub} */ ({ card, id: ev.pointerId, x0: ev.clientX, y0: ev.clientY, on: false, holdTimer: 0 })
     // Hold mode: a still finger for HOLD_MS starts the slideshow.
     if (CFG.scrubMode === 'hold') scrub.holdTimer = setTimeout(startSlideshow, HOLD_MS)
   }
@@ -1452,6 +1668,7 @@
   }
 
   // The slideshow by seeking the file itself, two videos taking turns.
+  /** @param {Scrub} s */
   function seekShow(s) {
     s.stats.method = 'seek'
     const base = s.video
@@ -1472,7 +1689,13 @@
     s.tick = setInterval(() => tickSlide(s), SLIDE_TICK_MS)
   }
 
+  /**
+   * @param {Scrub} s
+   * @param {HTMLVideoElement} v
+   * @param {boolean} helper
+   */
   function slideView(s, v, helper) {
+    /** @type {SlideView} */
     const view = { v, helper, f: 0, ready: false, slow: false, since: 0 }
     // Ready once its own seek landed. A stale seek ending makes seekFraction
     // start the wanted one right away, so look after the other listeners ran.
@@ -1487,6 +1710,7 @@
   }
 
   // Hand a view the next scene to fetch.
+  /** @param {Scrub} s @param {SlideView} view */
   function loadSlide(s, view) {
     view.f = s.steps[s.step++ % s.steps.length]
     view.ready = false
@@ -1495,6 +1719,7 @@
     seekFraction(view.v, view.f, true)
   }
 
+  /** @param {Scrub} s */
   function addSlideHelper(s) {
     const src = s.video.currentSrc
     if (!src) return
@@ -1517,11 +1742,12 @@
     loadSlide(s, view)
   }
 
+  /** @param {Scrub} s */
   function dropSlideHelper(s) {
     const view = s.helper
     if (!view) return
     s.helper = null
-    view.v.removeEventListener('seeked', view.onSeeked)
+    view.v.removeEventListener('seeked', /** @type {() => void} */ (view.onSeeked))   // set by slideView
     view.v.onerror = null
     view.v.removeAttribute('src')
     view.v.load()   // hand the decoder back
@@ -1533,6 +1759,7 @@
     if (!s.queue.length) loadSlide(s, s.views[0])
   }
 
+  /** @param {Scrub} s @param {SlideView} view */
   function showSlide(s, view) {
     if (s.helper) s.helper.v.style.opacity = view === s.helper ? '1' : '0'
     const d = view.v.duration
@@ -1543,6 +1770,7 @@
 
   // What a hold costs, for the log: the wait for the first scene, then
   // between scenes (the dwell is the floor).
+  /** @param {Scrub} s */
   function noteScene(s) {
     const st = s.stats
     if (!st) return
@@ -1553,6 +1781,7 @@
     st.shown++
   }
 
+  /** @param {Scrub} s */
   function logSlideStats(s) {
     const st = s.stats
     if (!st || !st.method) return
@@ -1565,9 +1794,13 @@
     const v = s.video
     const what = (st.detail || (v ? `${v.videoWidth}x${v.videoHeight}, ${mmss(v.duration)}, ${s.shared ? 'own video' : 'its cover'}` : '')) +
       (st.wasm ? `, ${st.wasm}` : '')
-    info(`slideshow (${st.method}) post ${postId(s.card)}: ${shown}${what ? `; ${what}` : ''}${st.reelError ? `; no reel: ${st.reelError}` : ''}`)
+    // TODO(strict): a card is the thumbnail's link on every supported site, but
+    // scanCards falls back to the <img>'s parent when there is none, and postId
+    // would throw on that (no href). Unreachable on today's sites.
+    info(`slideshow (${st.method}) post ${postId(/** @type {HTMLAnchorElement} */ (s.card))}: ${shown}${what ? `; ${what}` : ''}${st.reelError ? `; no reel: ${st.reelError}` : ''}`)
   }
 
+  /** @param {Scrub} s */
   function tickSlide(s) {
     if (scrub !== s) return
     const now = Date.now()
@@ -1596,9 +1829,10 @@
     if (!s.queue.length && s.front && now - s.shownAt >= s.dwell) loadSlide(s, s.front)
   }
 
+  /** @param {Scrub} s */
   function endSlideshow(s) {
     clearInterval(s.tick)
-    for (const view of s.views || []) view.v.removeEventListener('seeked', view.onSeeked)
+    for (const view of s.views || []) view.v.removeEventListener('seeked', /** @type {() => void} */ (view.onSeeked))
     const helper = s.helper
     if (!helper) return
     // A cover keeps the last scene shown, even one the helper was showing.
@@ -1625,11 +1859,38 @@
   const REEL_MAX_MOOV = 8e6       // a bigger index is not worth reading for a preview
   const REEL_MAX_BYTES = 12e6     // keyframes past this are thinned out (4K frames run to MBs)
   const REEL_KEEP = 4             // reels kept for another hold on the same video
+  /** @type {Map<string, Reel>} */
   const reels = new Map()         // URL and scene count -> reel, oldest first
 
+  /**
+   * A video's keyframes, one per scene.
+   * @typedef {object} Reel
+   * @property {Array<Uint8Array<ArrayBuffer>>} frames   each keyframe, an AVCC sample
+   * @property {{ stsd: Uint8Array, width: number, height: number }} track   what reelBlob needs of the source's track
+   * @property {Uint8Array | null} avcC  the H.264 decoder configuration; null for another codec
+   * @property {string | null} url       the <video> reel's blob, made when first played (reelUrl)
+   * @property {Array<{ t: number, f: number }>} scenes   each keyframe's time (s) and place in the video (0-1)
+   * @property {number} bytes            read for it
+   * @property {number} ms               spent reading it
+   * @property {number} width
+   * @property {number} height
+   * @property {number} duration         s
+   * @property {boolean} [kept]          kept from an earlier hold
+   */
+  /** @typedef {Reel & { avcC: Uint8Array }} H264Reel  a reel the WebAssembly decoder can open */
+  /** @typedef {{ abort(): void }} Abortable  a request in flight (GM_xmlhttpRequest's) */
+
   // A Range read; `total` is the file size from Content-Range.
+  /**
+   * @param {string} url
+   * @param {number} start
+   * @param {number} end
+   * @param {Set<Abortable>} [reqs]  where the request goes, to abort it
+   * @returns {Promise<{ buf: Uint8Array<ArrayBuffer>, total: number | null }>}
+   */
   function rangeRead(url, start, end, reqs) {
     return new Promise((resolve, reject) => {
+      /** @type {Abortable | null} */
       let req = null
       req = GM_xmlhttpRequest({
         method: 'GET',
@@ -1656,6 +1917,13 @@
 
   // MP4 boxes between start and end: [size u32][type], a size of 1 puts a
   // 64-bit size after the type, 0 runs to the end.
+  /** @typedef {{ type: string, start: number, body: number, end: number }} Mp4Box */
+  /**
+   * @param {Uint8Array} b
+   * @param {number} start
+   * @param {number} end
+   * @returns {Generator<Mp4Box>}
+   */
   function* mp4Boxes(b, start, end) {
     const dv = new DataView(b.buffer, b.byteOffset, b.byteLength)
     let p = start
@@ -1669,6 +1937,11 @@
     }
   }
 
+  /**
+   * @param {Uint8Array} b
+   * @param {Pick<Mp4Box, 'body' | 'end'>} box
+   * @param {string} type
+   */
   const mp4Child = (b, box, type) => {
     for (const c of mp4Boxes(b, box.body, box.end)) if (c.type === type) return c
     return null
@@ -1676,9 +1949,15 @@
 
   // The video track of a moov box (b holds the box, moov its bounds): its
   // timing, its sample description, and where each sample sits in the file.
+  /**
+   * @param {Uint8Array} b
+   * @param {Pick<Mp4Box, 'body' | 'end'>} moov
+   */
   function mp4VideoTrack(b, moov) {
     const dv = new DataView(b.buffer, b.byteOffset, b.byteLength)
+    /** @param {number} p */
     const u32 = p => dv.getUint32(p)
+    /** @param {number} p */
     const u64 = p => Number(dv.getBigUint64(p))
     for (const trak of mp4Boxes(b, moov.body, moov.end)) {
       if (trak.type !== 'trak') continue
@@ -1686,22 +1965,28 @@
       const hdlr = mdia && mp4Child(b, mdia, 'hdlr')
       if (!hdlr || String.fromCharCode(...b.subarray(hdlr.body + 8, hdlr.body + 12)) !== 'vide') continue
       const tkhd = mp4Child(b, trak, 'tkhd')
-      const mdhd = mp4Child(b, mdia, 'mdhd')
-      const minf = mp4Child(b, mdia, 'minf')
+      const mdhd = mp4Child(b, /** @type {Mp4Box} */ (mdia), 'mdhd')   // there: it has an hdlr
+      const minf = mp4Child(b, /** @type {Mp4Box} */ (mdia), 'minf')
       const stbl = minf && mp4Child(b, minf, 'stbl')
       if (!tkhd || !mdhd || !stbl) return null
       const [stsd, stts, stss, stsz, stsc, stco, co64] = ['stsd', 'stts', 'stss', 'stsz', 'stsc', 'stco', 'co64'].map(t => mp4Child(b, stbl, t))
       const offsets = stco || co64
       if (!stsd || !stts || !stsz || !stsc || !offsets) return null
+      /** @type {Array<[number, number]>} */
       const runs = []   // time to sample: [count, delta]
       for (let i = 0, n = u32(stts.body + 4); i < n; i++) runs.push([u32(stts.body + 8 + i * 8), u32(stts.body + 12 + i * 8)])
+      /** @type {number[]} */
       const sync = []   // keyframes, 0-based; no table means every sample is one
       if (stss) for (let i = 0, n = u32(stss.body + 4); i < n; i++) sync.push(u32(stss.body + 8 + i * 4) - 1)
       const fixed = u32(stsz.body + 4)
       const count = u32(stsz.body + 8)
+      /** @param {number} k */
       const size = k => fixed || u32(stsz.body + 12 + k * 4)
       const chunks = u32(offsets.body + 4)
-      const chunkAt = c => (stco ? u32(stco.body + 8 + c * 4) : u64(co64.body + 8 + c * 8))
+      // Without an stco, offsets is the co64.
+      /** @param {number} c */
+      const chunkAt = c => (stco ? u32(stco.body + 8 + c * 4) : u64(/** @type {Mp4Box} */ (co64).body + 8 + c * 8))
+      /** @type {Array<[number, number]>} */
       const perChunk = []   // [first chunk (0-based), samples per chunk]
       for (let i = 0, n = u32(stsc.body + 4); i < n; i++) perChunk.push([u32(stsc.body + 8 + i * 12) - 1, u32(stsc.body + 12 + i * 12)])
       const v1 = b[mdhd.body] === 1
@@ -1712,7 +1997,10 @@
         width: u32(tkhd.body + (tv1 ? 88 : 76)) >>> 16,
         height: u32(tkhd.body + (tv1 ? 92 : 80)) >>> 16,
         stsd: b.slice(stsd.start, stsd.end),
-        // The sample showing at time t (timescale units).
+        /**
+         * The sample showing at time t (timescale units).
+         * @param {number} t
+         */
         sampleAt(t) {
           let k = 0
           let at = 0
@@ -1723,6 +2011,7 @@
           }
           return Math.max(0, count - 1)
         },
+        /** @param {number} k */
         timeOf(k) {
           let at = 0
           for (const [n, delta] of runs) {
@@ -1732,6 +2021,7 @@
           }
           return at
         },
+        /** @param {number} k */
         keyAtOrBefore(k) {
           if (!sync.length) return k
           let lo = 0
@@ -1743,7 +2033,11 @@
           }
           return best
         },
-        // [offset, size] of sample k in the file: its chunk, plus the samples before it in there.
+        /**
+         * [offset, size] of sample k in the file: its chunk, plus the samples before it in there.
+         * @param {number} k
+         * @returns {[number, number] | null}
+         */
         place(k) {
           let first = 0
           for (let i = 0; i < perChunk.length; i++) {
@@ -1766,15 +2060,22 @@
 
   // A minimal MP4 around the keyframes: one video track, each sample a
   // second long and a keyframe, the source's sample description as it is.
+  /**
+   * @param {Reel['track']} track
+   * @param {Reel['frames']} frames
+   */
   function reelBlob(track, frames) {
     const n = frames.length
+    /** @param {string} str */
     const ascii = str => Uint8Array.from(str, c => c.charCodeAt(0))
+    /** @param {...number} v */
     const words = (...v) => {
       const out = new Uint8Array(v.length * 4)
       const dv = new DataView(out.buffer)
       v.forEach((x, i) => dv.setUint32(i * 4, x >>> 0))
       return out
     }
+    /** @param {string} type @param {...Uint8Array} parts */
     const box = (type, ...parts) => {
       const out = new Uint8Array(8 + parts.reduce((sum, part) => sum + part.length, 0))
       new DataView(out.buffer).setUint32(0, out.length)
@@ -1786,6 +2087,7 @@
     const matrix = [0x10000, 0, 0, 0, 0x10000, 0, 0, 0, 0x40000000]
     const ms = n * 1000
     const ftyp = box('ftyp', ascii('isom'), words(0x200), ascii('isomiso2avc1mp41'))
+    /** @param {number[]} offsets */
     const moovWith = offsets => box('moov',
       box('mvhd', words(0, 0, 0, 1000, ms, 0x10000, 0x1000000, 0, 0, ...matrix, 0, 0, 0, 0, 0, 0, 2)),
       box('trak',
@@ -1809,11 +2111,18 @@
   }
 
   // Reads the index and the keyframes for these scene fractions.
+  /**
+   * @param {string} url
+   * @param {number[]} steps
+   * @param {Set<Abortable>} reqs
+   * @returns {Promise<Reel>}
+   */
   async function buildReel(url, steps, reqs) {
     const t0 = performance.now()
     const head = await rangeRead(url, 0, REEL_HEAD - 1, reqs)
     const total = head.total || head.buf.length
     // The top-level boxes up to the moov: in the head, or after the media data.
+    /** @param {number} p */
     const boxAt = async p => {
       let b = head.buf
       let o = p
@@ -1825,6 +2134,7 @@
       return { type: String.fromCharCode(b[o + 4], b[o + 5], b[o + 6], b[o + 7]), size }
     }
     let p = 0
+    /** @type {{ at: number, size: number } | null} */
     let moov = null
     for (let i = 0; p < total && i < 32 && !moov; i++) {
       const box = await boxAt(p)
@@ -1845,6 +2155,7 @@
     } else mb = (await rangeRead(url, moov.at, moov.at + moov.size - 1, reqs)).buf
     const track = mp4VideoTrack(mb, { body: new DataView(mb.buffer, mb.byteOffset).getUint32(0) === 1 ? 16 : 8, end: mb.length })
     if (!track) throw new Error('no video track')
+    /** @type {number[]} */
     let keys = []
     for (const f of steps) {
       const k = track.keyAtOrBefore(track.sampleAt(Math.floor(f * track.duration)))
@@ -1862,12 +2173,12 @@
     }
     let places = keys.map(k => track.place(k))
     if (places.some(pl => !pl)) throw new Error('a keyframe outside the chunk table')
-    // Heavy frames (4K): every other one until they fit.
-    while (keys.length > 2 && places.reduce((sum, pl) => sum + pl[1], 0) > REEL_MAX_BYTES) {
+    // Heavy frames (4K): every other one until they fit. None is null past the check above.
+    while (keys.length > 2 && places.reduce((sum, pl) => sum + /** @type {[number, number]} */ (pl)[1], 0) > REEL_MAX_BYTES) {
       keys = keys.filter((k, i) => i % 2 === 0)
       places = places.filter((pl, i) => i % 2 === 0)
     }
-    const frames = await Promise.all(places.map(([off, size]) => rangeRead(url, off, off + size - 1, reqs).then(r => r.buf)))
+    const frames = await Promise.all(/** @type {Array<[number, number]>} */ (places).map(([off, size]) => rangeRead(url, off, off + size - 1, reqs).then(r => r.buf)))
     const secs = track.duration / track.timescale
     return {
       frames,
@@ -1887,6 +2198,13 @@
   }
 
   // A reel for one of these URLs (the first the host has), kept for the next hold.
+  /**
+   * @param {string[]} urls
+   * @param {number[]} steps
+   * @param {Set<Abortable>} reqs
+   * @param {string | null | undefined} hash  the file's, to cache the host that has it
+   * @returns {Promise<Reel>}
+   */
   async function reelFor(urls, steps, reqs, hash) {
     for (const url of urls) {
       const key = `${url}|${steps.length}`
@@ -1907,12 +2225,17 @@
         }
         return reel
       } catch (e) {
-        if (!e.status || urls.indexOf(url) === urls.length - 1) throw e   // HTTP error: try the next host
+        if (!/** @type {{ status?: number }} */ (e).status || urls.indexOf(url) === urls.length - 1) throw e   // HTTP error: try the next host
       }
     }
     throw new Error('no host has the file')
   }
 
+  // The reel slideshow's own parts: requests in flight, the scene timer, and
+  // what shows the reel (a <video> or a canvas, in a holder over the card).
+  /** @typedef {{ reqs: Set<Abortable>, timer: number, video: HTMLVideoElement | null, holder: HTMLElement | null, borrowed: boolean, info?: Reel }} ReelShow */
+
+  /** @param {Scrub} s */
   function startReelShow(s) {
     if (typeof GM_xmlhttpRequest !== 'function') return false
     const pic = cardPicture(s.card)
@@ -1937,20 +2260,23 @@
     return true
   }
 
+  /** @param {Reel} reel */
   const reelUrl = reel => reel.url || (reel.url = URL.createObjectURL(reelBlob(reel.track, reel.frames)))
 
   // One keyframe per scene, looping, over the thumbnail (and its cover):
   // decoded in WebAssembly when it can, else played from a small MP4.
+  /** @param {Scrub} s @param {Reel} reel */
   function showReel(s, reel) {
-    s.reel.info = reel
+    /** @type {ReelShow} */ (s.reel).info = reel   // set by startReelShow, cleared only once this hold is over
     s.stats.detail = `${reel.width}x${reel.height}, ${mmss(reel.duration)}, ${reel.scenes.length} keyframes, ` +
       `${Math.round(reel.bytes / 1024)} KB, ${reel.kept ? 'kept from before' : `read in ${reel.ms} ms`}`
-    if (CFG.wasmDecode && reel.avcC && !h264Broken) showReelWasm(s, reel).catch(e => { if (scrub === s) wasmFailed(s, reel, e) })
+    if (CFG.wasmDecode && reel.avcC && !h264Broken) showReelWasm(s, /** @type {H264Reel} */ (reel)).catch(e => { if (scrub === s) wasmFailed(s, reel, e) })
     else showReelVideo(s, reel)
   }
 
+  /** @param {Scrub} s @param {Reel} reel */
   function showReelVideo(s, reel) {
-    const r = s.reel
+    const r = /** @type {ReelShow} */ (s.reel)
     borrowDecoder(s.card)
     r.borrowed = true
     r.holder = document.createElement('div')
@@ -1985,10 +2311,27 @@
   // script. Keyframes decode straight into a canvas, scaled down to the card:
   // no <video>, no hardware decoder slot, any size. The decoder's imports are
   // system calls it hardly uses (its logging is off), answered by stubs.
+  /**
+   * The decoder's exports (wasm/h264dec.c).
+   * @typedef {object} H264
+   * @property {WebAssembly.Memory} memory
+   * @property {() => void} [_initialize]
+   * @property {(size: number) => number} buf_alloc
+   * @property {(ptr: number) => void} buf_free
+   * @property {(cfg: number, size: number) => number} dec_open      0 when it took the stream
+   * @property {(ptr: number, size: number, maxW: number) => number} dec_frame   0 when it decoded
+   * @property {() => number} dec_width
+   * @property {() => number} dec_height
+   * @property {() => number} dec_rgba     where the last frame's pixels are
+   * @property {() => void} dec_close
+   */
+  /** @type {H264 | null} */
   let h264 = null          // the decoder's exports, once loaded
+  /** @type {Promise<H264> | null} */
   let h264Loading = null
   let h264Broken = ''      // why it cannot load, after a first try: the <video> reel from then on
 
+  /** @returns {Promise<H264>} */
   function h264Decoder() {
     if (h264) return Promise.resolve(h264)
     if (!h264Loading) {
@@ -1997,8 +2340,11 @@
         const t0 = performance.now()
         const bytes = await (await fetch(GM_getResourceURL('h264dec'))).arrayBuffer()
         const mod = await WebAssembly.compile(bytes)
+        /** @type {WebAssembly.Memory | null} */
         let mem = null
-        const view = () => new DataView(mem.buffer)
+        // Only called by the decoder, which runs once mem is set (start-up is _initialize, below).
+        const view = () => new DataView(/** @type {WebAssembly.Memory} */ (mem).buffer)
+        /** @type {Record<string, (...args: number[]) => number>} */
         const calls = {
           fd_write: (fd, iov, count, written) => {   // nothing to show: count the bytes as written
             let n = 0
@@ -2008,7 +2354,7 @@
           },
           environ_sizes_get: (count, size) => { view().setUint32(count, 0, true); view().setUint32(size, 0, true); return 0 },
           clock_time_get: (id, precision, out) => { view().setBigUint64(out, BigInt(Math.round(performance.now() * 1e6)), true); return 0 },
-          random_get: (buf, len) => { crypto.getRandomValues(new Uint8Array(mem.buffer, buf, len)); return 0 },
+          random_get: (buf, len) => { crypto.getRandomValues(new Uint8Array(/** @type {WebAssembly.Memory} */ (mem).buffer, buf, len)); return 0 },
           proc_exit: code => { throw new Error(`decoder exited (${code})`) },
         }
         /** @type {WebAssembly.Imports} */
@@ -2016,7 +2362,7 @@
         for (const imp of WebAssembly.Module.imports(mod)) {
           (imports[imp.module] = imports[imp.module] || {})[imp.name] = calls[imp.name] || (() => 0)
         }
-        const x = /** @type {any} */ ((await WebAssembly.instantiate(mod, imports)).exports)
+        const x = /** @type {H264} */ (/** @type {unknown} */ ((await WebAssembly.instantiate(mod, imports)).exports))
         mem = x.memory
         if (x._initialize) x._initialize()   // the C library's own start-up
         info(`keyframe decoder: WebAssembly ready (${Math.round(bytes.byteLength / 1024)} KB in ${Math.round(performance.now() - t0)} ms)`)
@@ -2038,6 +2384,11 @@
   }
 
   // One AVCC sample in, an ImageData of at least maxW pixels across out.
+  /**
+   * @param {H264} x
+   * @param {Uint8Array} bytes
+   * @param {number} maxW
+   */
   function decodeKeyframe(x, bytes, maxW) {
     const ptr = x.buf_alloc(bytes.length)
     new Uint8Array(x.memory.buffer, ptr, bytes.length).set(bytes)
@@ -2052,6 +2403,10 @@
   }
 
   // The decoder configuration (avcC) of an H.264 track, from its sample description.
+  /**
+   * @param {Uint8Array} stsd
+   * @returns {Uint8Array | null}
+   */
   function avcConfig(stsd) {
     for (const entry of mp4Boxes(stsd, 16, stsd.length)) {   // past the box header, version and entry count
       if (entry.type !== 'avc1' && entry.type !== 'avc3') return null
@@ -2063,7 +2418,9 @@
 
   // The decoder has one stream open at a time: the hold slideshow's reel or
   // the seek bar's. Opened again only when it changes.
+  /** @type {H264Reel | null} */
   let h264Stream = null
+  /** @param {H264} x @param {H264Reel} reel */
   function openStream(x, reel) {
     if (h264Stream === reel) return
     h264Stream = null
@@ -2075,14 +2432,17 @@
     h264Stream = reel
   }
 
+  /** @param {Scrub} s @param {H264Reel} reel */
   async function showReelWasm(s, reel) {
     const x = await h264Decoder()
     if (scrub !== s) return
     openStream(x, reel)
     s.stats.method = 'wasm reel'
-    const r = s.reel
+    const r = /** @type {ReelShow} */ (s.reel)   // the scrub is still on: endReel has not run
     const maxW = Math.round(s.card.getBoundingClientRect().width * (window.devicePixelRatio || 1))
+    /** @type {number[]} */
     const times = []
+    /** @param {number} i */
     const decode = i => {
       const t0 = performance.now()
       const img = decodeKeyframe(x, reel.frames[i], maxW)
@@ -2097,7 +2457,7 @@
     cv.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:4px;background:#000'
     r.holder.appendChild(cv)
     placeOverPicture(s.card, r.holder)
-    const ctx = cv.getContext('2d')
+    const ctx = /** @type {CanvasRenderingContext2D} */ (cv.getContext('2d'))   // a new canvas always has one
     let i = 0
     // Show this scene, then decode the next while it stays on screen.
     const show = () => {
@@ -2117,6 +2477,11 @@
   }
 
   // The WebAssembly path failed on this video: the same reel in a <video>.
+  /**
+   * @param {Scrub} s
+   * @param {Reel} reel
+   * @param {unknown} e
+   */
   function wasmFailed(s, reel, e) {
     const r = s.reel
     if (!r) return
@@ -2127,6 +2492,7 @@
     showReelVideo(s, reel)
   }
 
+  /** @param {Scrub} s */
   function endReel(s) {
     const r = s.reel
     if (!r) return
@@ -2140,11 +2506,16 @@
 
   // Anything off (WebM behind an .mp4 name, an odd file, a host failing):
   // the slideshow seeks the file as before, or plays it when it is a short clip.
+  // e.sparse: too few keyframes in a clip of e.duration seconds.
+  /**
+   * @param {Scrub} s
+   * @param {Error & { sparse?: boolean, duration?: number }} e
+   */
   function reelFailed(s, e) {
     s.stats.reelError = e.message
     endReel(s)
     if (!scrubSource(s)) { endScrub(); return }
-    if (e.sparse && e.duration <= PLAY_MAX_S) playShow(s)
+    if (e.sparse && /** @type {number} */ (e.duration) <= PLAY_MAX_S) playShow(s)   // buildReel sets both
     else chooseShow(s)
   }
 
@@ -2155,6 +2526,7 @@
   const PLAY_MAX_S = 30
   const PLAY_RATE = 2
 
+  /** @param {Scrub} s */
   function chooseShow(s) {
     const v = s.video
     const decide = () => {
@@ -2166,6 +2538,7 @@
     else v.addEventListener('loadedmetadata', decide, { once: true })
   }
 
+  /** @param {Scrub} s */
   function playShow(s) {
     s.stats.method = 'play'
     const v = s.video
@@ -2185,22 +2558,25 @@
   }
 
   // The cover keeps the frame where the finger lifted, as after a scrub.
+  /** @param {Scrub} s */
   function endPlayShow(s) {
     const v = s.video
-    v.removeEventListener('timeupdate', s.onPlayTime)
+    v.removeEventListener('timeupdate', /** @type {() => void} */ (s.onPlayTime))   // called while it is set
     s.onPlayTime = null
     v.pause()
     v.playbackRate = s.played.rate
     v.loop = s.played.loop
   }
 
+  // Called with a scrub under way.
   function startScrub() {
-    if (!scrubSource(scrub)) return false
-    scrubUi(scrub)
+    if (!scrubSource(/** @type {Scrub} */ (scrub))) return false
+    scrubUi(/** @type {Scrub} */ (scrub))
     return true
   }
 
   // The video a scrub seeks: the card's cover when loaded, else the shared preview.
+  /** @param {Scrub} s */
   function scrubSource(s) {
     const { card } = s
     const pic = cardPicture(card)
@@ -2228,6 +2604,7 @@
   }
 
   // The progress bar and the time label over the card.
+  /** @param {Scrub} s */
   function scrubUi(s) {
     if (s.bar) return
     const { card } = s
@@ -2248,12 +2625,14 @@
     s.on = true
   }
 
+  // Called with a scrub under way, once startScrub made its bar and label.
+  /** @param {number} x */
   function moveScrub(x) {
-    const r = scrub.card.getBoundingClientRect()
+    const r = /** @type {Scrub} */ (scrub).card.getBoundingClientRect()
     const f = Math.min(1, Math.max(0, (x - r.left) / r.width))
-    scrub.bar.style.width = `${f * 100}%`
-    const at = seekFraction(scrub.video, f)
-    scrub.label.textContent = at ? `${mmss(at.t)} / ${mmss(at.d)}` : '…'
+    ;/** @type {Scrub} */ (scrub).bar.style.width = `${f * 100}%`
+    const at = seekFraction(/** @type {Scrub} */ (scrub).video, f)
+    ;/** @type {Scrub} */ (scrub).label.textContent = at ? `${mmss(at.t)} / ${mmss(at.d)}` : '…'
   }
 
   function endScrub() {
@@ -2268,12 +2647,13 @@
     endReel(s)
     s.bar.remove()
     s.label.remove()
-    if (s.shared) { previewStop(); s.holder.remove(); returnDecoder() }
+    if (s.shared) { previewStop(); /** @type {HTMLElement} */ (s.holder).remove(); returnDecoder() }   // a shared preview has one
     afterPreview()
     // A cover keeps the frame where the finger stopped.
     dbg(`scrub: stopped at ${s.label.textContent}`)
   }
 
+  /** @param {PointerEvent} ev */
   function onScrubMove(ev) {
     if (!scrub || ev.pointerId !== scrub.id) return
     if (CFG.scrubMode === 'hold') {
@@ -2291,6 +2671,7 @@
     moveScrub(ev.clientX)
   }
 
+  /** @param {PointerEvent} ev */
   function onScrubUp(ev) {
     if (!scrub || ev.pointerId !== scrub.id) return
     // After a scrub, the click that follows must not open the post or the modal.
@@ -2299,6 +2680,7 @@
   }
 
   // Registered before the modal's click handler, so stopping it here wins.
+  /** @param {MouseEvent} ev */
   function onScrubClick(ev) {
     if (Date.now() > scrubClickUntil) return
     scrubClickUntil = 0
@@ -2319,12 +2701,13 @@
     window.addEventListener('pointercancel', onScrubUp, true)
     window.addEventListener('click', onScrubClick, true)
     // Hold mode: the long press is ours, so the browser's long-press menu stays out.
+    // An event's target is set while it is dispatched; one with closest() is an element.
     window.addEventListener('contextmenu', ev => {
-      if (CFG.scrubMode === 'hold' && ev.target.closest && ev.target.closest('[data-ibh-video]')) ev.preventDefault()
+      if (CFG.scrubMode === 'hold' && /** @type {EventTarget} */ (ev.target).closest && /** @type {Element} */ (ev.target).closest('[data-ibh-video]')) ev.preventDefault()
     }, true)
     // Belt and braces for the drag-and-drop that cancels a scrub on site pages.
     window.addEventListener('dragstart', ev => {
-      if (ev.target.closest && ev.target.closest('[data-ibh-video]')) ev.preventDefault()
+      if (/** @type {EventTarget} */ (ev.target).closest && /** @type {Element} */ (ev.target).closest('[data-ibh-video]')) ev.preventDefault()
     }, true)
     info(`video scene preview active: ${CFG.scrubMode === 'hold' ? 'hold a video thumbnail for a slideshow' : 'drag sideways on a video thumbnail'}`)
   }
@@ -2343,10 +2726,11 @@
 
   const farViewport = 'IntersectionObserver' in window
     ? new IntersectionObserver(entries => {
-        for (const e of entries) if (!e.isIntersecting) releaseFar(e.target)
+        for (const e of entries) if (!e.isIntersecting) releaseFar(/** @type {HTMLImageElement} */ (e.target))   // watchDistance's images
       }, { rootMargin: FAR_MARGIN })
     : null
 
+  /** @param {Element} el */
   function watchDistance(el) {
     if (CFG.memorySaver && farViewport) farViewport.observe(el)
   }
@@ -2354,12 +2738,14 @@
   // Going back to the thumbnail must not change the height of something above
   // the viewport, or the page jumps. Hold the current height until the better
   // file is back (inline !important beats the feed's height:auto !important).
+  /** @param {HTMLElement} el */
   function pinHeight(el) {
     if (el.tagName !== 'IMG' || !el.clientHeight) return
     el.style.setProperty('height', `${el.clientHeight}px`, 'important')
     el.dataset.ibhPinned = '1'
   }
 
+  /** @param {HTMLElement} el */
   function unpinHeight(el) {
     if (!el.dataset.ibhPinned) return
     el.style.removeProperty('height')
@@ -2368,11 +2754,13 @@
 
   let releasedCount = 0
 
+  // Called by farViewport itself.
+  /** @param {HTMLImageElement} el */
   function releaseFar(el) {
-    if (el.dataset.ibhOrig !== 'done') { farViewport.unobserve(el); return }
+    if (el.dataset.ibhOrig !== 'done') { /** @type {IntersectionObserver} */ (farViewport).unobserve(el); return }
     pinHeight(el)
     resetUpgrade(el)
-    farViewport.unobserve(el)
+    ;/** @type {IntersectionObserver} */ (farViewport).unobserve(el)
     if (originalViewport) originalViewport.observe(el)   // upgraded again when it comes back
     releasedCount++
     if (releasedCount % 10 === 1) dbg(`memory: released ${releasedCount} off-screen images so far`)
@@ -2386,12 +2774,13 @@
   // card rebuilt) keeps its decoder until garbage collection, and the
   // live-cover count would never come back down. Unload them and recount
   // from what is actually in the document.
+  /** @param {Iterable<AnyNode>} nodes */
   function onNodesRemoved(nodes) {
     let unloaded = 0
     for (const node of nodes) {
       if (node.nodeType !== 1) continue
       const vids = node.matches && node.matches('video[data-ibh]')
-        ? [node]
+        ? [/** @type {HTMLVideoElement} */ (node)]
         : (node.querySelectorAll ? [...node.querySelectorAll('video[data-ibh]')] : [])
       for (const v of vids) {
         if (!v.currentSrc) continue   // already unloaded: one of our own unmounts
@@ -2427,6 +2816,7 @@
   const SWEEP_GAP_MS = 2000   // scroll sweeps no closer than this
   let sweepAt = 0
 
+  /** @param {string} why */
   function sweep(why) {
     // The modal and a preview run their own cleanup; a hidden tab is parked.
     if (document.hidden || (modal && modal.open) || scrub) return
@@ -2438,6 +2828,7 @@
 
   // A tab in the background decodes nothing, yet its covers and GIFs keep
   // their memory. Park them while hidden and bring them back on return.
+  /** @type {HTMLElement[]} */
   const parked = []
 
   function onVisibilityChange() {
@@ -2461,8 +2852,10 @@
   // A scene preview decodes a whole video, the slideshow two: free memory
   // before it starts. Off-screen work goes, and GIFs on screen stop (an
   // animated GIF holds every frame decoded) until the preview ends.
+  /** @type {HTMLElement[]} */
   const previewPaused = []
 
+  /** @param {HTMLElement} card */
   function freeForPreview(card) {
     if (!CFG.memorySaver) return
     const n = freeOffscreen(card)
@@ -2503,8 +2896,73 @@
   const SITE_LINK = `${THUMB} a`
   const SWIPE_MIN = 60        // px sideways to change post
   const CONTROLS_BAND = 100   // bottom strip of the video: the player's own controls (the two-row capsule and its margin)
-  let modal = null
 
+  /**
+   * The post viewer: its elements (buildModal) and the post on show.
+   * @typedef {object} Modal
+   * @property {HTMLDivElement} host
+   * @property {ShadowRoot} root
+   * @property {HTMLDivElement} box
+   * @property {HTMLDivElement} stage
+   * @property {HTMLDivElement} vwrap
+   * @property {HTMLVideoElement} video
+   * @property {HTMLImageElement} image
+   * @property {VideoControls} controls
+   * @property {HTMLAnchorElement} post
+   * @property {HTMLSpanElement} count
+   * @property {HTMLDivElement} status
+   * @property {HTMLButtonElement} fav
+   * @property {HTMLButtonElement} up
+   * @property {HTMLButtonElement} vfav
+   * @property {HTMLDivElement} gearMenu
+   * @property {HTMLSpanElement} dlq
+   * @property {HTMLSpanElement} score
+   * @property {HTMLDivElement} toast
+   * @property {HTMLDivElement} badge
+   * @property {HTMLButtonElement} turn
+   * @property {HTMLButtonElement} fsBtn
+   * @property {HTMLButtonElement} menu
+   * @property {HTMLDivElement} sheet
+   * @property {HTMLDivElement} tagList
+   * @property {HTMLButtonElement} laterBtn
+   * @property {HTMLButtonElement} dlBtn
+   * @property {HTMLButtonElement} playerBtn
+   * @property {HTMLButtonElement} appDlBtn
+   * @property {HTMLButtonElement} appReduceBtn
+   * @property {HTMLButtonElement} quality
+   * @property {HTMLButtonElement} tabTags
+   * @property {HTMLButtonElement} tabInfo
+   * @property {HTMLButtonElement} tabComments
+   * @property {HTMLDivElement} infoList
+   * @property {HTMLDivElement} commentList
+   * @property {string} sheetTab          'tags', 'info' or 'comments'
+   * @property {HTMLDivElement} laterView
+   * @property {HTMLDivElement} laterHead
+   * @property {HTMLDivElement} laterGrid
+   * @property {HTMLDivElement} laterNote
+   * @property {HTMLAnchorElement[] | null} listLinks   the Watch later list being stepped through, instead of the page's
+   * @property {string | null} turned    the orientation turnScreen locked
+   * @property {boolean} open
+   * @property {HTMLAnchorElement} link  the post on show; typed non-null, but null until a post opens
+   *   (the Watch later list opens the modal without one, and what runs there checks it)
+   * @property {number} seq              bumped by every new post: loads of an older one drop their result
+   * @property {number} [dir]            the direction of travel, for the preload
+   * @property {IntersectionObserver | null} [laterIO]
+   * @property {string | null} [fileUrl]     the post's own file, once it loaded
+   * @property {(() => void) | null} [cancelLoad]
+   * @property {boolean} [isSample]
+   * @property {boolean} [origPending]
+   * @property {string | null} [sampleUrl]
+   * @property {string | null} [rawUrl]
+   * @property {boolean} [keepSample]
+   * @property {ScrollRestoration} [scrollMode]   the page's own, while the modal holds it
+   */
+  // null until the first open builds it (buildModal); what can run before
+  // then checks it (modal && …), and nothing sets it back.
+  /** @type {Modal} */
+  let modal = /** @type {any} */ (null)
+
+  /** @returns {HTMLAnchorElement[]} */
   const siteLinks = () => [...document.querySelectorAll(SITE_LINK)]
 
   const MODAL_CSS = `
@@ -2814,6 +3272,7 @@
     // 🔗: a tap copies the file's link, a hold opens the file in a new tab.
     // The link is asked for as the finger lands, so it is there by the time
     // the hold ends (the tab must open within that gesture).
+    /** @type {string | null | undefined} */
     let rawHref = null
     const askRaw = () => { rawHref = null; rawFileUrl().then(u => { rawHref = u }, () => {}) }
     copyBtn.addEventListener('touchstart', askRaw, { passive: true })
@@ -2843,10 +3302,12 @@
     installImageHold(stage, image, box)
     installVideoGestures(layer, video)
     root.append(style, box)
-    modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, vfav: favUp, gearMenu, dlq, score, toast, badge, turn, fsBtn, menu, sheet, tagList, laterBtn, dlBtn, playerBtn, appDlBtn, appReduceBtn, quality, tabTags, tabInfo, tabComments, infoList, commentList, sheetTab: 'tags', laterView, laterHead, laterGrid, laterNote, listLinks: null, turned: null, open: false, link: null, seq: 0 }
+    // link: null until openModal sets it (showLater opens the list without one).
+    modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, vfav: favUp, gearMenu, dlq, score, toast, badge, turn, fsBtn, menu, sheet, tagList, laterBtn, dlBtn, playerBtn, appDlBtn, appReduceBtn, quality, tabTags, tabInfo, tabComments, infoList, commentList, sheetTab: 'tags', laterView, laterHead, laterGrid, laterNote, listLinks: null, turned: null, open: false, link: /** @type {any} */ (null), seq: 0 }
   }
 
   let toastTimer = 0
+  /** @param {string} text */
   function flash(text) {
     modal.toast.textContent = text
     modal.toast.style.opacity = '1'
@@ -2861,8 +3322,11 @@
   // from the site's own vote links are remembered here, per site.
   const MARKS_KEY = `IBH_MARKS_${SITE}`   // { f: [favorite ids], v: [upvoted ids] }
   const MARKS_MAX = 5000                   // per kind; the oldest go first
+  /** @typedef {{ f: Set<string>, v: Set<string>, c: Set<string> }} Marks  ids: f favorites, v upvoted posts, c upvoted comments */
+  /** @type {Marks | null} */
   let marks = null
 
+  /** @returns {Marks} */
   function loadMarks() {
     if (!marks) {
       const m = readJSON(MARKS_KEY, {})
@@ -2871,23 +3335,34 @@
     return marks
   }
 
+  /**
+   * @param {keyof Marks} kind
+   * @param {string} id
+   * @param {boolean} on
+   */
   function setMark(kind, id, on) {
     const set = loadMarks()[kind]
     if (on === set.has(id)) return
     if (on) set.add(id)
     else set.delete(id)
-    while (set.size > MARKS_MAX) set.delete(set.values().next().value)
-    writeJSON(MARKS_KEY, { f: [...marks.f], v: [...marks.v], c: [...marks.c] })
+    while (set.size > MARKS_MAX) set.delete(/** @type {string} */ (set.values().next().value))   // not empty
+    // loadMarks() above filled marks.
+    writeJSON(MARKS_KEY, { f: [.../** @type {Marks} */ (marks).f], v: [.../** @type {Marks} */ (marks).v], c: [.../** @type {Marks} */ (marks).c] })
   }
 
+  /** @param {keyof Marks} kind @param {string} id */
   const hasMark = (kind, id) => loadMarks()[kind].has(id)
 
+  /** @param {string} name */
   function readCookie(name) {
     const m = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`))
     return m ? m[1] : null
   }
 
-  /** Touches inside the panel are not page gestures. */
+  /**
+   * Touches inside the panel are not page gestures.
+   * @param {Event} ev
+   */
   function insidePanel(ev) {
     const path = typeof ev.composedPath === 'function' ? ev.composedPath() : []
     return panelHost ? path.includes(panelHost) : false
@@ -2903,8 +3378,11 @@
   // The post page, fetched once per post while the page lives (the swipe
   // ahead warms it), gives the favorite state (its heart icon) and the tags
   // with their kind (its sidebar). Only the parsed facts are kept.
+  /** @typedef {ReturnType<typeof readPostPage>} PostPage */
+  /** @type {Map<string, Promise<PostPage | null>>} */
   const postInfos = new Map()   // id -> Promise<{ fav, tags } | null>
 
+  /** @param {string} id */
   function postInfo(id) {
     let p = postInfos.get(id)
     if (!p) {
@@ -2920,11 +3398,16 @@
   // Comments of a post page: #comment-list > div#c<id>, author/date/score in
   // .col1, text in .col2 (<br> for its line breaks). Ten a page; the next ten
   // come from the "Next »" link of the comments' paginator (a cursor).
+  /** @typedef {ReturnType<typeof readComments>} Comments */
+  /**
+   * @param {ParentNode} doc
+   * @param {string} [base]  what the links are relative to
+   */
   function readComments(doc, base = location.href) {
     const list = [...doc.querySelectorAll('#comment-list > div[id]')].filter(d => /^c\d+$/.test(d.id)).map(d => {
       const head = d.querySelector('.col1')
       const body = d.querySelector('.col2')
-      if (body) body.querySelectorAll('br').forEach(br => br.replaceWith('\n'))
+      if (body) body.querySelectorAll('br').forEach((/** @type {Element} */ br) => br.replaceWith('\n'))
       const headText = head ? head.textContent.replace(/\s+/g, ' ') : ''
       const author = head && head.querySelector('a[href*="page=account"]')
       return {
@@ -2941,6 +3424,7 @@
     return { list, total, next: more ? new URL(more.getAttribute('href'), base).href : null }
   }
 
+  /** @param {string} html */
   function readPostPage(html) {
     const heart = html.match(/id="heart-img"[^>]*src="[^"]*\/(heart(?:-added)?)\.svg"/)
     // An inert document: no scripts run, no images load.
@@ -2968,8 +3452,13 @@
     return { fav: heart ? heart[1] === 'heart-added' : null, tags, stats, original, comments }
   }
 
+  /** @type {Map<string, Promise<boolean | null>>} */
   const favLookups = new Map()   // id -> Promise<true | false | null>
 
+  /**
+   * @param {string} id
+   * @returns {Promise<boolean | null>}
+   */
   function lookUpFavorite(id) {
     if (!userId()) return Promise.resolve(null)   // logged out: the page has no state to give
     let p = favLookups.get(id)
@@ -2991,8 +3480,11 @@
   // reach of anything that clears the site's data. Where GM storage is
   // missing (another userscript manager), the site's IndexedDB holds them.
   const GM_STORE = typeof GM_getValue === 'function' && typeof GM_setValue === 'function'
+  /** @typedef {'later' | 'favs' | 'cfg' | 'searches'} StoreKey */
+  /** @type {StoreKey[]} */
   const STORE_KEYS = ['later', 'favs', 'cfg', 'searches']   // also what the storage bridge held (moveIn)
   // An empty list or object counts as nothing stored.
+  /** @param {unknown} v */
   const hasData = v => v != null && (typeof v !== 'object' || (Array.isArray(v) ? v.length > 0 : Object.keys(v).length > 0))
 
   // ── Download ──
@@ -3002,14 +3494,18 @@
   // in a new tab, to be saved with a long press (still inside the tap's user
   // activation, so the popup blocker lets it through).
   const GM_XHR = typeof GM_xmlhttpRequest === 'function'
+  /** @type {Set<string>} */
   const downloading = new Set() // post ids in flight: a second tap does not start another
+  /** @type {Map<string, number>} */
   const dlPercent = new Map()   // post id -> last progress, for the button
   const DL_DONE_MS = 1500       // the ✓ stays this long before the button comes back
   const BLOB_LIFE_MS = 120000   // how long Firefox gets to save the file
   const DL_STALL_MS = 60000     // a download that gets nothing for this long is given up (no cap on the whole)
+  /** @type {{ post: string | null, until: number }} */
   let dlDoneAt = { post: null, until: 0 }
 
   // Files come only from the site's own hosts (rule34.xxx, api-cdn.rule34.xxx…).
+  /** @param {string} url */
   function siteFile(url) {
     try {
       const u = new URL(url)
@@ -3023,10 +3519,17 @@
   // blob: link right away, so confirming saves nothing. Same path, done here:
   // fetch the file, hand Firefox a blob: link to save, and keep that link
   // alive long enough to confirm the prompt.
+  /**
+   * @param {string} url
+   * @param {string} name
+   * @param {(ok: boolean, error?: string) => void} done
+   * @param {(loaded: number, total: number) => void} progress
+   */
   function saveFile(url, name, done, progress) {
     let last = 0
     let heard = Date.now()   // the last time any bytes came
     let over = false
+    /** @param {boolean} ok @param {string} [error] */
     const end = (ok, error) => {
       if (over) return
       over = true
@@ -3098,6 +3601,11 @@
     }
   }
 
+  /**
+   * @param {string} post
+   * @param {boolean} ok
+   * @param {string} [error]
+   */
   function dlFinished(post, ok, error) {
     downloading.delete(post)
     dlPercent.delete(post)
@@ -3115,6 +3623,7 @@
   // The post's own file, once it loaded: with the sample on screen, the
   // original, known from the cache or the post page's Original image link
   // (the sample only as a last resort).
+  /** @returns {Promise<string | null | undefined>} */
   async function rawFileUrl() {
     const url = modal.fileUrl
     if (!url || !modal.isSample) return url
@@ -3129,6 +3638,7 @@
   // A link that opens outside the site: rule34's fast host serves videos
   // only with the site as Referer (images it serves to anyone); its origin
   // host serves both.
+  /** @param {string} url */
   const portableUrl = url => url.replace(/:\/\/api-cdn\.rule34\.xxx\/(.*\.(?:mp4|webm)(?:[?#]|$))/i, '://api-cdn-mp4.rule34.xxx/$1')
 
   // 🔗: the raw file's link, on the clipboard.
@@ -3180,6 +3690,7 @@
   // Referer, which rule34's fast host (api-cdn) wants, so the app gets the
   // origin host: slower, open to anyone. The title and position ride along.
   const APP = 'com.example.qtmediaplayer'
+  /** @param {'play' | 'download' | 'reduce'} mode */
   async function sendToApp(mode) {
     const playing = modal.fileUrl || modal.video.currentSrc
     if (!playing) { flash(t('dlWait')); return }
@@ -3214,11 +3725,17 @@
   const APP_POLL_MS = 2000
   const APP_POLL_MISSES = 30   // a minute without an answer ends the following
   const appToken = () => (GM_STORE ? String(GM_getValue('appToken', '') || '') : '')
+  /** @param {string} value */
   function setAppToken(value) { if (GM_STORE) GM_setValue('appToken', String(value).trim()) }
 
   // One request to the app: { ok, status, json } or { ok: false, stage, error },
   // where stage is 'token' (401) or 'app' (not answering, or its own error).
-  /** @returns {Promise<{ ok: boolean, status: number, json: any, stage?: string, error?: string }>} */
+  /**
+   * @param {'GET' | 'POST'} method
+   * @param {string} route
+   * @param {AppDownloadRequest} [body]
+   * @returns {Promise<{ ok: boolean, status: number, json: any, stage?: string, error?: string }>}
+   */
   function appCall(method, route, body) {
     return new Promise(resolve => {
       const down = () => resolve({ ok: false, status: 0, json: null, stage: 'app', error: 'not answering' })
@@ -3244,6 +3761,7 @@
 
   // The panel's token field and the app's status (asked each time the panel
   // is built or opened).
+  /** @type {HTMLDivElement | null} */
   let appStatusRow = null
   function appControls() {
     const field = el('input', { class: 'apptoken', type: 'password', autocomplete: 'off', placeholder: t(GM_STORE ? 'appToken' : 'appNoStore') })
@@ -3268,6 +3786,11 @@
 
   // ⬇ App or ⚡ 1080p by the app's server; false when it can't take it, and
   // the caller sends the intent link instead.
+  /**
+   * @param {string} fileUrl
+   * @param {boolean} reduce
+   * @param {string} title
+   */
   async function appDownload(fileUrl, reduce, title) {
     if (!CFG.appBridge || !appToken()) return false
     const post = postId(modal.link)
@@ -3285,9 +3808,11 @@
   // Asks the app how a download goes until it (and its conversion) ends,
   // and says so on the page. The app answers while it downloads or converts
   // (a foreground service keeps it awake), so misses mean it went away.
+  /** @param {number} id @param {string} post */
   function followAppDownload(id, post) {
     let misses = 0
     let said = ''
+    /** @param {'appFailed' | 'appSaved' | 'appFits' | 'appConverted' | 'appConverting'} key @param {string} line */
     const say = (key, line) => { if (said === key) return; said = key; flash(t(key)); info(`app server: post ${post} ${line}`) }
     const tick = async () => {
       const r = await appCall('GET', `v1/download/${id}`)
@@ -3342,8 +3867,10 @@
   // IndexedDB of the site: a store of its own, not touched by a script that
   // clears localStorage, and far roomier (the favorites index runs to MBs).
   // Resolves undefined when IndexedDB is not available.
+  /** @type {Promise<IDBDatabase> | null} */
   let idbOpen = null
 
+  /** @returns {Promise<IDBDatabase>} */
   function idb() {
     if (!idbOpen) {
       idbOpen = new Promise((resolve, reject) => {
@@ -3356,6 +3883,11 @@
     return idbOpen
   }
 
+  // The stored value (null when there is none), unchecked; undefined without IndexedDB.
+  /**
+   * @param {string} key
+   * @returns {Promise<any>}
+   */
   async function idbGet(key) {
     try {
       const db = await idb()
@@ -3369,6 +3901,7 @@
     }
   }
 
+  /** @param {string} key @param {unknown} value */
   async function idbSet(key, value) {
     try {
       const db = await idb()
@@ -3386,6 +3919,7 @@
 
   // Without GM storage: IndexedDB, or localStorage where IndexedDB fails.
   // What an older version left in localStorage moves into IndexedDB.
+  /** @param {string} key */
   async function siteGet(key) {
     const value = await idbGet(key)
     const local = readJSON(`IBH_${key}`, null)
@@ -3397,6 +3931,7 @@
     return value
   }
 
+  /** @param {string} key @param {unknown} value */
   async function siteSet(key, value) {
     if (!(await idbSet(key, value))) writeJSON(`IBH_${key}`, value)
   }
@@ -3409,12 +3944,19 @@
   // good once the bridge has answered, or after a few loads without it.
   const BRIDGE_WAIT_MS = 1500
   const BRIDGE_TRIES = 3
+  /** @type {Promise<void> | null} */
   let movedIn = null
 
   // The bridge's value for each key that got an answer in time.
+  /**
+   * @param {string[]} keys
+   * @returns {Promise<Record<string, any>>}
+   */
   function askBridge(keys) {
     return new Promise(resolve => {
+      /** @type {Record<string, any>} */
       const got = {}
+      /** @type {Map<string, string>} */
       const asked = new Map()   // request id -> key
       let seq = 0
       const ask = () => {
@@ -3425,9 +3967,10 @@
           window.dispatchEvent(new CustomEvent('ibh-store-request', { detail: JSON.stringify({ id, op: 'get', key }) }))
         }
       }
+      /** @param {Event} ev */
       const onReply = ev => {
         let msg
-        try { msg = JSON.parse(ev.detail) } catch (e) { return }
+        try { msg = JSON.parse(/** @type {CustomEvent<string>} */ (ev).detail) } catch (e) { return }   // ibh-store-reply's
         const key = msg && asked.get(msg.id)
         if (key === undefined) return
         got[key] = msg.value
@@ -3448,13 +3991,25 @@
 
   // Two copies of the same key, as they can differ when the bridge answers
   // only on a later load: everything from both, this script's own first.
+  // Both are stored values, unchecked.
+  /**
+   * @param {StoreKey} key
+   * @param {any} mine
+   * @param {any} theirs
+   */
   function mergeStored(key, mine, theirs) {
     if (!hasData(mine)) return theirs
+    /**
+     * @template T
+     * @param {T[]} a
+     * @param {T[]} b
+     * @param {(x: T) => string} id
+     */
     const union = (a, b, id) => {
       const seen = new Set(a.map(id))
       return [...a, ...b.filter(x => !seen.has(id(x)))]
     }
-    if (key === 'later') return union(mine, theirs, item => item.href).slice(0, LATER_MAX)
+    if (key === 'later') return union(mine, theirs, (/** @type {LaterItem} */ item) => item.href).slice(0, LATER_MAX)
     if (key === 'searches') {
       return { saved: union(mine.saved || [], theirs.saved || [], searchKey), recent: union(mine.recent || [], theirs.recent || [], searchKey),
         favLast: mine.favLast || theirs.favLast || null }
@@ -3489,11 +4044,17 @@
   const storeReady = () => movedIn || (movedIn = (GM_STORE ? moveIn() : Promise.resolve())
     .catch(e => warn(`storage: moving in failed — ${describeError(e)}`)))
 
+  // What was stored under the key (null when nothing was), unchecked.
+  /**
+   * @param {StoreKey} key
+   * @returns {Promise<any>}
+   */
   async function storeGet(key) {
     await storeReady()
     return GM_STORE ? GM_getValue(key, null) : siteGet(key)
   }
 
+  /** @param {StoreKey} key @param {unknown} value */
   async function storeSet(key, value) {
     await storeReady()
     if (GM_STORE) GM_setValue(key, value)
@@ -3507,11 +4068,14 @@
   // link, its thumbnail and its tags (they tell a video or a GIF apart).
   const LATER_MAX = 500
 
+  /** @typedef {ReturnType<typeof laterItem>} LaterItem */
+  /** @returns {Promise<LaterItem[]>} */
   async function laterList() {
     const list = await storeGet('later')
     return Array.isArray(list) ? list : []
   }
 
+  /** @param {HTMLAnchorElement} link */
   function laterItem(link) {
     const img = link.querySelector('img')
     return {
@@ -3525,6 +4089,7 @@
   }
 
   // A detached stand-in for a page thumbnail, which is what the modal reads.
+  /** @param {LaterItem} item */
   function laterLink(item) {
     const a = document.createElement('a')
     a.href = item.href
@@ -3550,11 +4115,13 @@
     info(`later: ${i < 0 ? 'saved' : 'removed'} post ${postId(link)} (${list.length} in the list)`)
   }
 
+  /** @param {boolean} saved */
   function setLaterButton(saved) {
     modal.laterBtn.textContent = t(saved ? 'laterIn' : 'laterAdd')
     modal.laterBtn.classList.toggle('on', saved)
   }
 
+  /** @param {HTMLAnchorElement} link @param {number} seq */
   function refreshLaterButton(link, seq) {
     setLaterButton(false)
     laterList().then(list => {
@@ -3585,8 +4152,8 @@
       ? new IntersectionObserver(entries => {
           for (const e of entries) {
             if (!e.isIntersecting) continue
-            modal.laterIO.unobserve(e.target)
-            sharpenTile(e.target)
+            /** @type {IntersectionObserver} */ (modal.laterIO).unobserve(e.target)   // set while it observes: closeModal disconnects it first
+            sharpenTile(/** @type {HTMLImageElement} */ (e.target))   // it watches the tiles' images
           }
         }, { root: modal.laterView, rootMargin: '300px' })
       : null
@@ -3629,16 +4196,27 @@
   const FAV_SHOW = 60          // results added per step
   const FAV_GAP_MS = 250       // between page reads, one at a time
   const FAV_STALE_MS = 10 * 60 * 1000   // the index is refreshed in the background after this
+  /** @typedef {[id: string, thumb: string, tags: string, score: number | null]} FavItem */
+  /** @typedef {{ user: string | null, updated: number, items: FavItem[] }} FavIndex */
+  /** @typedef {{ item: [id: string, thumb: string, tags: string], tags: string[], set: Set<string>, score: number | null, video: boolean, gif: boolean, animated: boolean }} FavEntry */
+  /** @type {FavIndex | null} */
   let favIndex = null          // { user, updated, items: [[id, thumb, tags, score]] }, newest first
+  /** @type {FavEntry[] | null} */
   let favEntries = null        // the items with their tags split, for searching
+  /** @type {Promise<FavIndex | null> | null} */
   let favScan = null           // the read in progress
+  /** @type {ChildNode[] | null} */
   let favPage = null           // the page's own list content, put back on Clear
+  /** @type {Array<FavEntry['item']>} */
   let favResults = []
   let favShown = 0
+  /** @type {(() => void) | null} */
   let favBarSync = null        // refreshes the ☆ button of the favorites bar
+  /** @type {(() => Promise<void>) | null} */
   let favBarReload = null      // refreshes its lists
 
   // The favorites bar's search, remembered for the next visit (active: shown).
+  /** @param {boolean} active */
   async function rememberFavSearch(active) {
     const bar = document.getElementById('ibh-favsearch')
     if (!bar) return
@@ -3650,9 +4228,10 @@
     if (active && favBarReload) favBarReload()
   }
 
+  /** @returns {Promise<FavIndex>} */
   async function loadFavIndex() {
     if (favIndex && favIndex.user === userId()) return favIndex
-    const saved = await storeGet('favs')
+    const saved = /** @type {FavIndex | null} */ (await storeGet('favs'))
     favIndex = saved && saved.user === userId() ? saved : { user: userId(), updated: 0, items: [] }
     favEntries = null
     return favIndex
@@ -3660,31 +4239,39 @@
 
   // One page of favorites: ids, thumbnails and tags from the thumbnails, scores
   // from the page's inline script (posts[ID] = { … score: 'N' }).
+  /**
+   * @param {number} pid   the first favorite of the page
+   * @returns {Promise<FavItem[]>}
+   */
   async function readFavPage(pid) {
     const res = await fetch(`/index.php?page=favorites&s=view&id=${userId()}&pid=${pid}`, { credentials: 'same-origin' })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const html = await res.text()
+    /** @type {Map<string, number>} */
     const scores = new Map()
     for (const m of html.matchAll(/posts\[(\d+)\]\s*=\s*\{[^}]*?score['"]?\s*:\s*['"]?(-?\d+)/g)) scores.set(m[1], Number(m[2]))
     const doc = new DOMParser().parseFromString(html, 'text/html')
     return [...doc.querySelectorAll('.thumb img[src]')].map(img => {
       const a = img.closest('a')
       const id = ((a && a.getAttribute('href')) || '').match(/id=(\d+)/)?.[1] || (img.getAttribute('src').split('?')[1] || '')
-      return [id, img.getAttribute('src'), (img.getAttribute('title') || img.getAttribute('alt') || '').trim(), scores.has(id) ? scores.get(id) : null]
+      return /** @type {FavItem} */ ([id, img.getAttribute('src'), (img.getAttribute('title') || img.getAttribute('alt') || '').trim(), scores.has(id) ? scores.get(id) : null])
     }).filter(item => /^\d+$/.test(item[0]))
   }
 
   // Reads the favorites pages into the index: all of them (full), or only
   // until a page holds favorites already known.
+  /** @param {boolean} full */
   function updateFavIndex(full) {
     if (favScan) return favScan
     favScan = (async () => {
       const idx = await loadFavIndex()
       const known = new Set(full ? [] : idx.items.map(item => item[0]))
+      /** @type {FavItem[]} */
       const fresh = []
       try {
         for (let pid = 0; ; pid += FAV_PAGE) {
           setFavStatus(`${t('favScanning')} ${pid / FAV_PAGE + 1}…`)
+          /** @type {FavItem[] | null} */
           let items = null
           for (let tries = 0; !items; tries++) {
             try { items = await readFavPage(pid) } catch (e) {
@@ -3718,6 +4305,11 @@
   }
 
   // tag, -tag, tag* (wildcard), a ~ b (either), score:>10 (also >=, <, <=, =).
+  /** @typedef {(e: FavEntry) => boolean} FavMatcher */
+  /**
+   * @param {string} word
+   * @returns {FavMatcher}
+   */
   function favMatcher(word) {
     const score = word.match(/^score:(>=|<=|>|<|=)?(-?\d+)$/)
     if (score) {
@@ -3733,8 +4325,13 @@
     return e => e.set.has(word)
   }
 
+  /**
+   * @param {string} text
+   * @returns {FavMatcher}
+   */
   function favQuery(text) {
     const words = text.toLowerCase().trim().split(/\s+/).filter(Boolean)
+    /** @type {Array<{ neg: boolean, any: FavMatcher[] }>} */
     const groups = []   // every group must hold: one of `any`, or none of it when negated
     words.forEach((word, i) => {
       if (word === '~') return
@@ -3768,13 +4365,15 @@
     }
     const match = favQuery(text)
     const kind = bar.querySelector('select.kind').value
-    const ofKind = e => kind === 'all' || (kind === 'image' ? !e.animated : e[kind])
+    // kind: the select's other values are FavEntry's flags.
+    /** @param {FavEntry} e */
+    const ofKind = e => kind === 'all' || (kind === 'image' ? !e.animated : e[/** @type {'video' | 'gif' | 'animated'} */ (kind)])
     const min = Number(bar.querySelector('input.min').value) || 0
     let found = favEntries.filter(e => ofKind(e) && (!min || (e.score != null && e.score >= min)) && match(e))
     const sort = bar.querySelector('select.sort').value
     if (sort === 'old') found = found.reverse()
     else if (sort === 'score') found = [...found].sort((a, b) => (b.score ?? -1e9) - (a.score ?? -1e9))
-    else if (sort === 'random') found = found.map(e => [Math.random(), e]).sort((a, b) => a[0] - b[0]).map(pair => pair[1])
+    else if (sort === 'random') found = found.map(e => /** @type {[number, FavEntry]} */ ([Math.random(), e])).sort((a, b) => a[0] - b[0]).map(pair => pair[1])
     showFavResults(found.map(e => e.item))
     rememberFavSearch(true)
     if (favBarSync) favBarSync()
@@ -3782,6 +4381,7 @@
   }
 
   // The site's own thumbnail markup, so every feature treats it like one.
+  /** @param {FavEntry['item']} item */
   function favThumb([id, thumb, tags]) {
     const span = document.createElement('span')
     span.className = 'thumb'
@@ -3798,6 +4398,7 @@
     return span
   }
 
+  /** @param {Array<FavEntry['item']>} items */
   function showFavResults(items) {
     const list = document.querySelector(LIST)
     if (!list) return
@@ -3816,7 +4417,10 @@
     const next = favResults.slice(favShown, favShown + FAV_SHOW)
     list.append(...next.map(favThumb))
     favShown += next.length
-    const more = document.getElementById('ibh-favmore')
+    // TODO(strict): made with the favorites bar, but searchFavs checks the bar
+    // before awaiting the index (a full scan reads every page): if the bar goes
+    // meanwhile (favSearch switched off in the panel), this is null and throws.
+    const more = /** @type {HTMLElement} */ (document.getElementById('ibh-favmore'))
     more.hidden = favShown >= favResults.length
     more.textContent = `${t('favMore')} (${favResults.length - favShown})`
     setFavStatus(`${favResults.length} ${t('favResults')}`)
@@ -3837,6 +4441,7 @@
     setFavStatus()
   }
 
+  /** @param {string} [text] */
   function setFavStatus(text) {
     const st = document.querySelector('#ibh-favsearch .st')
     if (!st) return
@@ -3932,8 +4537,14 @@
   // list's elements carry data-ibh-ui, so the dark theme's broad rules,
   // which clear every background, leave them alone.
   const SUGGEST_MS = 200
+  /** @type {WeakSet<HTMLInputElement>} */
   const suggesting = new WeakSet()
 
+  /** @typedef {{ value: string, count: number, kind: string }} Suggestion */
+  /**
+   * @param {string} term
+   * @returns {Promise<Suggestion[]>}
+   */
   async function fetchSuggestions(term) {
     const res = await fetch(PROFILE.suggest + encodeURIComponent(term), { credentials: 'same-origin' })
     const list = await res.json()
@@ -3943,6 +4554,7 @@
     })
   }
 
+  /** @param {HTMLInputElement} input */
   function attachSuggest(input) {
     if (!CFG.searchSuggest || suggesting.has(input)) return
     suggesting.add(input)
@@ -3957,6 +4569,7 @@
       const m = /^(\|\||[-~]?)(.*)$/.exec(token) ?? ['', '', '']
       return { token, prefix: m[1] ?? '', term: (m[2] ?? '').replace(/\*+$/, '') }
     }
+    /** @param {Suggestion[]} items */
     const show = items => {
       if (!items.length) { close(); return }
       if (!box.isConnected) input.parentElement?.appendChild(box)
@@ -3982,6 +4595,7 @@
         }, e => { if (mine === seq) { dbg(`search: no suggestions for "${term}" (${describeError(e)})`); close() } })
       }, SUGGEST_MS)
     })
+    /** @param {HTMLElement} li */
     const pick = li => {
       const { token, prefix } = word()
       input.value = `${input.value.slice(0, input.value.length - token.length)}${prefix}${li.dataset.value} `
@@ -3989,11 +4603,14 @@
       input.focus()
       dbg(`search: suggestion "${li.dataset.value}" picked`)
     }
-    const itemAt = ev => ev.target.closest && ev.target.closest('li')
+    // An event's target is set while it is dispatched; one with closest() is an element.
+    /** @param {Event} ev */
+    const itemAt = ev => /** @type {EventTarget} */ (ev.target).closest && /** @type {Element} */ (ev.target).closest('li')
     // A finger on the list may be scrolling it, so the tag goes in when the
     // finger lifts, and only if it stayed nearly still and the list did not
     // scroll. Measured on touch events, as in chipGestures: Firefox for
     // Android cancels the pointer as soon as the list starts to scroll.
+    /** @type {{ x: number, y: number, top: number } | null} */
     let touch = null
     let touchedAt = 0
     box.addEventListener('touchstart', ev => {
@@ -4024,9 +4641,11 @@
     input.addEventListener('keydown', ev => { if (ev.key === 'Escape') close() })
   }
 
+  /** @param {string | undefined} text */
   const orTags = text => String(text || '').trim().split(/[\s~()]+/).filter(Boolean)
   // The OR field's groups: || starts another one, and each must hold, so
   // a b || c d is (a or b) and (c or d).
+  /** @param {string | undefined} text */
   const orGroups = text => String(text || '').split('||').map(orTags).filter(g => g.length)
 
   function minScoreInput() {
@@ -4053,6 +4672,7 @@
 
   const wantsBulkButton = () => !!CFG.bulkFavButton && SITE === 'rule34.xxx' && !!userId() && !!document.querySelector(SITE_LINK)
 
+  /** @param {boolean} on */
   function setBulkMode(on) {
     bulkMode = on
     const heart = shadow && shadow.querySelector('.bulkfab')
@@ -4062,6 +4682,7 @@
   }
 
   let pageToastTimer = 0
+  /** @param {string} text */
   function pageToast(text) {
     if (!shadow) return
     let toast = shadow.querySelector('.pagetoast')
@@ -4073,6 +4694,12 @@
   }
 
   // A mark on the thumbnail: ♥ done, … working, ✕ failed.
+  /**
+   * @param {HTMLElement} link
+   * @param {string} text
+   * @param {string} tone    its background
+   * @param {string} [cls]
+   */
   function bulkBadge(link, text, tone, cls = 'ibh-bulkbadge') {
     let badge = link.querySelector(`.${cls}`)
     if (!badge) {
@@ -4086,6 +4713,7 @@
     badge.style.background = tone
   }
 
+  /** @param {HTMLAnchorElement} link @param {string} [via]  for the log */
   async function bulkFavorite(link, via = 'mass favorite') {
     const id = postId(link)
     if (link.dataset.ibhBulk) return   // done or in progress
@@ -4112,18 +4740,21 @@
   // cancels the pointer during a long press (see chipGestures). The release
   // does not open the post, and the long-press menu stays out of the way.
   const RAW_HOLD_MS = 500
+  /** @type {{ img: HTMLImageElement, link: HTMLAnchorElement, x: number, y: number, scrollY: number, fired: boolean, timer: number } | null} */
   let rawHold = null
   let rawClickUntil = 0
 
   // An image post's thumbnail on a site page (not a video or GIF: those have
   // their own hold, the scene preview, or play on their own).
+  /** @param {EventTarget | null} target */
   function rawTarget(target) {
-    const img = target && target.closest && target.closest(`${SITE_LINK} img`)
-    const link = img && img.closest(SITE_LINK)
+    const img = /** @type {HTMLImageElement | null | undefined} */ (target && target.closest && target.closest(`${SITE_LINK} img`))
+    const link = /** @type {HTMLAnchorElement | null | undefined} */ (img && img.closest(SITE_LINK))
     if (!link || link.dataset.ibhVideo || isVideoCard(link) || isGifCard(link)) return null
-    return { img, link }
+    return /** @type {{ img: HTMLImageElement, link: HTMLAnchorElement }} */ ({ img, link })   // the link was found from img
   }
 
+  /** @param {TouchEvent} ev */
   function onRawTouchStart(ev) {
     rawHold = null
     if (!CFG.holdRaw || bulkMode || ev.touches.length !== 1 || (modal && modal.open)) return
@@ -4145,12 +4776,14 @@
     rawHold = null
   }
 
+  /** @param {TouchEvent} ev */
   function onRawTouchMove(ev) {
     if (!rawHold || rawHold.fired) return
     const touch = ev.touches[0]
     if (ev.touches.length > 1 || Math.hypot(touch.clientX - rawHold.x, touch.clientY - rawHold.y) > 12) cancelRawHold()
   }
 
+  /** @param {MouseEvent} ev */
   function onRawClick(ev) {
     if (Date.now() > rawClickUntil) return
     rawClickUntil = 0
@@ -4158,15 +4791,18 @@
     ev.stopImmediatePropagation()
   }
 
+  /** @param {MouseEvent} ev */
   function onRawContextMenu(ev) {
     if (CFG.holdRaw && rawTarget(ev.target)) ev.preventDefault()   // the hold is ours
   }
 
   // The download in flight per image, so a second hold can call it off.
+  /** @type {WeakMap<HTMLImageElement, () => void>} */
   const rawLoads = new WeakMap()
 
   // A second hold undoes the first: back to what was on show (the sample, or
   // the thumbnail), or the download in flight called off.
+  /** @param {HTMLImageElement} img @param {HTMLAnchorElement} link */
   function undoRaw(img, link) {
     const cancel = rawLoads.get(img)
     if (cancel) { cancel(); rawLoads.delete(img) }
@@ -4190,6 +4826,7 @@
     info(`raw: post ${postId(link)} back to the ${before ? 'sample' : 'thumbnail'}`)
   }
 
+  /** @param {HTMLImageElement} img @param {HTMLAnchorElement} link */
   function loadRaw(img, link) {
     if (img.dataset.ibhRaw) { undoRaw(img, link); return }   // loading or loaded: a second hold undoes it
     const src = img.getAttribute('src')
@@ -4209,7 +4846,8 @@
     img.dataset.ibhPreRaw = img.getAttribute('srcset') || ''   // what comes back on a second hold
     bulkBadge(link, 'RAW…', 'rgba(15, 20, 23, .85)', 'ibh-rawbadge')
     if (navigator.vibrate) navigator.vibrate(15)
-    rawLoads.set(img, raceImage([fileCandidates(src, ORIGINAL_EXTS)], cached, probe => {
+    // src: thumbParts found the parts in it.
+    rawLoads.set(img, raceImage([fileCandidates(/** @type {string} */ (src), ORIGINAL_EXTS)], cached, probe => {
       cacheSet('orig', parts.hash, probe.src, cached)
       const decoded = typeof probe.decode === 'function' ? probe.decode().catch(() => {}) : Promise.resolve()
       decoded.then(() => {
@@ -4219,7 +4857,7 @@
         rawLoads.delete(img)
         // Release goes back to the thumbnail like any upgrade (see D).
         if (img.dataset.ibhOrig !== 'done') {
-          img.dataset.ibhThumb = src
+          img.dataset.ibhThumb = /** @type {string} */ (src)
           img.dataset.ibhOrig = 'done'
           img.dataset.ibhRawMarked = '1'
           watchDistance(img)
@@ -4240,9 +4878,12 @@
   }
 
   // Registered before the modal's click handler, so a tap favorites instead.
+  /** @param {MouseEvent} ev */
   function onBulkClick(ev) {
     if (!bulkMode || ev.button !== 0) return
-    const link = ev.target.closest && ev.target.closest(SITE_LINK)
+    // A click's target is set; one with closest() is an element.
+    const link = /** @type {HTMLAnchorElement | null | undefined} */ (
+      /** @type {EventTarget} */ (ev.target).closest && /** @type {Element} */ (ev.target).closest(SITE_LINK))
     if (!link) return
     ev.preventDefault()
     ev.stopImmediatePropagation()
@@ -4254,14 +4895,19 @@
   // a moment later: that is how long a second tap is waited for. Registered
   // after the scrub's and the raw hold's click guards, before the modal.
   const DOUBLE_TAP_MS = 300
+  /** @type {{ link: HTMLAnchorElement, timer: number } | null} */
   let pendingTap = null   // { link, timer }: a first tap waiting for a second
+  /** @type {HTMLAnchorElement | null} */
   let passTap = null      // the single tap going through to whatever opens the post
 
   const wantsDoubleTap = () => !!CFG.doubleTapFav && SITE === 'rule34.xxx' && !!userId()
 
+  /** @param {MouseEvent} ev */
   function onDoubleTapClick(ev) {
     if (ev.defaultPrevented || ev.button !== 0 || bulkMode) return
-    const link = ev.target.closest && ev.target.closest(SITE_LINK)
+    // A click's target is set; one with closest() is an element.
+    const link = /** @type {HTMLAnchorElement | null | undefined} */ (
+      /** @type {EventTarget} */ (ev.target).closest && /** @type {Element} */ (ev.target).closest(SITE_LINK))
     if (!link || link === passTap || !wantsDoubleTap()) return
     ev.preventDefault()
     ev.stopImmediatePropagation()
@@ -4276,6 +4922,7 @@
   }
 
   // The single tap, replayed: the modal (or the link itself) takes it from here.
+  /** @param {HTMLAnchorElement} link */
   function openTapped(link) {
     if (!link.isConnected) return
     passTap = link
@@ -4289,6 +4936,11 @@
   // { saved (the favorites), recent, favLast }.
   const RECENT_MAX = 15   // per bar
 
+  // A search as a bar holds it (where: 'fav' or 'site'); active: the favorites
+  // bar's last one is on show.
+  /** @typedef {{ where: string, text: string, or?: string, kind: string, sort: string, min?: string, active?: boolean }} Search */
+  /** @typedef {{ saved: Search[], recent: Search[], favLast: Omit<Search, 'where'> | null }} SearchStore */
+  /** @returns {Promise<SearchStore>} */
   async function searchStore() {
     const v = await storeGet('searches')
     const ok = v && typeof v === 'object' && !Array.isArray(v)
@@ -4296,8 +4948,10 @@
   }
 
   // Nothing typed and no filter: not worth keeping.
+  /** @param {Search} q */
   const emptySearch = q => !q.text.trim() && !orGroups(q.or).length && q.kind === 'all' && !q.min && q.sort === 'new'
 
+  /** @param {SearchStore} store @param {Search} q */
   function addRecent(store, q) {
     if (emptySearch(q)) return
     const key = searchKey(q)
@@ -4306,10 +4960,14 @@
     if (mine.length > RECENT_MAX) store.recent = store.recent.filter(other => !mine.slice(RECENT_MAX).includes(other))
   }
 
+  /** @param {Search} q */
   const searchKey = q => [q.where, q.text.trim().replace(/\s+/g, ' '), orGroups(q.or).map(g => g.join(' ')).join(' || '), q.kind, q.sort, String(q.min || '')].join('|')
 
+  /** @param {Search} q */
   function searchLabel(q) {
+    /** @type {Record<string, string>} */
     const kinds = { image: t('favKindImage'), video: t('favKindVideo'), gif: t('favKindGif'), animated: t('favKindAnimated') }
+    /** @type {Record<string, string>} */
     const orders = { score: t('favSortScore'), random: t('favSortRandom'), old: t('favSortOld') }
     const or = orGroups(q.or)
     return [q.text.trim() || (or.length ? '' : t('savedAll')), or.map(g => `( ${g.join(' | ')} )`).join(' '), kinds[q.kind], q.min ? `≥ ${q.min}` : '', orders[q.sort] || '']
@@ -4318,17 +4976,29 @@
 
   // The two pick lists (favorites, recent) and the ☆ button for a bar:
   // read() gives its search, apply() fills it in and runs it.
+  /**
+   * @param {string} where
+   * @param {() => Search} read
+   * @param {(q: Search) => void} apply
+   */
   function savedControls(where, read, apply) {
     const pick = el('select', { class: 'saved' })
     const recentPick = el('select', { class: 'saved' })
     const star = el('button', { type: 'button', class: 'star' })
+    /** @type {Search[]} */
     let saved = []
+    /** @type {Search[]} */
     let recent = []
     const sync = () => {
       const on = saved.some(q => searchKey(q) === searchKey(read()))
       star.textContent = t(on ? 'savedSearch' : 'saveSearch')
       star.classList.toggle('on', on)
     }
+    /**
+     * @param {HTMLSelectElement} select
+     * @param {Search[]} list
+     * @param {'savedPick' | 'recentPick'} title
+     */
     const fillOne = (select, list, title) => {
       const mine = list.filter(q => q.where === where)
       select.replaceChildren(el('option', { value: '', text: t(title) }), ...mine.map((q, i) => el('option', { value: String(i), text: searchLabel(q) })))
@@ -4340,6 +5010,7 @@
       sync()
     }
     const reload = async () => { const store = await searchStore(); saved = store.saved; recent = store.recent; fill() }
+    /** @param {HTMLSelectElement} select @param {() => Search[]} source */
     const onPick = (select, source) => select.addEventListener('change', () => {
       const q = source().filter(other => other.where === where)[Number(select.value)]
       select.value = ''
@@ -4363,6 +5034,7 @@
   }
 
   // A search the site bar finds in the address (typed, or a tag link) is a recent one.
+  /** @param {Search} q */
   async function recordSiteSearch(q) {
     if (emptySearch(q)) return
     const store = await searchStore()
@@ -4375,6 +5047,7 @@
   // own search: the kind becomes tags, the minimum score score:>=N, the order
   // sort:score, and the bar reads them back from the address, so it always
   // shows the search on screen.
+  /** @type {Record<string, string>} */
   const KIND_QUERY = {
     image: '-animated -video -gif',
     video: 'video',
@@ -4382,6 +5055,7 @@
     animated: '( animated ~ video ~ gif )',
   }
 
+  /** @param {string} tags */
   function readSiteQuery(tags) {
     let rest = ` ${tags.trim().replace(/\s+/g, ' ')} `
     let kind = 'all'
@@ -4390,6 +5064,7 @@
     }
     // The ( a ~ b ) groups left after the kind go to the OR field, apart by ||.
     // The lookahead leaves the space after a group for the next one to start with.
+    /** @type {string[]} */
     const groups = []
     rest = rest.replace(/ \( ([^()]+?) \)(?= )/g, (m, inner) => {
       if (!/ ~ /.test(` ${inner} `)) return m
@@ -4405,6 +5080,7 @@
     return { rest: rest.trim(), kind, sort, min, or }
   }
 
+  /** @param {{ rest: string, kind: string, sort: string, min?: string, or?: string }} q */
   function siteQuery({ rest, kind, sort, min, or }) {
     const either = orGroups(or).map(g => g.length > 1 ? `( ${g.join(' ~ ')} )` : g[0]).join(' ')
     return [rest, either, KIND_QUERY[kind] || '', min ? `score:>=${min}` : '', sort === 'score' ? 'sort:score' : sort === 'random' ? 'sort:random' : '']
@@ -4483,6 +5159,7 @@
   // The next address comes from the paginator of each page fetched; the
   // favorites paginator navigates from onclick handlers with no real href,
   // which is why autopager extensions find no next page there.
+  /** @type {{ next: string | null, busy: boolean, done: boolean, page: number, sentinel: HTMLDivElement, io: IntersectionObserver } | null} */
   let pager = null   // { next, busy, done, io, sentinel }
 
   const onListPage = () => {
@@ -4524,7 +5201,7 @@
     p.busy = true
     p.sentinel.textContent = t('pagerLoading')
     try {
-      const url = p.next
+      const url = /** @type {string} */ (p.next)   // not done: there is a next page
       const res = await fetch(url, { credentials: 'same-origin' })
       if (!res.ok) throw new Error(`HTTP ${res.status}`)
       const doc = new DOMParser().parseFromString(await res.text(), 'text/html')
@@ -4558,16 +5235,18 @@
   // the sample (images, GIFs: their still) or the full-size poster frame
   // (videos), from the same download slots and URL cache as the page; the
   // thumbnail stays when there is none.
+  /** @param {HTMLImageElement} img */
   function sharpenTile(img) {
     const src = img.getAttribute('src')
     const hash = (thumbParts(src) || {}).hash
     if (!hash) return
+    // src: thumbParts found the hash in it.
     const tags = ` ${img.dataset.tags || ''} `
     const video = !!img.dataset.webm || NATIVE_REAL_VIDEO.test(tags)
     const kind = video ? 'poster' : 'sample'
     const cached = cacheGet(kind, hash)
     if (cached === null) return   // known: nothing better exists
-    const urls = cachedFirst(video ? fileCandidates(src, ['jpg']) : sampleCandidates(src), cached)
+    const urls = cachedFirst(video ? fileCandidates(/** @type {string} */ (src), ['jpg']) : sampleCandidates(/** @type {string} */ (src)), cached)
     if (!urls.length) return
     takeImageSlot(() => {
       const probe = new Image()
@@ -4594,8 +5273,14 @@
   // all" the whole list, ready to paste in a search. The thumbnail's own tags
   // show at once; the post page replaces them with the full list by kind.
   const TAG_ORDER = ['artist', 'character', 'copyright', 'general', 'metadata']
+  /** @param {string} type */
   const tagRank = type => { const i = TAG_ORDER.indexOf(type); return i < 0 ? TAG_ORDER.length : i }
 
+  /** @typedef {{ name: string, type: string }} Tag  type: the site's tag-type-*, general when unknown */
+  /**
+   * @param {HTMLElement} link
+   * @returns {Tag[]}
+   */
   function thumbTags(link) {
     return nativeTags(link).trim().split(/\s+/)
       .filter(name => name && !/^(score|rating):/i.test(name))
@@ -4603,18 +5288,21 @@
   }
 
   function toggleMenu() {
-    const open = modal.sheet.hidden
+    const open = /** @type {boolean} */ (modal.sheet.hidden)   // a boolean: nothing here sets 'until-found'
     modal.sheet.hidden = !open
     modal.menu.classList.toggle('on', open)
     if (open) renderSheet(modal.link, modal.seq)
   }
 
+  /** @typedef {'tags' | 'info' | 'comments'} SheetTab */
+  /** @param {HTMLAnchorElement} link @param {number} seq */
   function renderSheet(link, seq) {
     if (modal.sheetTab === 'info') renderInfo(link, seq)
     else if (modal.sheetTab === 'comments') renderComments(link, seq)
     else renderTags(link, seq)
   }
 
+  /** @param {SheetTab} tab */
   function markTab(tab) {
     modal.sheetTab = tab
     modal.tabTags.classList.toggle('on', tab === 'tags')
@@ -4625,6 +5313,7 @@
     modal.commentList.hidden = tab !== 'comments'
   }
 
+  /** @param {SheetTab} tab */
   function showTab(tab) {
     markTab(tab)
     renderSheet(modal.link, modal.seq)
@@ -4642,10 +5331,12 @@
   // Comments tab: read from the post page (already fetched for the heart and
   // Info), in the site's order, as text. Those under the account's comment
   // threshold stay hidden, as on the site.
+  /** @param {HTMLAnchorElement} link @param {number} seq */
   async function renderComments(link, seq) {
     modal.commentList.replaceChildren(el('div', { class: 'none', text: t('infoLoading') }))
     const info = await postInfo(postId(link))
     if (modal.seq !== seq || modal.sheetTab !== 'comments') return
+    /** @type {Comments} */
     const page = (info && info.comments) || { list: [], total: 0, next: null }
     modal.tabComments.textContent = `${t('tabComments')} (${page.total})`
     modal.commentList.replaceChildren()
@@ -4657,6 +5348,8 @@
   // The site's own call (its vote() in application.js): the answer is the
   // comment's new score. The site shows no trace of a past vote, so the
   // comments voted here are remembered on the device, like post votes.
+  /** @typedef {Comments['list'][number]} Comment */
+  /** @param {Comment} c @param {HTMLButtonElement} btn */
   async function voteComment(c, btn) {
     if (btn.disabled) return
     btn.disabled = true
@@ -4679,6 +5372,7 @@
   }
 
   // Adds a page of comments, and a button for the next one while there is.
+  /** @param {Comments} page @param {number} seq */
   function appendComments(page, seq) {
     const cookie = readCookie('comment_threshold')
     const threshold = cookie === null ? NaN : Number(cookie)
@@ -4705,9 +5399,10 @@
       more.disabled = true
       more.textContent = t('infoLoading')
       try {
-        const res = await fetch(page.next, { credentials: 'same-origin' })
+        // page.next: the button is only there with one.
+        const res = await fetch(/** @type {string} */ (page.next), { credentials: 'same-origin' })
         if (!res.ok) throw new Error(`HTTP ${res.status}`)
-        const next = readComments(new DOMParser().parseFromString(await res.text(), 'text/html'), page.next)
+        const next = readComments(new DOMParser().parseFromString(await res.text(), 'text/html'), /** @type {string} */ (page.next))
         if (modal.seq !== seq || modal.sheetTab !== 'comments') return
         more.remove()
         appendComments(next, seq)
@@ -4725,11 +5420,14 @@
   // the post page's statistics. Redrawn when the file's metadata arrives.
   // (MediaCapabilities was no use: Firefox for Android answers "smooth,
   // power efficient" even for 4K on a phone whose decoder stops at 1088p.)
+  /** @typedef {[label: string, value: string, warn?: boolean]} InfoRow */
+  /** @param {HTMLAnchorElement} link @param {number} seq */
   async function renderInfo(link, seq) {
     const v = modal.video
     const img = modal.image
     const video = !v.hidden
     const url = modal.fileUrl
+    /** @type {InfoRow[]} */
     const rows = []
     const kind = video ? t('kindVideo') : /\.gif(\?|$)/i.test(url || '') ? t('kindGif') : t('kindImage')
     rows.push([t('infoKind'), kind])
@@ -4754,6 +5452,7 @@
     fillInfo(rows, info.stats)
   }
 
+  /** @param {InfoRow[]} rows @param {PostPage['stats']} stats */
   function fillInfo(rows, stats) {
     const cells = []
     for (const [k, value, warn] of rows) cells.push(el('span', { class: 'k', text: k }), el('span', { class: warn ? 'v warn' : 'v', text: value }))
@@ -4774,6 +5473,7 @@
     modal.menu.classList.remove('on')
   }
 
+  /** @param {HTMLAnchorElement} link @param {number} seq */
   function renderTags(link, seq) {
     fillTags(thumbTags(link))
     postInfo(postId(link)).then(info => {
@@ -4783,6 +5483,7 @@
     })
   }
 
+  /** @param {Tag[]} tags */
   function fillTags(tags) {
     const sorted = [...tags].sort((a, b) => tagRank(a.type) - tagRank(b.type))
     modal.tagList.replaceChildren(...sorted.map(tag => {
@@ -4797,6 +5498,7 @@
   // on release, not when the hold timer fires: a timer is not a user gesture,
   // and the popup blocker would stop window.open from it.
   const TAG_HOLD_MS = 450
+  /** @param {string} name */
   const tagSearchUrl = name => `/index.php?page=post&s=list&tags=${encodeURIComponent(name)}`
 
   // Measured on the phone (event log): Firefox for Android ends a long press
@@ -4810,7 +5512,14 @@
 
   // `url`: a link, or a function giving it at the moment of the hold (null:
   // not known yet). `what` names it in the log.
+  /**
+   * @param {HTMLElement} chip
+   * @param {string | (() => string | null | undefined)} url
+   * @param {() => void} onTap
+   * @param {string} [what]
+   */
   function chipGestures(chip, url, onTap, what = 'tag search') {
+    /** @type {{ x: number, y: number, t: number, scroll: number, timer: number } | null} */
     let down = null
     let skipClick = false
     const reset = () => {
@@ -4818,12 +5527,15 @@
       down = null
       chip.classList.remove('held')
     }
+    /** @param {number} x @param {number} y */
     const start = (x, y) => {
       skipClick = false
       // Lit once held long enough, so the finger knows it can let go.
       down = { x, y, t: Date.now(), scroll: modal.sheet.scrollTop, timer: setTimeout(() => chip.classList.add('held'), TAG_HOLD_MS) }
     }
+    /** @param {number} x @param {number} y */
     const moved = (x, y) => down && Math.hypot(x - down.x, y - down.y) > HOLD_SLOP
+    /** @param {Event} ev */
     const finish = ev => {
       if (!down) return
       const held = Date.now() - down.t >= TAG_HOLD_MS && Math.abs(modal.sheet.scrollTop - down.scroll) < HOLD_SLOP
@@ -4851,6 +5563,7 @@
     })
   }
 
+  /** @param {string} text @param {HTMLElement} chip */
   async function copyText(text, chip) {
     let ok = false
     try {
@@ -4874,6 +5587,7 @@
     dbg(`modal: copy ${ok ? 'done' : 'failed'} (${text.length} chars)`)
   }
 
+  /** @param {boolean} on */
   function showFav(on) {
     modal.fav.textContent = on ? '♥' : '♡'
     modal.fav.classList.toggle('on', on)
@@ -4884,10 +5598,12 @@
   // What is known shows at once; the post page corrects it when it answers.
   // The site never shows a past vote, but its heart votes up as it favorites
   // (post_vote then toggleFav), so a favorite counts as upvoted.
+  /** @param {HTMLAnchorElement} link @param {number} seq */
   function applyMarks(link, seq) {
     const id = postId(link)
     const own = onOwnFavorites()
     if (own) setMark('f', id, true)
+    /** @param {boolean} fav */
     const show = fav => {
       showFav(fav)
       modal.up.classList.toggle('on', fav || hasMark('v', id))
@@ -4898,9 +5614,11 @@
   }
 
   // The site's own vote links (post pages, comments) count too.
+  /** @param {MouseEvent} ev */
   function onSiteVoteClick(ev) {
-    const a = ev.target.closest && ev.target.closest('a[onclick*="post_vote("]')
-    const m = a && a.getAttribute('onclick').match(/post_vote\('(\d+)',\s*'up'\)/)
+    // A click's target is set; one with closest() is an element.
+    const a = /** @type {EventTarget} */ (ev.target).closest && /** @type {Element} */ (ev.target).closest('a[onclick*="post_vote("]')
+    const m = a && /** @type {string} */ (a.getAttribute('onclick')).match(/post_vote\('(\d+)',\s*'up'\)/)   // the selector asked for it
     if (m) setMark('v', m[1], true)
   }
 
@@ -4909,6 +5627,7 @@
   // 1 already there, 2 not logged in, 4 removed (toggle only). A lit heart
   // pressed again removes the favorite, like the site's own heart.
   // The site's answer: '3' added, '1' already there, '2' logged out, '4' removed.
+  /** @param {string} id @param {boolean} remove */
   async function favoritePost(id, remove) {
     const res = await fetch(`/public/addfav.php?id=${encodeURIComponent(id)}${remove ? '&toggle=1' : ''}`, { credentials: 'same-origin' })
     const code = (await res.text()).trim().replace(/"/g, '')   // toggle answers in JSON
@@ -4921,6 +5640,7 @@
   }
 
   // The new score, or null.
+  /** @param {string} id */
   async function upvotePost(id) {
     const res = await fetch(`/index.php?page=post&s=vote&id=${encodeURIComponent(id)}&type=up`, { credentials: 'same-origin' })
     const score = parseInt(await res.text(), 10)
@@ -4954,6 +5674,7 @@
 
   // Answers with the new score as plain text, which the post page shows.
   // `quiet` (from the heart): no toast of its own, the heart's one stays.
+  /** @param {boolean | Event} [quiet] */
   async function modalUpvote(quiet) {
     quiet = quiet === true   // as a click handler it gets the event
     const id = postId(modal.link)
@@ -4977,7 +5698,9 @@
     }
   }
 
+  /** @param {HTMLElement} stage @param {HTMLVideoElement} video */
   function installModalSwipe(stage, video) {
+    /** @type {{ x: number, y: number, t: number, top: number } | null} */
     let start = null
     stage.addEventListener('pointerdown', ev => {
       const r = video.hidden ? null : video.getBoundingClientRect()
@@ -5029,7 +5752,9 @@
   // or a hold on the bars around the picture would close the modal.
   const MODAL_HOLD_MS = 500
 
+  /** @param {HTMLElement} stage @param {HTMLImageElement} img @param {HTMLElement} box */
   function installImageHold(stage, img, box) {
+    /** @type {{ x: number, y: number, scale: number, timer: number } | null} */
     let hold = null
     let swallowUntil = 0
     const cancel = () => { if (hold) clearTimeout(hold.timer); hold = null }
@@ -5063,9 +5788,13 @@
     }, true)
   }
 
+  /** @param {HTMLElement} stage @param {HTMLImageElement} img */
   function installImageZoom(stage, img) {
-    const pts = new Map()
+    /** @type {Map<number, { x: number, y: number, t: number }>} */
+    const pts = new Map()   // pointer id -> where it is, and when it went down
+    /** @type {{ d: number, scale: number, cx: number, cy: number, o: { left: number, top: number } } | null} */
     let pinch = null
+    /** @type {{ x: number, y: number, zx: number, zy: number } | null} */
     let pan = null
     let lastTap = { t: 0, x: 0, y: 0 }
     // Layout top-left of the image on screen, transform taken out.
@@ -5105,6 +5834,7 @@
       }
     })
 
+    /** @param {PointerEvent} ev */
     const end = ev => {
       const p = pts.get(ev.pointerId)
       pts.delete(ev.pointerId)
@@ -5148,6 +5878,7 @@
   const videoPress = { held: false }
 
   let badgeTimer = 0
+  /** @param {string} text @param {boolean} [sticky] */
   function showBadge(text, sticky) {
     modal.badge.textContent = text
     modal.badge.hidden = false
@@ -5155,9 +5886,13 @@
     if (!sticky) badgeTimer = setTimeout(() => { modal.badge.hidden = true }, 700)
   }
 
+  /** @param {HTMLElement} layer @param {HTMLVideoElement} video */
   function installVideoGestures(layer, video) {
+    /** @type {{ id: number, x: number, y: number, t: number, fx: number, rate: number, timer: number } | null} */
     let press = null
+    /** @type {{ t: number, side: number, timer: number } | null} */
     let tap = null   // a first tap waiting to see whether a second one follows
+    /** @param {PointerEvent} ev */
     const viewerX = ev => {
       const r = layer.getBoundingClientRect()
       return Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width))
@@ -5240,6 +5975,7 @@
     })
   }
 
+  /** @param {number} sec */
   const mmss = sec => Number.isFinite(sec) ? `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}` : '0:00'
 
   const CONTROLS_HIDE_MS = 2000
@@ -5252,15 +5988,32 @@
   const PLAY_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2]
   const SEEK_JUMPS = [5, 10, 15, 30]
 
+  /** @param {HTMLVideoElement} video */
   function applyPlayRate(video) {
     const rate = Number(CFG.playRate) || 1
     video.defaultPlaybackRate = rate   // load() puts the speed back to this, so the next video keeps it
     video.playbackRate = rate
   }
 
+  /**
+   * @param {HTMLElement} gear
+   * @param {HTMLElement} menu
+   * @param {HTMLVideoElement} video
+   * @param {HTMLElement} vwrap
+   * @param {() => void} poke
+   */
   function installGearMenu(gear, menu, video, vwrap, poke) {
+    /** @type {Array<{ button: HTMLButtonElement, key: 'playRate' | 'seekStep', value: number }>} */
     const chips = []
     const mark = () => chips.forEach(c => c.button.classList.toggle('on', Number(CFG[c.key]) === c.value))
+    /**
+     * @param {string} label
+     * @param {'playRate' | 'seekStep'} key
+     * @param {string} attr       the data- attribute that holds the value
+     * @param {number[]} values
+     * @param {(value: number) => string} text
+     * @param {() => void} apply
+     */
     const row = (label, key, attr, values, text, apply) => el('div', { class: 'vmrow' }, [el('span', { class: 'lbl', text: label }),
       ...values.map(value => {
         const button = el('button', { type: 'button', text: text(value), [`data-${attr}`]: String(value) })
@@ -5292,10 +6045,24 @@
   // Returns { shown(), poke(), dropReel() }: the bar fades after 2 s without
   // interaction while playing, and stays up while paused or while the seek
   // bar is dragged.
+  /** @typedef {ReturnType<typeof installVideoControls>} VideoControls */
+  /**
+   * @param {HTMLVideoElement} video
+   * @param {HTMLElement} ctl
+   * @param {HTMLElement} playBtn
+   * @param {HTMLElement[]} times    where it plays, and how long it is
+   * @param {HTMLInputElement} seek
+   * @param {HTMLElement} muteBtn
+   * @param {HTMLElement} prevBox
+   * @param {HTMLElement} vwrap
+   * @param {{ playPause: HTMLElement, gearMenu: HTMLElement }} parts
+   */
   function installVideoControls(video, ctl, playBtn, times, seek, muteBtn, prevBox, vwrap, { playPause, gearMenu }) {
     let dragging = false
     let hideTimer = 0
+    /** @type {boolean | null} */
     let muted = null   // the icons on show, so timeupdate does not rebuild them
+    /** @type {boolean | null} */
     let paused = null
     const poke = () => {
       ctl.classList.remove('hide')
@@ -5337,8 +6104,13 @@
     // decoded), and the preview video, still seeking, takes over when it
     // reaches the exact frame.
     const PREV_W = 160
+    // The keyframes of the video on show: x the decoder, frames those decoded
+    // (by scene), f where the finger is, failed once either fails.
+    /** @typedef {{ src: string, reel: H264Reel | null, x: H264 | null, frames: Map<number, ImageData>, canvas: HTMLCanvasElement | null, f: number, failed: boolean }} SeekReel */
+    /** @type {SeekReel | null} */
     let reel = null   // { src, reel, x, frames, canvas, f, failed } for the video on show
     let target = 0    // the time the finger asks for, in seconds
+    /** @param {number} f */
     const drawKeyframe = f => {
       const r = reel
       if (!r || !r.reel || r.failed) return
@@ -5348,8 +6120,9 @@
       let img = r.frames.get(i)
       if (!img) {
         try {
-          openStream(r.x, r.reel)
-          img = decodeKeyframe(r.x, r.reel.frames[i], Math.round(PREV_W * (window.devicePixelRatio || 1)))
+          // x comes with reel.
+          openStream(/** @type {H264} */ (r.x), r.reel)
+          img = decodeKeyframe(/** @type {H264} */ (r.x), r.reel.frames[i], Math.round(PREV_W * (window.devicePixelRatio || 1)))
         } catch (e) {
           r.failed = true
           dbg(`seek preview: keyframe not decoded (${describeError(e)}), the <video> preview alone`)
@@ -5360,20 +6133,22 @@
       if (!r.canvas) r.canvas = document.createElement('canvas')
       if (!r.canvas.isConnected) prevBox.insertBefore(r.canvas, prevBox.lastChild)   // over the preview video, under the time
       if (r.canvas.width !== img.width || r.canvas.height !== img.height) { r.canvas.width = img.width; r.canvas.height = img.height }
-      r.canvas.getContext('2d').putImageData(img, 0, 0)
+      /** @type {CanvasRenderingContext2D} */ (r.canvas.getContext('2d')).putImageData(img, 0, 0)   // a canvas of our own: it has one
     }
+    /** @param {number} f */
     const reelPreview = f => {
       if (!CFG.seekReel || !CFG.wasmDecode || h264Broken || typeof GM_xmlhttpRequest !== 'function') return
       const src = video.currentSrc
       if (!/\.mp4(?:[?#]|$)/i.test(src)) return   // WebM and the rest: the preview video alone
       if (!reel || reel.src !== src) {
+        /** @type {SeekReel} */
         const mine = { src, reel: null, x: null, frames: new Map(), canvas: null, f, failed: false }
         reel = mine
         Promise.all([h264Decoder(), reelFor([src], SEEK_STEPS, new Set(), null)]).then(([x, built]) => {
           if (reel !== mine) return
           if (!built.avcC) throw new Error('not H.264')
           mine.x = x
-          mine.reel = built
+          mine.reel = /** @type {H264Reel} */ (built)   // it has an avcC
           info(`seek preview: wasm reel of ${built.scenes.length} scenes in ${built.ms} ms${built.kept ? ' (kept from before)' : ''}`)
           if (dragging) drawKeyframe(mine.f)   // where the finger is by now
         }).catch(e => {
@@ -5408,7 +6183,7 @@
       prevBox.classList.remove('exact')
       reelPreview(f)
       if (previewEl && previewEl.isConnected) seekFraction(previewEl, f)
-      prevBox.lastChild.textContent = mmss(target)
+      ;/** @type {ChildNode} */ (prevBox.lastChild).textContent = mmss(target)   // the time label, last of the box
       times[0].textContent = mmss(target)
       poke()
     })
@@ -5436,6 +6211,7 @@
 
   // In fullscreen the bar and side buttons hide; a single tap on an image
   // toggles them. Video keeps its own controls visible either way.
+  /** @param {boolean} clean */
   function setCleanUi(clean) {
     modal.box.classList.toggle('clean', clean)
   }
@@ -5517,6 +6293,7 @@
   }
 
   // A 24x24 icon from path data, as the button's only content.
+  /** @param {Element} btn @param {string} d */
   function setIcon(btn, d) {
     const ns = 'http://www.w3.org/2000/svg'
     const svg = document.createElementNS(ns, 'svg')
@@ -5527,6 +6304,7 @@
     btn.replaceChildren(svg)
   }
 
+  /** @param {HTMLElement} btn @param {boolean} full */
   function setFsIcon(btn, full) {
     setIcon(btn, full ? FS_ICON.exit : FS_ICON.enter)
     btn.title = t(full ? 'mFullExit' : 'mFull')
@@ -5589,6 +6367,12 @@
     }
   }
 
+  /**
+   * @param {string[]} candidates
+   * @param {string | undefined} hash
+   * @param {() => void} [onMissing]   no host has a video file
+   * @param {() => void} [onFound]     its metadata arrived
+   */
   function showVideo(candidates, hash, onMissing, onFound) {
     const vcached = cacheGet('video', hash)
     const urls = cachedFirst(candidates, vcached)
@@ -5653,11 +6437,23 @@
   // Returns a cancel function.
   // priority: 'high' for what is on screen now (the modal), the browser's
   // default otherwise.
+  /**
+   * @param {string[][]} stages
+   * @param {string | null | undefined} cached   cacheGet's: tried first when it is a URL
+   * @param {(probe: HTMLImageElement) => void} onWin
+   * @param {() => void} onFail
+   * @param {'high' | 'low' | 'auto'} [priority]
+   * @returns {() => void}   calls the race off
+   */
   function raceImage(stages, cached, onWin, onFail, priority) {
     let done = false
+    /** @type {HTMLImageElement[]} */
     const probes = []
+    /** @param {HTMLImageElement | null} keep */
     const drop = keep => probes.forEach(pr => { if (pr !== keep) { pr.onload = pr.onerror = null; pr.removeAttribute('src') } })
+    /** @param {HTMLImageElement} pr */
     const win = pr => { if (done) return; done = true; drop(pr); onWin(pr) }
+    /** @param {string} url @param {() => void} onError */
     const probe = (url, onError) => {
       const pr = new Image()
       pr.decoding = 'async'
@@ -5667,6 +6463,7 @@
       pr.onerror = onError
       pr.src = url
     }
+    /** @param {number} i */
     const runStage = i => {
       if (done) return
       const list = (stages[i] || []).filter(url => url !== cached)
@@ -5682,6 +6479,7 @@
 
   // What the page already found for a post: its 'sample' winner is the
   // original itself when the post has no sample (an /images/ URL).
+  /** @param {string} hash */
   function knownOriginal(hash) {
     const orig = cacheGet('orig', hash)
     if (orig !== undefined) return orig
@@ -5689,11 +6487,18 @@
     return typeof page === 'string' && page.includes('/images/') ? page : undefined
   }
 
+  /** @param {string | null | undefined} url */
   const isSampleUrl = url => /\/samples\//.test(url || '')
 
   // candidates: a list of URLs, or stages of them (see raceImage).
+  /**
+   * @param {string} placeholder
+   * @param {string[] | string[][]} candidates
+   * @param {'gif' | 'orig' | 'sample'} kind
+   * @param {string} hash
+   */
   function showImage(placeholder, candidates, kind, hash) {
-    const stages = Array.isArray(candidates[0]) ? candidates : [candidates]
+    const stages = /** @type {string[][]} */ (Array.isArray(candidates[0]) ? candidates : [candidates])
     const icached = kind === 'orig' ? knownOriginal(hash) : cacheGet(kind, hash)
     const seq = modal.seq
     modal.video.hidden = true
@@ -5725,6 +6530,7 @@
   // Zoomed into a sample: fetch the original and swap it in, the zoom kept
   // (same picture, same box, more pixels).
   // The quality button: null hides it; 'sample', 'loading' or 'raw'.
+  /** @param {'sample' | 'loading' | 'raw' | null} state */
   function setQuality(state) {
     const btn = modal && modal.quality
     if (!btn) return
@@ -5788,6 +6594,7 @@
 
   // Whether a tap falls on the picture itself, not on the bars object-fit
   // leaves around it inside the <img> box.
+  /** @param {MouseEvent} ev */
   function onImageContent(ev) {
     const img = modal.image
     if (!img.naturalWidth) return true
@@ -5819,8 +6626,10 @@
 
   // The modal's GIF can break the same way; the page is already unloaded, so
   // just decode it again, twice at most.
+  /** @param {HTMLImageElement} img @param {string} url @param {number} seq */
   function watchModalGif(img, url, seq) {
     let tries = 0
+    /** @param {Event} ev */
     const check = ev => {
       if (modal.seq !== seq) { img.removeEventListener('error', check); img.removeEventListener('load', check); return }
       if (ev.type !== 'error' && img.naturalWidth > 0) return
@@ -5837,6 +6646,7 @@
   // Some videos carry no video tag and no .webm-thumb, so they look like images.
   // While the image shows, check quietly whether the post has an .mp4; if it
   // does, turn the modal into the video. No delay on the tap itself.
+  /** @param {string} src @param {HTMLAnchorElement} link */
   function sniffVideo(src, link) {
     const seq = modal.seq
     const hash = (thumbParts(src) || {}).hash
@@ -5870,10 +6680,12 @@
     v.src = urls[i++]
   }
 
+  /** @param {HTMLAnchorElement} link */
   const postId = link => (link.href.match(/id=(\d+)/) || [])[1] || '?'
 
   // Only the "animated" tag, nothing else to go by: no gif, no video/mp4/webm,
   // no .webm-thumb mark from the site. Those may be either kind.
+  /** @param {HTMLAnchorElement} link */
   function ambiguousAnimated(link) {
     if (link.querySelector('img.webm-thumb')) return false
     const tags = nativeTags(link)
@@ -5884,6 +6696,13 @@
   // first wins and the other is cancelled. A post has a single file, so a
   // .gif that loads means it is a GIF. Waiting for every video host to say
   // "missing" first cost about 3 s per GIF.
+  /**
+   * @param {HTMLAnchorElement} link
+   * @param {HTMLImageElement} thumb
+   * @param {Picture} pic
+   * @param {string} hash
+   * @param {() => void} asGif   shows it as a GIF once no video host has it
+   */
   function raceVideoAndGif(link, thumb, pic, hash, asGif) {
     const seq = modal.seq
     let settled = false
@@ -5913,6 +6732,7 @@
     if (gifs.length) probe.src = gifs[i++]
   }
 
+  /** @param {HTMLAnchorElement} link */
   function openModal(link) {
     const thumb = link.querySelector('img')
     const pic = thumb && cardPicture(link)
@@ -5937,7 +6757,7 @@
     modal.status.hidden = false
 
     let kind = thumbKind(thumb)
-    const hash = thumbParts(pic.src).hash
+    const hash = /** @type {{ hash: string }} */ (thumbParts(pic.src)).hash   // checked on the way in
     const placeholder = ready || thumb.currentSrc || pic.src
     const asGif = () => {
       link.dataset.ibhKind = 'gif'   // the page's cover/GIF code agrees from now on
@@ -5989,6 +6809,7 @@
   // The posts the modal steps through: the page's, or the Watch later list's.
   const modalLinks = () => (modal && modal.listLinks) || siteLinks()
 
+  /** @param {boolean} fromBack   the back button closed it: its history entry is gone already */
   function closeModal(fromBack) {
     if (!modal || !modal.open) return
     if (modal.root.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {})
@@ -6028,6 +6849,7 @@
   // memory to the modal: covers closed, GIFs stilled, upgraded images back to
   // the thumbnail (heights held so the layout does not move), pending
   // upgrades dropped. resumePage() brings back what is on screen on close.
+  /** @type {HTMLElement[]} */
   const suspended = []
 
   function suspendPage() {
@@ -6057,6 +6879,7 @@
     })
   }
 
+  /** @param {number} dir   1 the next post, -1 the previous */
   function stepModal(dir) {
     const list = modalLinks()
     const target = list[list.indexOf(modal.link) + dir]
@@ -6077,8 +6900,14 @@
   // then skips the host walk; the decoder is handed back right away). One
   // post ahead only, dropped as soon as the modal moves on or closes.
   const AHEAD_FALLBACK_MS = 4000
+  // The post ahead: an image's winning probe (img, decoded once decoded), or
+  // a video's metadata probe; release gives the download slot back, cancel
+  // calls the race off.
+  /** @typedef {{ link: HTMLAnchorElement, img?: HTMLImageElement, decoded?: boolean, video?: HTMLVideoElement, release?: () => void, cancel?: () => void }} Ahead */
+  /** @type {Ahead | null} */
   let ahead = null
 
+  /** @param {number} seq */
   function preloadAhead(seq) {
     if (!CFG.modalPreload || !modal.open || modal.seq !== seq) return
     const list = modalLinks()
@@ -6089,6 +6918,7 @@
     const pic = thumb && cardPicture(link)
     const parts = pic && thumbParts(pic.src)
     if (!parts) return
+    /** @type {Ahead} */
     const a = ahead = { link }
     if (!onOwnFavorites()) lookUpFavorite(postId(link))   // its heart is right on the swipe
     let kind = thumbKind(thumb)
@@ -6098,6 +6928,12 @@
     dbg(`modal: preloading ${kind} post ${postId(link)}`)
   }
 
+  /**
+   * @param {Ahead} a
+   * @param {string} src
+   * @param {string} hash
+   * @param {'gif' | 'orig' | 'sample'} kind
+   */
   function aheadImage(a, src, hash, kind) {
     const sampleFirst = kind === 'orig' && CFG.modalOriginal !== 'always'
     if (sampleFirst) kind = 'sample'
@@ -6110,19 +6946,21 @@
       if (ahead !== a) { giveImageSlot(); return }   // the modal moved on while it waited
       let held = true
       a.release = () => { if (held) { held = false; giveImageSlot() } }
+      // release: set just above.
       a.cancel = raceImage(stages, cached, img => {
-        a.release()
+        /** @type {() => void} */ (a.release)()
         a.img = img
         cacheSet(kind, hash, img.src, cached)
         const decoded = typeof img.decode === 'function' ? img.decode().catch(() => {}) : Promise.resolve()
         decoded.then(() => { if (ahead === a) a.decoded = true })
       }, () => {
-        a.release()
+        /** @type {() => void} */ (a.release)()
         cacheSet(kind, hash, null)
       })
     })
   }
 
+  /** @param {Ahead} a @param {string} src @param {string} hash */
   function aheadVideo(a, src, hash) {
     const cached = cacheGet('video', hash)
     const urls = cachedFirst(fileCandidates(src, ['mp4', 'webm']), cached)
@@ -6144,8 +6982,10 @@
   }
 
   // The preloaded image for this post, if it is downloaded and decoded.
+  // img: set before decoded.
+  /** @param {HTMLAnchorElement} link */
   function aheadReady(link) {
-    return ahead && ahead.link === link && ahead.decoded && ahead.img.naturalWidth ? ahead.img.src : null
+    return ahead && ahead.link === link && ahead.decoded && /** @type {HTMLImageElement} */ (ahead.img).naturalWidth ? /** @type {HTMLImageElement} */ (ahead.img).src : null
   }
 
   function dropAhead() {
@@ -6160,9 +7000,12 @@
 
   // Capture on window: runs before the link's own onclick (favorites navigate
   // from an inline handler).
+  /** @param {MouseEvent} ev */
   function onSiteLinkClick(ev) {
     if (ev.defaultPrevented || ev.button !== 0) return
-    const link = ev.target.closest && ev.target.closest(SITE_LINK)
+    // A click's target is set; one with closest() is an element.
+    const link = /** @type {HTMLAnchorElement | null | undefined} */ (
+      /** @type {EventTarget} */ (ev.target).closest && /** @type {Element} */ (ev.target).closest(SITE_LINK))
     if (!link) return
     ev.preventDefault()
     ev.stopPropagation()
@@ -6202,6 +7045,7 @@
       const v = document.createElement('video')
       v.preload = 'metadata'
       v.muted = true
+      /** @param {boolean} ok */
       const done = ok => {
         v.src = ''
         log(ok ? 'info' : 'warn', `${ok ? 'OK  ' : 'FAIL'} ${url}`)
@@ -6212,7 +7056,10 @@
     })
   }
 
-  /** Put an upgraded element back to its thumbnail and clear its upgrade state. */
+  /**
+   * Put an upgraded element back to its thumbnail and clear its upgrade state.
+   * @param {HTMLImageElement} el
+   */
   function resetUpgrade(el) {
     if (el.dataset.ibhOrig === 'done' && el.dataset.ibhThumb) {
       const pic = pictureOf(el)
@@ -6224,7 +7071,7 @@
       delete el.dataset.ibhRaw
       delete el.dataset.ibhPreRaw
       delete el.dataset.ibhRawMarked
-      const badge = el.closest('a') && el.closest('a').querySelector('.ibh-rawbadge')
+      const badge = el.closest('a') && /** @type {HTMLAnchorElement} */ (el.closest('a')).querySelector('.ibh-rawbadge')   // the && just checked it
       if (badge) badge.remove()
     }
   }
@@ -6238,7 +7085,7 @@
     tabChannel.onmessage = ev => {
       const msg = ev.data || {}
       if (msg.type === 'free-memory') {
-        freeMemory('tab').then(n => tabChannel.postMessage({ type: 'freed', n, page: location.pathname }))
+        freeMemory('tab').then(n => /** @type {BroadcastChannel} */ (tabChannel).postMessage({ type: 'freed', n, page: location.pathname }))   // this very channel
       } else if (msg.type === 'freed') {
         const { n } = msg
         info(`another tab (${msg.page}) freed ${n.covers} covers, ${n.gifs} GIFs, ${n.images} upgraded images`)
@@ -6252,6 +7099,10 @@
    * (IBH_CFG) and the site login are left alone. `reason`: 'button' (this
    * tab and every other tab of the site), 'tab' (asked by another tab),
    * 'redo' (this tab only, before Redo thumbnails).
+   */
+  /**
+   * @param {'button' | 'tab' | 'redo'} [reason]
+   * @returns {Promise<{ covers: number, gifs: number, images: number, caches: number }>}
    */
   async function freeMemory(reason = 'button') {
     // The button frees every tab of this site running the script, not only this one.
@@ -6350,9 +7201,14 @@
   // Status panel
   // ═══════════════════════════════════════════════════════════
 
+  // Set and cleared together: shadow is panelHost's shadow root.
+  /** @type {HTMLDivElement | null} */
   let panelHost = null
+  /** @type {ShadowRoot | null} */
   let shadow = null
+  /** @type {HTMLDivElement | null} */
   let logBox = null
+  /** @type {HTMLDivElement | null} */
   let statusBox = null
   let panelOpen = false
 
@@ -6495,6 +7351,13 @@
     .log .error { color: #f87171; }
   `
 
+  /**
+   * @template {keyof HTMLElementTagNameMap} K
+   * @param {K} tag
+   * @param {Record<string, string> | null} [attrs]   text and class set those; the rest are attributes
+   * @param {Array<Node | string>} [children]
+   * @returns {HTMLElementTagNameMap[K]}
+   */
   function el(tag, attrs, children) {
     const node = document.createElement(tag)
     if (attrs) for (const [k, v] of Object.entries(attrs)) {
@@ -6507,6 +7370,7 @@
     return node
   }
 
+  /** @param {string} key @param {string} value @param {'ok' | 'warn' | 'idle'} tone */
   const statusRow = (key, value, tone) => el('div', { class: 'row' }, [
     el('span', { class: `dot ${tone}` }),
     el('span', { class: 'k', text: key }),
@@ -6521,8 +7385,9 @@
     try { drawStatus() } finally { renderingStatus = false }
   }
 
+  // Called by renderStatus, with the status box there.
   function drawStatus() {
-    statusBox.textContent = ''
+    /** @type {HTMLDivElement} */ (statusBox).textContent = ''
 
     const c = STATE.covers
     const coverTone = c.tracked === 0 ? 'idle' : c.failed > 0 ? 'warn' : c.ok > 0 ? 'ok' : 'idle'
@@ -6535,9 +7400,10 @@
       statusRow(t('host'), hostLabel, STATE.imageBase ? 'ok' : 'warn'),
       statusRow(t('covers'), t('coversFmt')(c.ok, c.failed, c.tracked), coverTone),
     ]
-    rows.forEach(r => statusBox.appendChild(r))
+    rows.forEach(r => /** @type {HTMLDivElement} */ (statusBox).appendChild(r))
   }
 
+  /** @param {LogEntry} entry */
   function appendLogLine(entry) {
     if (!logBox) return
     const time = new Date(entry.t).toTimeString().slice(0, 8)
@@ -6545,7 +7411,7 @@
       el('span', { class: 'ts', text: time }),
       el('span', { class: entry.level, text: entry.msg }),
     ]))
-    while (logBox.childElementCount > LOG_MAX) logBox.firstElementChild.remove()
+    while (logBox.childElementCount > LOG_MAX) /** @type {Element} */ (logBox.firstElementChild).remove()   // past LOG_MAX: there is one
     logBox.scrollTop = logBox.scrollHeight
     if (entry.level === 'error' && shadow) {
       const fab = shadow.querySelector('.fab')
@@ -6554,6 +7420,13 @@
   }
 
   // `then` runs after the change, for options that apply at once.
+  /** @typedef {{ [K in keyof Config]: Config[K] extends boolean ? K : never }[keyof Config]} BoolKey */
+  /**
+   * @param {BoolKey} key
+   * @param {string} label
+   * @param {string | null} [note]
+   * @param {() => void} [then]
+   */
   function toggle(key, label, note, then) {
     const input = el('input', { type: 'checkbox' })
     input.checked = !!CFG[key]
@@ -6569,6 +7442,12 @@
 
   // Gesture for the scene preview on thumbnails: drag sideways, or hold.
   // A labelled select bound to a config key; `then` runs after the change.
+  /**
+   * @param {keyof Config} key
+   * @param {string} title
+   * @param {Array<[string | number, string]>} choices   value and label
+   * @param {() => void} [then]
+   */
   function choiceSelect(key, title, choices, then) {
     const sel = el('select')
     for (const [value, label] of choices) {
@@ -6577,8 +7456,9 @@
       sel.appendChild(option)
     }
     sel.addEventListener('change', () => {
-      const picked = choices.find(([value]) => String(value) === sel.value)
-      setCfg(key, picked[0])   // keeps numbers as numbers
+      // One of the options above; its value fits the key, which is the caller's to match.
+      const picked = /** @type {[string | number, string]} */ (choices.find(([value]) => String(value) === sel.value))
+      setCfg(key, /** @type {any} */ (picked[0]))   // keeps numbers as numbers
       if (then) then()
     })
     return el('div', { class: 'lang' }, [el('div', { class: 'lbl', text: title }), sel])
@@ -6586,10 +7466,12 @@
 
   // Gesture for the scene preview on thumbnails; the slideshow's jump and
   // seconds only show in hold mode, so switching modes redraws the panel.
+  /** @param {HTMLElement} body */
   function scrubModeControls(body) {
     body.appendChild(choiceSelect('scrubMode', t('tScrubMode'),
       [['drag', t('modeDrag')], ['hold', t('modeHold')]], rebuildPanel))
     if (CFG.scrubMode !== 'hold') return
+    /** @param {number} n */
     const num = n => n.toLocaleString(LANG)
     body.appendChild(choiceSelect('slideStep', t('tSlideStep'),
       [5, 10, 20, 25].map(p => [p, `${num(p)}% · ${Math.round(100 / p)} ${t('scenes')}`])))
@@ -6607,13 +7489,14 @@
       sel.appendChild(option)
     }
     sel.addEventListener('change', () => {
-      setCfg('lang', sel.value || null)
+      setCfg('lang', /** @type {Lang | ''} */ (sel.value) || null)   // the options are the languages, or '' for automatic
       LANG = resolveLang()
       rebuildPanel()   // labels are baked at build time, so rebuild
     })
     return el('div', { class: 'lang' }, [sel])
   }
 
+  /** @param {string} label @param {() => void} fn */
   const actionButton = (label, fn) => {
     const b = el('button', { text: label })
     b.addEventListener('click', fn)
@@ -6720,6 +7603,7 @@
     togglePanel(false)
   }, true)
 
+  /** @param {boolean} [open]   leave it out to switch */
   function togglePanel(open) {
     panelOpen = open == null ? !panelOpen : open
     const panel = shadow && shadow.querySelector('.panel')
@@ -6728,7 +7612,7 @@
     if (panelOpen) {
       renderStatus()
       refreshAppStatus()
-      const fab = shadow.querySelector('.fab')
+      const fab = /** @type {ShadowRoot} */ (shadow).querySelector('.fab')   // the panel is in it
       if (fab) delete fab.dataset.alert
     }
   }
@@ -6797,7 +7681,7 @@
     }
     // Top right, packed from the edge in this order (🕒, ♥, 🔖), whichever show.
     const packRight = () => {
-      ['.clockfab', '.bulkfab', '.favsfab'].map(sel => shadow.querySelector(sel)).filter(Boolean)
+      ['.clockfab', '.bulkfab', '.favsfab'].map(sel => /** @type {ShadowRoot} */ (shadow).querySelector(sel)).filter(Boolean)   // set: it runs below, past the check
         .forEach((btn, i) => { btn.style.right = `${12 + i * 52}px` })
     }
     // Mass favorite: next to Watch later, top right.
@@ -6845,6 +7729,7 @@
   // next post, e.g. to skip a long comic without scrolling through it.
   const FEED_POST = THUMB
 
+  /** @param {number} dir   1 the next post, -1 the previous */
   function jumpPost(dir) {
     const posts = [...document.querySelectorAll(FEED_POST)]
     if (!posts.length) return
@@ -6868,6 +7753,11 @@
   // Favorites put the address in an onclick (href is just "#"). Without a
   // usable link, step pid by the number of posts on this page.
   // Of this page, or of a page the autopager fetched (root, at base).
+  /**
+   * @param {number} dir
+   * @param {ParentNode} [root]
+   * @param {string} [base]
+   */
   function pageTarget(dir, root = document, base = location.href) {
     const box = root.querySelector('#paginator, .pagination')
     if (box) {
@@ -6889,6 +7779,7 @@
     return url.href
   }
 
+  /** @param {number} dir */
   function goPage(dir) {
     const target = pageTarget(dir)
     if (!target) return
@@ -6948,6 +7839,7 @@
 
   // 👁: hides every other floating button (◐ and the panel too) for a page
   // with nothing over it, and brings them back. Remembered across pages.
+  /** @param {boolean} hidden */
   function setButtonsHidden(hidden) {
     if (hidden) {
       if (bulkMode) setBulkMode(false)   // its ♥ goes away: no tap may favorite unseen
@@ -6965,7 +7857,7 @@
     const hidden = !!CFG.buttonsHidden
     if (eye.dataset.hidden === String(hidden)) return
     eye.dataset.hidden = String(hidden)
-    panelHost.classList.toggle('ibh-clean', hidden)
+    ;/** @type {HTMLDivElement} */ (panelHost).classList.toggle('ibh-clean', hidden)   // the eye is in its shadow
     eye.title = t(hidden ? 'eyeShow' : 'eyeHide')
     eye.querySelector('path').setAttribute('d', hidden ? EYE_OFF_ICON : EYE_ICON)
   }
@@ -6973,6 +7865,7 @@
   // Material Design's "watch later" icon (a clock), as path data.
   const CLOCK_ICON = 'M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm4.2 14.2L11 13V7h1.5v5.2l4.5 2.7-.8 1.3z'
 
+  /** @param {string} cls @param {string} title @param {string} d   the icon's path data */
   function iconButton(cls, title, d) {
     const btn = el('button', { class: cls, title })
     const ns = 'http://www.w3.org/2000/svg'
@@ -6988,6 +7881,7 @@
   // The list opens in the post modal, which exists on the site's own pages.
   const wantsLaterButton = () => !!CFG.laterButton && !!CFG.videoModal && !!document.querySelector(SITE_LINK)
 
+  /** @param {boolean} feed @param {boolean} free @param {boolean} redo */
   function buildFeedNav(feed, free, redo) {
     const rows = []
     if (feed) {
@@ -7085,6 +7979,7 @@
         max-width: none !important; max-height: none !important; }` + common
   }
 
+  /** @type {string | null} */
   let feedCssShown = null
 
   // Keeps the feed's <style> in step with the options, putting it back if it
@@ -7162,6 +8057,7 @@
     html.ibh-theme hr { border: none !important; border-top: 1px solid ${LINE} !important; }
   `
 
+  /** @type {boolean | null} */
   let themeOn = null
 
   // ─── Ads ───
