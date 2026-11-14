@@ -12,6 +12,7 @@ import * as path from 'node:path'
 import * as net from 'node:net'
 import { spawn, spawnSync } from 'node:child_process'
 import type { ChildProcess } from 'node:child_process'
+import { ROOTFS } from './rish.mts'
 
 const SERVER = path.join(import.meta.dirname, 'phone-server.mts')
 const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'phone-server-test-'))
@@ -313,7 +314,8 @@ test('install-boot writes the Termux:Boot script', async () => {
   const script = fs.readFileSync(file, 'utf8')
   assert.ok(script.includes('termux-wake-lock'))
   assert.ok(script.includes('tmux has-session -t ibh || tmux new-session -d -s ibh'))
-  assert.ok(script.includes('node /data/data/com.termux/files/usr/var/lib/proot-distro/containers/fedora/rootfs/root/ImageBoardHelper/tools/phone-server.mts serve'))
+  // The server as native Termux reaches it: through the rootfs, wherever the repo sits.
+  assert.ok(script.includes(`node ${ROOTFS}${SERVER} serve`))
 })
 
 // ─── install-shortcuts: the IBH servidor icon and the ibh-servidor command ───
