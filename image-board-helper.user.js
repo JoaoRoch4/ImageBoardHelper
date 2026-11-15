@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.17.0
+// @version      1.18.0-snapshot
 // @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -68,7 +68,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.17.0'
+  const VERSION = '1.18.0-snapshot'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // The site's thumbnail list. Gelbooru 0.2 sites (rule34, safebooru, xbooru)
@@ -135,6 +135,7 @@
     scrubMode:      'drag', // 'drag': finger position picks the scene; 'hold': hold for a slideshow
     holdVideo:      false,  // hold mode: the video itself plays (1×, Firefox's hardware decoder) instead of the slideshow
     previewSound:   false,  // hold mode: a video that plays (holdVideo, a short clip) plays with sound
+    holdResume:     true,   // hold mode: a video that plays goes on where the last hold lifted, for a minute (⏮ on the card starts over)
     slideStep:      10,     // hold slideshow: jump between scenes, in % of the video
     slideDwell:     0.2,    // hold slideshow: seconds each scene stays once painted
     slideReel:      true,   // hold slideshow from keyframes only (MP4): one small read per scene, no seeking the file
@@ -251,7 +252,7 @@
       tScrub: 'Scene preview on video thumbnails',
       tScrubMode: 'scene preview gesture', modeDrag: 'Drag sideways', modeHold: 'Hold (slideshow)',
       tSlideStep: 'slideshow jump', tSlideDwell: 'time per scene', scenes: 'scenes', tSlideReel: 'Keyframes only (faster, MP4)', tWasmDecode: 'Decode keyframes in WebAssembly',
-      tHoldVideo: 'Hold plays the video (hardware)', tPreviewSound: 'Sound when the hold plays the video', heavyMark: 'Past this phone’s hardware decoder (1080p60)',
+      tHoldVideo: 'Hold plays the video (hardware)', tPreviewSound: 'Sound when the hold plays the video', tHoldResume: 'Hold goes on where it stopped (1 min)', resumeRestart: 'Start from the beginning', heavyMark: 'Past this phone’s hardware decoder (1080p60)',
       tMemory: 'Release off-screen memory',
       tUrlCache: 'Remember working file URLs',
       tNav: 'Top / previous / next buttons',
@@ -332,7 +333,7 @@
       tScrub: 'Prévia de cenas nas miniaturas de vídeo',
       tScrubMode: 'gesto da prévia de cenas', modeDrag: 'Arrastar de lado', modeHold: 'Segurar (slideshow)',
       tSlideStep: 'pulo do slideshow', tSlideDwell: 'tempo por cena', scenes: 'cenas', tSlideReel: 'Só keyframes (mais rápido, MP4)', tWasmDecode: 'Decodificar keyframes em WebAssembly',
-      tHoldVideo: 'Segurar toca o vídeo (hardware)', tPreviewSound: 'Som quando o segurar toca o vídeo', heavyMark: 'Acima do decodificador de hardware do celular (1080p60)',
+      tHoldVideo: 'Segurar toca o vídeo (hardware)', tPreviewSound: 'Som quando o segurar toca o vídeo', tHoldResume: 'Segurar continua de onde parou (1 min)', resumeRestart: 'Recomeçar do início', heavyMark: 'Acima do decodificador de hardware do celular (1080p60)',
       tMemory: 'Liberar memória fora da tela',
       tUrlCache: 'Lembrar endereços que funcionaram',
       tNav: 'Botões topo / anterior / próximo',
@@ -2082,7 +2083,7 @@
    * @property {{ rate: number, loop: boolean, muted: boolean }} played    the video's own, while a short clip (or holdVideo) plays
    * @property {(() => void) | null} [onPlayTime]
    */
-  /** @typedef {{ t0: number, method: string | null, first: number | null, last: number, shown: number, gaps: number[], detail?: string, wasm?: string, reelError?: string, rate?: number, fps?: number, sound?: string }} SlideStats */
+  /** @typedef {{ t0: number, method: string | null, first: number | null, last: number, shown: number, gaps: number[], detail?: string, wasm?: string, reelError?: string, rate?: number, fps?: number, sound?: string, resumed?: number, kept?: number }} SlideStats */
   /** @typedef {{ v: HTMLVideoElement, helper: boolean, f: number, ready: boolean, slow: boolean, since: number, onSeeked?: () => void }} SlideView */
 
   /** @type {Scrub | null} */
@@ -2093,6 +2094,8 @@
   function onScrubDown(ev) {
     if (scrub || insidePanel(ev) || (modal && modal.open)) return
     if (ev.pointerType === 'mouse' && ev.button !== 0) return
+    // A press on the ⏮ chip is a tap on it (onScrubClick), not a hold.
+    if (asElement(ev.target)?.closest('[data-ibh-resume]')) return
     // data-ibh-video marks cards (trackCard).
     const card = /** @type {HTMLElement | null | undefined} */ (asElement(ev.target)?.closest('[data-ibh-video]'))
     if (!card || card.dataset.ibhKind === 'gif') return
@@ -2159,8 +2162,7 @@
       if (scrub !== s) return
       markDuration(s.card, v.duration)
       if (pastDecoder(v.videoWidth, v.videoHeight)) { tooHeavy(`${v.videoWidth}x${v.videoHeight}`); return }
-      v.currentTime = 0
-      playShow(s, 1)
+      playShow(s, 1, 0)   // from 00:00, or where the last hold lifted (holdResume)
       const frames = () => (v.getVideoPlaybackQuality ? v.getVideoPlaybackQuality().totalVideoFrames : 0)
       /** @type {{ f: number, t: number } | null} */
       let start = null
@@ -2307,7 +2309,8 @@
     const avg = st.gaps.length ? Math.round(st.gaps.reduce((a, b) => a + b, 0) / st.gaps.length) : 0
     const late = st.gaps.filter(g => g > dwell + 300).length
     const shown = st.first === null ? `no scene in ${Math.round(performance.now() - st.t0)} ms`
-      : st.method === 'play' ? `playing after ${Math.round(st.first)} ms at ${st.rate ?? PLAY_RATE}×${st.fps ? `, ${Math.round(st.fps)} fps` : ''}${st.sound ? `, ${st.sound}` : ''}`
+      : st.method === 'play' ? `playing after ${Math.round(st.first)} ms at ${st.rate ?? PLAY_RATE}×${st.fps ? `, ${Math.round(st.fps)} fps` : ''}${st.sound ? `, ${st.sound}` : ''}` +
+          (st.resumed !== undefined ? `, resumed at ${mmss(st.resumed)}` : '') + (st.kept !== undefined ? `, lifted at ${mmss(st.kept)}` : '')
         : `${st.shown} scenes, first after ${Math.round(st.first)} ms${avg ? `, then every ${avg} ms` : ''} (dwell ${dwell}), ${late} late`
     const v = s.video
     const what = (st.detail || (v ? `${v.videoWidth}x${v.videoHeight}, ${mmss(v.duration)}, ${s.shared ? 'own video' : 'its cover'}` : '')) +
@@ -3063,11 +3066,18 @@
   /**
    * @param {Scrub} s
    * @param {number} [rate]   PLAY_RATE for a short clip, 1 for holdVideo
+   * @param {number} [from]   s to start at; left out, where the video is (a cover keeps its last frame)
    */
-  function playShow(s, rate = PLAY_RATE) {
+  function playShow(s, rate = PLAY_RATE, from) {
     s.stats.method = 'play'
     s.stats.rate = rate
     const v = s.video
+    // holdResume: a hold lifted less than a minute ago goes on from there.
+    const resumed = resumePoint(s.card)
+    if (resumed !== null) s.stats.resumed = resumed
+    const at = resumed ?? from
+    // A play() during the seek starts once the seek lands.
+    if (at !== undefined && at !== v.currentTime) v.currentTime = at
     s.played = { rate: v.playbackRate, loop: v.loop, muted: v.muted }
     v.loop = true
     v.playbackRate = rate
@@ -3106,6 +3116,81 @@
     v.playbackRate = s.played.rate
     v.loop = s.played.loop
     v.muted = s.played.muted   // a cover goes back to muted: unmuted, it could not autoplay
+  }
+
+  // ── Resume a hold (holdResume) ──
+  // Lifting the finger off a hold that plays the video keeps where it was for
+  // a minute: holding the same post again plays on from there, sound and all.
+  // A ⏮ chip on the card shows that spot for the minute; a tap on it drops
+  // it, and the next hold starts from the beginning again.
+  const RESUME_MS = 60000
+  /** @type {Map<string, { t: number, until: number }>} */
+  const resumes = new Map()   // post id -> where its hold lifted, and until when that counts
+
+  /**
+   * Where a hold on this card goes on from, if its last one lifted less than a minute ago.
+   * @param {HTMLElement} card
+   * @returns {number | null}
+   */
+  function resumePoint(card) {
+    if (!CFG.holdResume) return null
+    const id = postId(card)
+    const r = resumes.get(id)
+    if (!r) return null
+    if (Date.now() > r.until) { resumes.delete(id); return null }
+    return r.t
+  }
+
+  // Called while the hold still plays (before endPlayShow). A fallback to the
+  // slideshow already ended the playing, so it keeps nothing.
+  /** @param {Scrub} s */
+  function keepResume(s) {
+    const id = postId(s.card)
+    const t = s.video.currentTime
+    // A hold that never got past its first second has nothing worth going back to.
+    if (!CFG.holdResume || id === '?' || !(t >= 1)) return
+    resumes.set(id, { t, until: Date.now() + RESUME_MS })
+    s.stats.kept = t
+    resumeChip(s.card, t)
+  }
+
+  // The ⏮ chip, one per card: a new lift moves its time and restarts its minute.
+  /**
+   * @param {HTMLElement} card
+   * @param {number} at   s
+   */
+  function resumeChip(card, at) {
+    let chip = /** @type {HTMLElement | null} */ (card.querySelector('[data-ibh-resume]'))
+    if (!chip) {
+      chip = document.createElement('span')
+      chip.dataset.ibhResume = '1'
+      chip.dataset.ibhUi = '1'   // painted by us: the site theme leaves it alone
+      chip.setAttribute('role', 'button')
+      chip.title = t('resumeRestart')
+      chip.setAttribute('aria-label', t('resumeRestart'))
+      // Where the scrub's time label sits, which is gone once the finger lifts;
+      // z-index over the cover video, like the label.
+      chip.style.cssText =
+        'position:absolute;left:4px;bottom:8px;padding:2px 8px;border-radius:10px;font:12px/1.4 ' +
+        'ui-monospace,monospace;color:#fff;background:rgba(0,0,0,.65);z-index:3;cursor:pointer'
+      if (getComputedStyle(card).position === 'static') card.style.position = 'relative'
+      card.appendChild(chip)
+    }
+    chip.textContent = `⏮ ${mmss(at)}`
+    clearTimeout(Number(chip.dataset.ibhTimer))
+    const it = chip
+    chip.dataset.ibhTimer = String(setTimeout(() => it.remove(), RESUME_MS))   // harmless on a card gone from the page
+  }
+
+  // A tap on the chip: the next hold on that post starts from 00:00.
+  /** @param {HTMLElement} chip */
+  function forgetResume(chip) {
+    const card = /** @type {HTMLElement | null} */ (chip.closest('[data-ibh-video]'))
+    clearTimeout(Number(chip.dataset.ibhTimer))
+    chip.remove()
+    if (!card) return
+    resumes.delete(postId(card))
+    info(`hold: post ${postId(card)} starts from 00:00 again`)
   }
 
   // Called with a scrub under way.
@@ -3151,6 +3236,8 @@
   function scrubUi(s) {
     if (s.bar) return
     const { card } = s
+    // The time label takes the ⏮ chip's place; lifting puts a fresh chip back.
+    card.querySelector('[data-ibh-resume]')?.remove()
     // z-index: the card's cover video comes later in the DOM and would paint
     // over them otherwise (it did on site pages, where every video has one).
     s.bar = document.createElement('div')
@@ -3192,7 +3279,7 @@
     clearTimeout(s.holdTimer)
     if (!s.on) { nextGif(); return }
     if (s.tick) endSlideshow(s)
-    if (s.onPlayTime) endPlayShow(s)
+    if (s.onPlayTime) { keepResume(s); endPlayShow(s) }
     if (s.stats) logSlideStats(s)
     endReel(s)
     s.bar.remove()
@@ -3233,6 +3320,14 @@
   // Registered before the modal's click handler, so stopping it here wins.
   /** @param {MouseEvent} ev */
   function onScrubClick(ev) {
+    // The ⏮ chip sits inside the card's link: its tap must not open the post.
+    const chip = /** @type {HTMLElement | null | undefined} */ (asElement(ev.target)?.closest('[data-ibh-resume]'))
+    if (chip) {
+      ev.preventDefault()
+      ev.stopImmediatePropagation()
+      forgetResume(chip)
+      return
+    }
     if (Date.now() > scrubClickUntil) return
     scrubClickUntil = 0
     ev.preventDefault()
@@ -8192,6 +8287,7 @@
     // The slideshow's own settings only matter without holdVideo.
     body.appendChild(toggle('holdVideo', t('tHoldVideo'), null, rebuildPanel))
     body.appendChild(toggle('previewSound', t('tPreviewSound')))
+    body.appendChild(toggle('holdResume', t('tHoldResume')))
     if (CFG.holdVideo) return
     /** @param {number} n */
     const num = n => n.toLocaleString(LANG)

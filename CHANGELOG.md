@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.18.0
+
+- A hold that plays the video goes on where the last one lifted
+  (`holdResume`, on by default): lift the finger and hold the same post
+  again within a minute, and the video, sound included, picks up from that
+  spot instead of 00:00. Meanwhile the thumbnail shows ⏮ with the time;
+  tap it to drop the spot and start from the beginning on the next hold.
+  Applies to `holdVideo` and to the short clips played at 2×; the scene
+  slideshows still start from 00:00
+
 ## 1.17.0
 
 - Hold a GIF thumbnail half a second to build it again (`holdGif`, on by
