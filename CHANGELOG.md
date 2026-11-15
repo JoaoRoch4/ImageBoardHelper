@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.20.0
+
+- A ❤️ in the top right of every thumbnail already in your favorites, on
+  rule34 (`likedBadge`, on): known as the page loads, from the favorites
+  index, the posts favorited here and your own favorites page. Hold it half
+  a second to unfavorite the post; a tap opens nothing and says how
+- Favoriting or unfavoriting a post here keeps the favorites index up to
+  date (`favAutoIndex`, on), from every way the script favorites: the
+  double tap, the player's ♥, mass favorite and the ❤️ hold
+- The resolution in each thumbnail's top left (`resBadge`, on). On rule34
+  it comes from the site's API with your own key, pasted in the panel
+  (kept in the script's storage only); without one, videos and opened
+  posts still show theirs. Sizes are remembered per post
+- `doubleTapLike` `quiet` now means no animation: the corner ❤️ marks the
+  favorite instead of the ♥ badge
+
 ## 1.19.0
 
 - Hold, then slide the finger to move the video (`holdRub`, on by

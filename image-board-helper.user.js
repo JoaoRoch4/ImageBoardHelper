@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.19.0
+// @version      1.20.0-snapshot
 // @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -68,7 +68,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.19.0'
+  const VERSION = '1.20.0-snapshot'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // The site's thumbnail list. Gelbooru 0.2 sites (rule34, safebooru, xbooru)
@@ -152,7 +152,10 @@
     favsButton:     true,   // 🔖 button next to ♥ and 🕒 on rule34: your favorites page
     bulkFavButton:  true,   // ♥ button next to 🕒 on site pages: a mode where each tapped post is favorited and upvoted
     doubleTapFav:   true,   // double tap a thumbnail on rule34: favorite and upvote it; a single tap opens the post a moment later
-    doubleTapLike:  'heart', // that double tap: 'heart' (a ❤️ grows over the thumbnail and vanishes) or 'quiet' (only the ♥ badge)
+    doubleTapLike:  'heart', // that double tap: 'heart' (a ❤️ grows over the thumbnail and vanishes) or 'quiet' (no animation)
+    likedBadge:     true,   // rule34: ❤️ in the top right of a favorite's thumbnail (the favorites index and the posts liked here); hold it to unfavorite
+    favAutoIndex:   true,   // rule34: favoriting or unfavoriting a post here also adds it to or takes it out of the favorites index
+    resBadge:       true,   // the post's resolution in the thumbnail's top left (rule34's API with your key; videos and opened posts without it)
     freeButton:     true,   // trash-can button next to them: Free memory & cache in one tap
     redoButton:     true,   // ↻ button beside it: free memory, then redo every thumbnail
     eyeButton:      true,   // 👁 button beside ◐: hides the other floating buttons, and brings them back
@@ -272,7 +275,10 @@
       appBadToken: 'Wrong token', appNoStore: 'Needs Violentmonkey storage', appQueued: 'Downloading in the app',
       appReduceQueued: 'Downloading in the app, to convert', appSaved: 'Saved by the app', appFailed: 'The app’s download failed',
       appConverting: 'Converting in the app', appConverted: 'Converted by the app', appFits: 'Saved: it plays as it is',
-      tRedoBtn: 'Redo-thumbnails shortcut button', navRedo: 'Free memory, then redo thumbnails', tDoubleTap: 'Double tap a thumbnail: favorite + upvote', tDoubleTapLike: 'Thumbnail like', likeHeart: 'With the ❤️ animation', likeQuiet: 'Quiet (♥ badge only)',
+      tRedoBtn: 'Redo-thumbnails shortcut button', navRedo: 'Free memory, then redo thumbnails', tDoubleTap: 'Double tap a thumbnail: favorite + upvote', tDoubleTapLike: 'Thumbnail like', likeHeart: 'With the ❤️ animation', likeQuiet: 'Quiet (no animation)',
+      tLikedBadge: '❤️ on favorites’ thumbnails (hold it: unfavorite)', heartHint: 'Hold ❤️ to remove it from your favorites', unlikeFail: 'Could not unfavorite',
+      tFavAutoIndex: 'Keep the favorites index up to date when liking', tResBadge: 'Resolution on thumbnails', apiKey: 'rule34 API key',
+      apiKeyHint: 'Paste &api_key=…&user_id=… (rule34 → My Account → Options)', apiKeySet: 'Key saved: resolutions from the API', apiKeyNone: 'No key: only videos and opened posts', apiKeyBad: 'Not a key: paste the whole &api_key=…&user_id=… line',
       tEyeBtn: '👁 button: hides the other buttons', eyeHide: 'Hide the buttons', eyeShow: 'Show the buttons',
       tFreeBtn: 'Free-memory shortcut button', navFree: 'Free memory & cache',
       tFavSearch: 'Search your favorites', tSiteSearch: 'Search bar on site pages', tSuggest: 'Tag suggestions while typing',
@@ -354,7 +360,10 @@
       appBadToken: 'Token errado', appNoStore: 'Precisa do armazenamento do Violentmonkey', appQueued: 'Baixando no app',
       appReduceQueued: 'Baixando no app, para converter', appSaved: 'Salvo pelo app', appFailed: 'O download do app falhou',
       appConverting: 'Convertendo no app', appConverted: 'Convertido pelo app', appFits: 'Salvo: toca como está',
-      tRedoBtn: 'Botão de atalho para refazer as miniaturas', navRedo: 'Limpar a memória e refazer as miniaturas', tDoubleTap: 'Toque duplo na miniatura: favoritar + votar', tDoubleTapLike: 'Curtida na miniatura', likeHeart: 'Com a animação do ❤️', likeQuiet: 'Discreta (só o selo ♥)',
+      tRedoBtn: 'Botão de atalho para refazer as miniaturas', navRedo: 'Limpar a memória e refazer as miniaturas', tDoubleTap: 'Toque duplo na miniatura: favoritar + votar', tDoubleTapLike: 'Curtida na miniatura', likeHeart: 'Com a animação do ❤️', likeQuiet: 'Discreta (sem animação)',
+      tLikedBadge: '❤️ nas miniaturas dos favoritos (segurar: descurtir)', heartHint: 'Segure o ❤️ para tirar dos favoritos', unlikeFail: 'Não deu para descurtir',
+      tFavAutoIndex: 'Manter o índice de favoritos em dia ao curtir', tResBadge: 'Resolução nas miniaturas', apiKey: 'Chave da API do rule34',
+      apiKeyHint: 'Cole &api_key=…&user_id=… (rule34 → My Account → Options)', apiKeySet: 'Chave salva: resoluções pela API', apiKeyNone: 'Sem chave: só vídeos e posts abertos', apiKeyBad: 'Não é uma chave: cole a linha &api_key=…&user_id=… inteira',
       tEyeBtn: 'Botão 👁: oculta os outros botões', eyeHide: 'Ocultar os botões', eyeShow: 'Mostrar os botões',
       tFreeBtn: 'Botão de atalho para limpar a memória', navFree: 'Limpar memória e cache',
       tFavSearch: 'Buscar nos seus favoritos', tSiteSearch: 'Barra de busca nas páginas do site', tSuggest: 'Sugestões de tags ao digitar',
@@ -1279,6 +1288,7 @@
       // decoding a frame falls to the CPU, for a still the poster already
       // gives. Drop the cover and leave the picture (the feed upgrades it to
       // the full-size poster frame).
+      setDims(postId(card), v.videoWidth, v.videoHeight)
       if (pastDecoder(v.videoWidth, v.videoHeight)) {
         markPastDecoder(card, `${v.videoWidth}x${v.videoHeight}`)
         dbg(`cover: ${v.videoWidth}x${v.videoHeight} is past the hardware decoder, poster kept instead`)
@@ -1666,6 +1676,7 @@
       // Inline links have no box of their own; the cover needs one to sit on.
       if (getComputedStyle(link).display === 'inline') link.style.display = 'inline-block'
       trackCard(link)
+      paintCardMarks(link)
     }
   }
 
@@ -2102,7 +2113,7 @@
     if (scrub || insidePanel(ev) || (modal && modal.open)) return
     if (ev.pointerType === 'mouse' && ev.button !== 0) return
     // A press on a hold chip (⏮, 🔊) is a tap on it (onScrubClick), not a hold.
-    if (asElement(ev.target)?.closest('[data-ibh-chip]')) return
+    if (asElement(ev.target)?.closest('[data-ibh-chip], .ibh-liked')) return
     // data-ibh-video marks cards (trackCard).
     const card = /** @type {HTMLElement | null | undefined} */ (asElement(ev.target)?.closest('[data-ibh-video]'))
     if (!card || card.dataset.ibhKind === 'gif') return
@@ -4271,6 +4282,12 @@
       p = fetch(`/index.php?page=post&s=view&id=${encodeURIComponent(id)}`, { credentials: 'same-origin' })
         .then(res => (res.ok ? res.text() : null))
         .then(html => (html ? readPostPage(html) : null))
+        .then(page => {
+          // "Size: 1920x1080" in its statistics, for the resolution badge.
+          const size = page && page.stats.map(st => st.text.match(/^Size:\s*(\d+)\s*x\s*(\d+)/i)).find(Boolean)
+          if (size) setDims(id, Number(size[1]), Number(size[2]))
+          return page
+        })
         .catch(() => null)
       postInfos.set(id, p)
     }
@@ -5691,13 +5708,305 @@
       if (code === '2') { bulkBadge(link, '✕', '#b42318'); pageToast(t('favLogin')); delete link.dataset.ibhBulk; return }
       if (code !== '3' && code !== '1') throw new Error(`answer ${code.slice(0, 20)}`)
       await upvotePost(id)
-      bulkBadge(link, '♥', '#e5534b')
+      // The corner ❤️ (afterFavorite painted it) says it; without it, the ♥ badge.
+      if (wantsLiked()) link.querySelector('.ibh-bulkbadge')?.remove()
+      else bulkBadge(link, '♥', '#e5534b')
       info(`${via}: post ${id} ${code === '3' ? 'favorited' : 'was a favorite'}, upvoted`)
     } catch (e) {
       delete link.dataset.ibhBulk
       bulkBadge(link, '✕', '#b42318')
       warn(`${via}: post ${id} failed — ${describeError(e)}`)
     }
+  }
+
+  // ── Card marks: ❤️ on favorites, the resolution ──
+  // likedBadge: a ❤️ in a favorite's top right, known from the favorites
+  // index (read once a page, only its ids kept), the posts favorited here
+  // (marks) and the user's own favorites page; holding it unfavorites the
+  // post. favAutoIndex: a like or unlike made here goes into the index too,
+  // so it stays right between reads. resBadge: the resolution in the top
+  // left, from rule34's API with the user's key (GM storage only, like the
+  // app's token), a video's cover or an opened post's page; remembered per
+  // post, since a post's size never changes.
+  const UNLIKE_HOLD_MS = 500
+  /** @type {Set<string> | null} */
+  let likedIds = null                   // the favorites index's ids
+  const unliked = new Set()             // unfavorited on this page (the favorites page still lists them)
+  /** @type {Promise<void>} */
+  let favIndexWrites = Promise.resolve()   // one index edit at a time: each reads, changes and writes it whole
+
+  const wantsLiked = () => !!CFG.likedBadge && SITE === 'rule34.xxx' && !!userId()
+  /** @param {string} id */
+  const isLiked = id => !unliked.has(id) && (hasMark('f', id) || !!likedIds?.has(id) || onOwnFavorites())
+  /** @param {string} id @returns {HTMLAnchorElement[]} */
+  const cardsOf = id => siteLinks().filter(a => postId(a) === id)
+
+  /** @param {HTMLElement} link */
+  function paintCardMarks(link) {
+    paintLiked(link)
+    paintRes(link)
+    wantDims(link)
+  }
+
+  function repaintCards() {
+    for (const link of siteLinks()) paintCardMarks(link)
+  }
+
+  /** @param {HTMLElement} link */
+  function paintLiked(link) {
+    const id = postId(link)
+    const on = wantsLiked() && id !== '?' && isLiked(id)
+    const had = link.querySelector('.ibh-liked')
+    if (!on) {
+      had?.remove()
+      delete link.dataset.ibhLiked
+      return
+    }
+    link.dataset.ibhLiked = '1'   // moves the other top-right badges aside (CARD_MARKS_CSS)
+    if (had) return
+    if (getComputedStyle(link).position === 'static') link.style.position = 'relative'
+    link.appendChild(el('span', { class: 'ibh-liked', 'data-ibh-ui': '', role: 'button', title: t('heartHint'), text: '❤️' }))
+  }
+
+  // The index's ids, once the page has the user's id (its links) to match it to.
+  async function loadLikedIds() {
+    if (!wantsLiked() || likedIds) return
+    const idx = favIndex && favIndex.user === userId() ? favIndex : await favsGet()
+    if (!idx || idx.user !== userId()) return
+    likedIds = new Set(idx.items.map(item => item[0]))
+    let shown = 0
+    for (const link of siteLinks()) {
+      paintLiked(link)
+      if (link.dataset.ibhLiked) shown++
+    }
+    info(`liked: ${likedIds.size} favorites in the index, ${shown} of them on this page`)
+  }
+
+  // favoritePost answered: the card's ❤️, and the index (favAutoIndex).
+  /** @param {string} id @param {boolean} fav */
+  function afterFavorite(id, fav) {
+    if (fav) unliked.delete(id)
+    else unliked.add(id)
+    if (likedIds) fav ? likedIds.add(id) : likedIds.delete(id)
+    const links = cardsOf(id)
+    for (const link of links) {
+      paintLiked(link)
+      if (!fav) delete link.dataset.ibhBulk   // a double tap can favorite it again
+    }
+    if (CFG.favAutoIndex && SITE === 'rule34.xxx' && userId()) {
+      favIndexWrites = favIndexWrites.then(() => indexFavorite(id, fav, links[0])).catch(e => warn(`favorites: index not updated — ${describeError(e)}`))
+    }
+  }
+
+  /**
+   * @param {string} id
+   * @param {boolean} fav
+   * @param {HTMLAnchorElement | undefined} link   the card, for the index's thumbnail and tags
+   */
+  async function indexFavorite(id, fav, link) {
+    // A read in progress picks the change up itself, or would add it twice.
+    if (favScan) { dbg(`favorites: index being read, post ${id} left to it`); return }
+    const idx = await loadFavIndex()
+    // Never read: the first read builds it whole, and one item in it now
+    // would stop that read at its first page (it reads until a known one).
+    if (!idx.items.length && idx.next === undefined) return
+    const at = idx.items.findIndex(item => item[0] === id)
+    if (fav === at >= 0) return
+    if (fav) {
+      const img = link && link.querySelector('img')
+      idx.items.unshift([id, (img && img.getAttribute('src')) || '', link ? nativeTags(link) : '', null])   // newest first, as the pages
+    } else {
+      idx.items.splice(at, 1)
+    }
+    favEntries = null   // a search sees it
+    await favsSet(idx)
+    info(`favorites: post ${id} ${fav ? 'added to' : 'taken out of'} the index (${idx.items.length})`)
+  }
+
+  // Holding the ❤️: unfavorite. toggle=1 flips, so a post the index wrongly
+  // thought a favorite comes back as added ('3'): flipped once more, it goes.
+  /** @param {HTMLAnchorElement} link */
+  async function unlikeFromCard(link) {
+    const id = postId(link)
+    try {
+      let { code } = await favoritePost(id, true)
+      if (code === '3') ({ code } = await favoritePost(id, true))
+      if (code !== '4') {
+        pageToast(`${t('unlikeFail')} (${code.slice(0, 20)})`)
+        warn(`liked: post ${id} not unfavorited — answer ${code.slice(0, 20)}`)
+        return
+      }
+      pageToast(t('favRemoved'))
+      info(`liked: post ${id} unfavorited from its ❤️`)
+    } catch (e) {
+      pageToast(t('unlikeFail'))
+      warn(`liked: post ${id} not unfavorited — ${describeError(e)}`)
+    }
+  }
+
+  // The ❤️'s hold, on touch events like the raw hold (Firefox for Android
+  // cancels the pointer during a long press). Its taps go nowhere: the
+  // click handler runs before every other one on the cards.
+  /** @type {{ link: HTMLAnchorElement, x: number, y: number, fired: boolean, timer: number } | null} */
+  let heartHold = null
+
+  /** @param {TouchEvent} ev */
+  function onHeartTouchStart(ev) {
+    const badge = asElement(ev.target)?.closest('.ibh-liked')
+    const link = /** @type {HTMLAnchorElement | null | undefined} */ (badge && badge.closest(SITE_LINK))   // SITE_LINK ends in a
+    if (!link || ev.touches.length !== 1) return
+    const touch = ev.touches[0]
+    const hold = { link, x: touch.clientX, y: touch.clientY, fired: false, timer: 0 }
+    hold.timer = setTimeout(() => {
+      hold.fired = true
+      if (navigator.vibrate) navigator.vibrate(15)
+      unlikeFromCard(link)
+    }, UNLIKE_HOLD_MS)
+    heartHold = hold
+  }
+
+  /** @param {TouchEvent} ev */
+  function onHeartTouchMove(ev) {
+    const touch = ev.touches[0]
+    if (heartHold && !heartHold.fired && touch && Math.hypot(touch.clientX - heartHold.x, touch.clientY - heartHold.y) > 12) {
+      clearTimeout(heartHold.timer)
+      heartHold = null
+    }
+  }
+
+  function onHeartTouchEnd() {
+    if (heartHold && !heartHold.fired) clearTimeout(heartHold.timer)
+  }
+
+  /** @param {MouseEvent} ev */
+  function onHeartClick(ev) {
+    if (!asElement(ev.target)?.closest('.ibh-liked')) return
+    ev.preventDefault()
+    ev.stopImmediatePropagation()
+    if (!heartHold || !heartHold.fired) pageToast(t('heartHint'))   // a tap: how it works
+    heartHold = null
+  }
+
+  // ── The resolution (resBadge) ──
+  const DIMS_KEY = `IBH_DIMS_${SITE}`   // { id: "WxH" }, newest last
+  const DIMS_MAX = 8000
+  const DIMS_INFLIGHT = 2               // API requests at once
+  const RULE34_API = 'https://api.rule34.xxx/index.php?page=dapi&s=post&q=index&json=1'
+  /** @type {Map<string, string> | null} */
+  let dims = null
+  let dimsSaveTimer = 0
+  /** @type {string[]} */
+  const dimsQueue = []                  // post ids to ask the API for, in page order
+  const dimsAsked = new Set()           // asked on this page
+  let dimsLive = 0
+  let dimsRefused = false               // the API turned the key down: no more asking this page
+
+  /** @returns {Map<string, string>} */
+  function loadDims() {
+    if (!dims) dims = new Map(Object.entries(readJSON(DIMS_KEY, {})))
+    return dims
+  }
+
+  /**
+   * @param {string} id
+   * @param {number} w
+   * @param {number} h
+   */
+  function setDims(id, w, h) {
+    if (id === '?' || !(w > 0 && h > 0)) return
+    const map = loadDims()
+    const size = `${w}x${h}`
+    if (map.get(id) === size) return
+    map.delete(id)
+    map.set(id, size)
+    while (map.size > DIMS_MAX) map.delete(/** @type {string} */ (map.keys().next().value))   // not empty
+    clearTimeout(dimsSaveTimer)
+    dimsSaveTimer = setTimeout(() => writeJSON(DIMS_KEY, Object.fromEntries(loadDims())), 2000)   // one write for a burst
+    for (const link of cardsOf(id)) paintRes(link)
+  }
+
+  /** @param {HTMLElement} link */
+  function paintRes(link) {
+    const size = CFG.resBadge ? loadDims().get(postId(link)) : undefined
+    let badge = /** @type {HTMLElement | null} */ (link.querySelector('.ibh-res'))
+    if (!size) { badge?.remove(); return }
+    if (!badge) {
+      badge = el('span', { class: 'ibh-res', 'data-ibh-ui': '' })
+      if (getComputedStyle(link).position === 'static') link.style.position = 'relative'
+      link.appendChild(badge)
+    }
+    badge.textContent = size.replace('x', '×')
+  }
+
+  // The user's key, as rule34 shows it ("&api_key=…&user_id=…"), kept in GM
+  // storage only: the site's own storage is read by the site's scripts.
+  const apiKey = () => (GM_STORE ? String(GM_getValue('r34ApiKey', '') || '') : '')
+  /**
+   * The key from what was pasted, or '' to clear it; null when it isn't one.
+   * @param {string} raw
+   * @returns {string | null}
+   */
+  function parseApiKey(raw) {
+    const text = raw.trim()
+    if (!text) return ''
+    const key = text.match(/api_key=([0-9a-f]{32,})/i)
+    const user = text.match(/user_id=(\d+)/)
+    return key && user ? `&api_key=${key[1]}&user_id=${user[1]}` : null
+  }
+
+  /** @param {HTMLElement} link */
+  function wantDims(link) {
+    const id = postId(link)
+    if (!CFG.resBadge || SITE !== 'rule34.xxx' || !GM_XHR || dimsRefused || id === '?' || dimsAsked.has(id) || loadDims().has(id) || !apiKey()) return
+    dimsAsked.add(id)
+    dimsQueue.push(id)
+    pumpDims()
+  }
+
+  function pumpDims() {
+    while (dimsLive < DIMS_INFLIGHT && dimsQueue.length && !dimsRefused) {
+      const id = /** @type {string} */ (dimsQueue.shift())   // not empty
+      dimsLive++
+      const done = () => { dimsLive--; pumpDims() }
+      GM_xmlhttpRequest({
+        method: 'GET',
+        url: `${RULE34_API}&id=${encodeURIComponent(id)}${apiKey()}`,
+        timeout: 15000,
+        onload: res => {
+          /** @type {unknown} */
+          let json = null
+          try { json = JSON.parse(res.responseText) } catch (e) { /* the refusal is plain text */ }
+          const post = Array.isArray(json) ? json[0] : null
+          if (post && typeof post === 'object' && 'width' in post && 'height' in post) setDims(id, Number(post.width), Number(post.height))
+          else if (/authentication|api_key|access denied/i.test(res.responseText)) {
+            dimsRefused = true
+            warn(`resolution: rule34's API refused the key — ${res.responseText.slice(0, 120)}`)
+          }
+          done()
+        },
+        onerror: done,
+        ontimeout: done,
+      })
+    }
+  }
+
+  // The panel's key field, under the resolution option.
+  function apiKeyControls() {
+    const field = el('input', { class: 'apptoken', type: 'password', autocomplete: 'off', placeholder: t(GM_STORE ? 'apiKeyHint' : 'appNoStore') })
+    field.disabled = !GM_STORE
+    field.value = apiKey()
+    const status = el('div', { class: 'lbl appstatus', text: t(apiKey() ? 'apiKeySet' : 'apiKeyNone') })
+    field.addEventListener('change', () => {
+      const key = parseApiKey(field.value)
+      if (key === null) { status.textContent = t('apiKeyBad'); return }
+      GM_setValue('r34ApiKey', key)
+      field.value = key
+      dimsRefused = false
+      status.textContent = t(key ? 'apiKeySet' : 'apiKeyNone')
+      info(`resolution: API key ${key ? `saved (user ${(key.match(/user_id=(\d+)/) || [])[1]})` : 'cleared'}`)
+      repaintCards()
+    })
+    return el('div', { class: 'lang' }, [el('div', { class: 'lbl', text: t('apiKey') }), field, status])
   }
 
   // ── Hold an image for its raw file ──
@@ -6626,6 +6935,7 @@
       const fav = code !== '4'
       setMark('f', id, fav)
       favLookups.set(id, Promise.resolve(fav))
+      afterFavorite(id, fav)
     }
     return { code, status: res.status }
   }
@@ -8650,6 +8960,8 @@
     body.appendChild(toggle('bulkFavButton', t('tBulkBtn'), null, ensureFeedNav))
     body.appendChild(toggle('doubleTapFav', t('tDoubleTap'), null, rebuildPanel))
     if (CFG.doubleTapFav) body.appendChild(choiceSelect('doubleTapLike', t('tDoubleTapLike'), [['heart', t('likeHeart')], ['quiet', t('likeQuiet')]]))
+    body.appendChild(toggle('likedBadge', t('tLikedBadge'), null, () => { loadLikedIds(); repaintCards() }))
+    body.appendChild(toggle('favAutoIndex', t('tFavAutoIndex')))
     body.appendChild(toggle('favsButton', t('tFavsBtn'), null, ensureFeedNav))
     body.appendChild(toggle('holdRaw', t('tHoldRaw')))
     body.appendChild(toggle('freeButton', t('tFreeBtn'), null, ensureFeedNav))
@@ -8677,6 +8989,8 @@
     body.appendChild(choiceSelect('modalOriginal', t('tModalOrig'), [['zoom', t('origZoom')], ['always', t('origAlways')]]))
     body.appendChild(toggle('videoCovers', t('tCovers')))
     body.appendChild(toggle('thumbBadges', t('tBadges'), t('noteReload')))
+    body.appendChild(toggle('resBadge', t('tResBadge'), null, () => { repaintCards(); rebuildPanel() }))
+    if (CFG.resBadge && SITE === 'rule34.xxx') body.appendChild(apiKeyControls())
     body.appendChild(toggle('gifInline', t('tGif')))
     body.appendChild(choiceSelect('gifMaxLive', t('tGifMax'), [1, 2, 3, 4, 6, 10].map(n => [n, String(n)]), applyGifLimit))
     body.appendChild(toggle('holdGif', t('tHoldGif')))
@@ -9284,10 +9598,21 @@
   // in the top-left corner (two IDs outrank the site's own #site-title rule).
   const HEADER_CSS = '#header #site-title { text-align: center; padding-left: 0; }'
 
+  // The card marks: ❤️ top right (big enough to hold), the resolution top
+  // left; a favorite's other top-right badges step aside for the heart.
+  const CARD_MARKS_CSS = `
+    .ibh-liked { position: absolute; top: 1px; right: 1px; z-index: 5; padding: 3px; font-size: 16px; line-height: 1;
+      filter: drop-shadow(0 0 2px rgba(0, 0, 0, .8)); cursor: pointer; user-select: none; -webkit-user-select: none;
+      -webkit-touch-callout: none; }
+    .ibh-res { position: absolute; top: 3px; left: 3px; z-index: 4; pointer-events: none; padding: 0 3px; border-radius: 3px;
+      font: 10px/1.4 ui-monospace, monospace; color: #fff; background: rgba(0, 0, 0, .65); }
+    [data-ibh-liked] .ibh-heavy { right: 26px !important; }
+    [data-ibh-liked] .ibh-bulkbadge, [data-ibh-liked] .ibh-rawbadge { right: 30px !important; }`
+
   function injectPageCSS() {
     if (document.querySelector('style[data-ibh]')) return
     const style = el('style', { 'data-ibh': '1' })
-    style.textContent = NATIVE_MARK_CSS + THEME_CSS + FAVSEARCH_CSS + TAP_CSS + HEADER_CSS + LIKE_CSS +
+    style.textContent = NATIVE_MARK_CSS + THEME_CSS + FAVSEARCH_CSS + TAP_CSS + HEADER_CSS + LIKE_CSS + CARD_MARKS_CSS +
       (CFG.videoScrub ? SCRUB_CSS : '') + (CFG.blockAds ? ADS_CSS : '')
     ;(document.head || document.documentElement).appendChild(style)
   }
@@ -9317,6 +9642,14 @@
   }).observe(document, { childList: true, subtree: true })
 
   installMemorySaver()
+  window.addEventListener('click', onHeartClick, true)  // first: a tap on a card's ❤️ opens nothing
+  window.addEventListener('touchstart', onHeartTouchStart, { capture: true, passive: true })
+  window.addEventListener('touchmove', onHeartTouchMove, { capture: true, passive: true })
+  window.addEventListener('touchend', onHeartTouchEnd, true)
+  window.addEventListener('touchcancel', onHeartTouchEnd, true)
+  window.addEventListener('contextmenu', ev => { if (asElement(ev.target)?.closest('.ibh-liked')) ev.preventDefault() }, true)
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', () => { loadLikedIds() }, { once: true })
+  else loadLikedIds()
   window.addEventListener('click', onBulkClick, true)   // before the modal: in mass favorite a tap favorites
   window.addEventListener('click', onRawClick, true)    // before the modal: the release of a raw hold
   window.addEventListener('touchstart', onRawTouchStart, { capture: true, passive: true })
