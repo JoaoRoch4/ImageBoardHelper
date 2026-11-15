@@ -10,9 +10,11 @@
   video, at most 2 minutes. The video waits on the frame while the finger
   moves (the nearest keyframe first, quick, then the exact frame) and plays
   on once the finger rests. On a thumbnail, lifting keeps that spot for the
-  next hold (`holdResume`). In the player the hold's 2× gives way to the
-  slide, a paused video can be slid too (and stays paused), and a quick
-  swipe without the hold still changes the post
+  next hold (`holdResume`). In the player a sideways drag on the video
+  moves it right away, with no hold first (a slide after the hold's 2×
+  starts works too, and the 2× gives way); a paused video stays paused,
+  lifting mid-slide plays on, and a quick flick (under 0.3 s) still
+  changes the post
 
 ## 1.18.0
 

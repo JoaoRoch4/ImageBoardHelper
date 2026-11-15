@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.19.0-snapshot.2
+// @version      1.19.0-snapshot.3
 // @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -68,7 +68,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.19.0-snapshot.2'
+  const VERSION = '1.19.0-snapshot.3'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // The site's thumbnail list. Gelbooru 0.2 sites (rule34, safebooru, xbooru)
@@ -3269,9 +3269,10 @@
    * @param {HTMLVideoElement} v
    * @param {number} x0   px, where the finger went down
    * @param {() => number} width   px that span the whole video
-   * @param {{ alive(): boolean, begin(): void, paint(t: number): void, rest(): void }} hooks
+   * @param {{ alive(): boolean, begin(): void, paint(t: number): void, rest(): void, lift?(): void }} hooks
    *   alive: the gesture still runs; begin: a rub starts (before the pause);
-   *   paint: the target changed; rest: the finger rests on the exact frame
+   *   paint: the target changed; rest: the finger rests on the exact frame;
+   *   lift: the finger lifted mid-rub, the video on the exact frame
    * @returns {Rub}
    */
   function makeRub(v, x0, width, hooks) {
@@ -3328,8 +3329,10 @@
       end() {
         clearTimeout(still)
         v.removeEventListener('seeked', onSeeked)
-        if (active) v.currentTime = target
+        if (!active) return
         active = false
+        v.currentTime = target
+        if (hooks.lift) hooks.lift()
       },
       active: () => active,
       count: () => count,
@@ -6833,12 +6836,14 @@
     stage.addEventListener('pointercancel', end)
   }
 
-  // On the modal video: hold for 2x while the finger stays down, and then
-  // slide sideways to move the video (holdRub: a rub, see makeRub); double
+  // On the modal video: drag sideways to move the video (holdRub: a rub, see
+  // makeRub; a quick flick stays a swipe to the next post); hold for 2x
+  // while the finger stays down, and slide from there to move it too; double
   // tap on the right or left third to jump seekStep seconds (5, or what ⚙
   // picked) forward or back. The control strip is
   // left to the player. Turned, "left/right" follow the viewer, not the screen.
   const HOLD_FAST_MS = 400
+  const FLICK_MS = 300   // a sideways drag shorter than this is a swipe to the next post, not a rub
   const HOLD_RATE = 2
   const videoPress = { held: false }
 
@@ -6851,8 +6856,9 @@
     if (!sticky) badgeTimer = setTimeout(() => { modal.badge.hidden = true }, 700)
   }
 
-  // The player's rub: a hold's 2× gives way to it, the time shows in the
-  // badge with the seek bar up, and a resting finger plays on only when the
+  // The player's rub: a sideways drag on the video, or a slide once a hold
+  // started. A hold's 2× gives way to it, the time shows in the badge with
+  // the seek bar up, and a resting or lifted finger plays on only when the
   // video was playing.
   /**
    * @param {HTMLVideoElement} video
@@ -6878,12 +6884,13 @@
         showBadge(mmss(video.currentTime))
         if (playing) video.play().catch(e => dbg(`modal: rub, play refused — ${describeError(e)}`))
       },
+      lift: () => { if (playing) video.play().catch(e => dbg(`modal: rub, play refused — ${describeError(e)}`)) },
     })
   }
 
   /** @param {HTMLElement} layer @param {HTMLVideoElement} video */
   function installVideoGestures(layer, video) {
-    /** @type {{ id: number, x: number, y: number, t: number, fx: number, rate: number, timer: number, rub?: Rub } | null} */
+    /** @type {{ id: number, x: number, y: number, t: number, fx: number, rate: number, timer: number, rub?: Rub, drag?: boolean } | null} */
     let press = null
     /** @type {{ t: number, side: number, timer: number } | null} */
     let tap = null   // a first tap waiting to see whether a second one follows
@@ -6934,11 +6941,21 @@
     })
     layer.addEventListener('pointermove', ev => {
       if (!press || ev.pointerId !== press.id) return
-      if (videoPress.held) { press.rub?.move(ev.clientX); return }
-      if (Math.hypot(ev.clientX - press.x, ev.clientY - press.y) > 10) {   // a swipe, handled on the stage
-        clearTimeout(press.timer)
-        press = null
+      if (videoPress.held || press.drag) { press.rub?.move(ev.clientX); return }
+      const dx = ev.clientX - press.x
+      const dy = ev.clientY - press.y
+      if (Math.hypot(dx, dy) <= 10) return
+      clearTimeout(press.timer)
+      // Sideways: a rub from here (the stage still takes a quick flick as a
+      // swipe, see pointerup). Down, or sideways with holdRub off: a swipe,
+      // handled on the stage.
+      if (CFG.holdRub && Math.abs(dx) > Math.abs(dy)) {
+        press.drag = true
+        press.rub = playerRub(video, press, layer)
+        press.rub.move(ev.clientX)
+        return
       }
+      press = null
     })
     layer.addEventListener('pointercancel', () => { if (press) dbg('modal: video press cancelled by the browser'); release() })
     layer.addEventListener('pointerup', ev => {
@@ -6946,6 +6963,9 @@
       const quickTap = !videoPress.held && Date.now() - press.t < 250 &&
         Math.hypot(ev.clientX - press.x, ev.clientY - press.y) < 10
       const side = press.fx > 0.65 ? 1 : press.fx < 0.35 ? -1 : 0
+      // A drag that took longer than a flick moved the video: the stage's
+      // swipe skips it as it skips a hold (release clears this after it).
+      if (press.drag && Date.now() - press.t >= FLICK_MS) videoPress.held = true
       release()
       if (!quickTap) return
       // Second tap within 300 ms: a double tap. On a side it seeks, in the
