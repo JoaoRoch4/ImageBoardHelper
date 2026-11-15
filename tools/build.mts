@@ -78,13 +78,21 @@ function parse(code: string, sourceType: 'script' | 'module') {
 }
 
 // Every name declared anywhere in the code (variables, functions, parameters,
-// catch bindings), leaving out import bindings.
+// catch bindings), leaving out import bindings and esbuild's own helpers
+// (__name and what its arrow declares).
 function declaredNames(code: string, sourceType: 'script' | 'module'): Set<string> {
   const { scopes } = parse(code, sourceType)
+  const helpers: [number, number][] = []
+  for (const scope of scopes.scopes) {
+    for (const v of scope.variables) {
+      for (const d of v.defs) if (HELPERS.test(v.name) && d.node.range) helpers.push(d.node.range)
+    }
+  }
+  const inHelper = (n: Node) => !!n.range && helpers.some(([a, b]) => n.range![0] >= a && n.range![1] <= b)
   const names = new Set<string>()
   for (const scope of scopes.scopes) {
     for (const v of scope.variables) {
-      if (v.defs.length && v.defs.every(d => d.type !== 'ImportBinding')) names.add(v.name)
+      if (v.defs.length && v.defs.every(d => d.type !== 'ImportBinding' && !inHelper(d.name))) names.add(v.name)
     }
   }
   return names
@@ -92,10 +100,10 @@ function declaredNames(code: string, sourceType: 'script' | 'module'): Set<strin
 
 // The bundle declares exactly the names the modules declare: one more is a
 // rename (or code esbuild made up), one fewer is code that was dropped.
-function checkNames(bundle: string, inputs: string[]) {
+export function checkNames(bundle: string, inputs: string[]) {
   const source = new Set<string>()
   for (const file of inputs) {
-    const text = fs.readFileSync(path.join(REPO, file), 'utf8')
+    const text = fs.readFileSync(path.resolve(REPO, file), 'utf8')
     const js = esbuild.transformSync(text, { loader: file.endsWith('.ts') ? 'ts' : 'js', format: 'esm', target: 'es2020' }).code
     for (const n of declaredNames(js, 'module')) source.add(n)
   }
@@ -117,7 +125,7 @@ const isFunction = (n: Node | null | undefined): n is ESTree.FunctionExpression 
 // What one reads at that moment (outside functions it only defines, and
 // inside the functions it calls, transitively) has to be set by an earlier
 // statement. Functions are hoisted, so only their bodies count.
-function checkLoadOrder(bundle: string) {
+export function checkLoadOrder(bundle: string) {
   const { ast, scopes } = parse(bundle, 'script')
   const first = ast.body[0]
   if (first?.type !== 'ExpressionStatement' || first.expression.type !== 'CallExpression' || !isFunction(first.expression.callee)) {
