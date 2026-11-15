@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.20.0-snapshot
+// @version      1.20.0-snapshot.2
 // @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -68,7 +68,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.20.0-snapshot'
+  const VERSION = '1.20.0-snapshot.2'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // The site's thumbnail list. Gelbooru 0.2 sites (rule34, safebooru, xbooru)
@@ -5995,17 +5995,27 @@
     const field = el('input', { class: 'apptoken', type: 'password', autocomplete: 'off', placeholder: t(GM_STORE ? 'apiKeyHint' : 'appNoStore') })
     field.disabled = !GM_STORE
     field.value = apiKey()
-    const status = el('div', { class: 'lbl appstatus', text: t(apiKey() ? 'apiKeySet' : 'apiKeyNone') })
-    field.addEventListener('change', () => {
+    /** @param {string} key */
+    const keyUser = key => (key.match(/user_id=(\d+)/) || [])[1]
+    /** @param {string} key */
+    const shown = key => (key ? `${t('apiKeySet')} (user ${keyUser(key)})` : t('apiKeyNone'))
+    const status = el('div', { class: 'lbl appstatus', text: shown(apiKey()) })
+    /** @param {boolean} final  the field lost focus: a wrong text gets its message */
+    const save = final => {
       const key = parseApiKey(field.value)
-      if (key === null) { status.textContent = t('apiKeyBad'); return }
+      if (key === null) { if (final) status.textContent = t('apiKeyBad'); return }
+      // Pasting fires input at once; on the phone, change only comes when the
+      // field loses focus, which closing the panel may never give it.
+      if (key === apiKey() || (!key && !final)) return
       GM_setValue('r34ApiKey', key)
       field.value = key
       dimsRefused = false
-      status.textContent = t(key ? 'apiKeySet' : 'apiKeyNone')
-      info(`resolution: API key ${key ? `saved (user ${(key.match(/user_id=(\d+)/) || [])[1]})` : 'cleared'}`)
+      status.textContent = shown(key)
+      info(`resolution: API key ${key ? `saved (user ${keyUser(key)})` : 'cleared'}`)
       repaintCards()
-    })
+    }
+    field.addEventListener('input', () => save(false))
+    field.addEventListener('change', () => save(true))
     return el('div', { class: 'lang' }, [el('div', { class: 'lbl', text: t('apiKey') }), field, status])
   }
 
