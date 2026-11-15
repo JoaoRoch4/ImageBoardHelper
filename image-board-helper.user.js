@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.20.0-snapshot.3
+// @version      1.20.0-snapshot.4
 // @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -68,7 +68,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.20.0-snapshot.3'
+  const VERSION = '1.20.0-snapshot.4'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // The site's thumbnail list. Gelbooru 0.2 sites (rule34, safebooru, xbooru)
@@ -5891,6 +5891,10 @@
   const DIMS_KEY = `IBH_DIMS_${SITE}`   // { id: "WxH" }, newest last
   const DIMS_MAX = 8000
   const DIMS_INFLIGHT = 2               // API requests at once
+  // rule34's API (api.rule34.xxx) answers only with the user's key; every
+  // call to it goes through r34Api, which makes none without one. The file
+  // hosts (api-cdn*.rule34.xxx) are another thing: they serve images and
+  // videos to anyone, key or not.
   const RULE34_API = 'https://api.rule34.xxx/index.php?page=dapi&s=post&q=index&json=1'
   /** @type {Map<string, string> | null} */
   let dims = null
@@ -5899,7 +5903,6 @@
   const dimsQueue = []                  // post ids to ask the API for, in page order
   const dimsAsked = new Set()           // asked on this page
   let dimsLive = 0
-  let dimsRefused = false               // the API turned the key down: no more asking this page
 
   /** @returns {Map<string, string>} */
   function loadDims() {
@@ -5957,36 +5960,56 @@
   /** @param {HTMLElement} link */
   function wantDims(link) {
     const id = postId(link)
-    if (!CFG.resBadge || SITE !== 'rule34.xxx' || !GM_XHR || dimsRefused || id === '?' || dimsAsked.has(id) || loadDims().has(id) || !apiKey()) return
+    // Only rule34's API knows an image's size before it is opened, and it needs the key.
+    if (!CFG.resBadge || SITE !== 'rule34.xxx' || !GM_XHR || apiRefused || id === '?' || dimsAsked.has(id) || loadDims().has(id) || !apiKey()) return
     dimsAsked.add(id)
     dimsQueue.push(id)
     pumpDims()
   }
 
+  let apiRefused = false   // the API turned the key down: no more asking until a new key
+
+  /**
+   * One request to rule34's API, with the key; false (and nothing sent)
+   * without a key, or once the API refused it. `done` gets the JSON, or null
+   * for a failure or a refusal.
+   * @param {string} query   e.g. "&id=123"
+   * @param {(json: unknown) => void} done
+   */
+  function r34Api(query, done) {
+    const key = apiKey()
+    if (!key || apiRefused || !GM_XHR || SITE !== 'rule34.xxx') return false
+    GM_xmlhttpRequest({
+      method: 'GET',
+      url: `${RULE34_API}${query}${key}`,
+      timeout: 15000,
+      onload: res => {
+        /** @type {unknown} */
+        let json = null
+        try { json = JSON.parse(res.responseText) } catch (e) { /* a refusal is plain text */ }
+        if (json === null && /authentication|api_key|access denied/i.test(res.responseText)) {
+          apiRefused = true
+          warn(`rule34 API: the key was refused — ${res.responseText.slice(0, 120)}`)
+        }
+        done(json)
+      },
+      onerror: () => done(null),
+      ontimeout: () => done(null),
+    })
+    return true
+  }
+
   function pumpDims() {
-    while (dimsLive < DIMS_INFLIGHT && dimsQueue.length && !dimsRefused) {
+    while (dimsLive < DIMS_INFLIGHT && dimsQueue.length) {
       const id = /** @type {string} */ (dimsQueue.shift())   // not empty
-      dimsLive++
-      const done = () => { dimsLive--; pumpDims() }
-      GM_xmlhttpRequest({
-        method: 'GET',
-        url: `${RULE34_API}&id=${encodeURIComponent(id)}${apiKey()}`,
-        timeout: 15000,
-        onload: res => {
-          /** @type {unknown} */
-          let json = null
-          try { json = JSON.parse(res.responseText) } catch (e) { /* the refusal is plain text */ }
-          const post = Array.isArray(json) ? json[0] : null
-          if (post && typeof post === 'object' && 'width' in post && 'height' in post) setDims(id, Number(post.width), Number(post.height))
-          else if (/authentication|api_key|access denied/i.test(res.responseText)) {
-            dimsRefused = true
-            warn(`resolution: rule34's API refused the key — ${res.responseText.slice(0, 120)}`)
-          }
-          done()
-        },
-        onerror: done,
-        ontimeout: done,
+      const sent = r34Api(`&id=${encodeURIComponent(id)}`, json => {
+        dimsLive--
+        const post = Array.isArray(json) ? json[0] : null
+        if (post && typeof post === 'object' && 'width' in post && 'height' in post) setDims(id, Number(post.width), Number(post.height))
+        pumpDims()
       })
+      if (!sent) { dimsQueue.length = 0; return }   // no key, or refused: the rest would not go either
+      dimsLive++
     }
   }
 
@@ -6024,7 +6047,8 @@
       if (key === apiKey() || (!key && !final)) return
       GM_setValue('r34ApiKey', key)
       field.value = key
-      dimsRefused = false
+      apiRefused = false
+      dimsAsked.clear()   // the ones a refused key dropped are asked again
       status.textContent = shown(key)
       info(`resolution: API key ${key ? `saved (user ${keyUser(key)})` : 'cleared'}`)
       repaintCards()
