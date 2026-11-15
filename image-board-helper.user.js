@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.19.0-snapshot.5
+// @version      1.19.0-snapshot.6
 // @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -68,7 +68,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.19.0-snapshot.5'
+  const VERSION = '1.19.0-snapshot.6'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // The site's thumbnail list. Gelbooru 0.2 sites (rule34, safebooru, xbooru)
@@ -3906,17 +3906,19 @@
     button.on { background: ${ACCENT}; color: #0f1417; border-color: ${ACCENT}; }
     button.up { width: auto; min-width: 42px; padding: 0 12px; border-radius: 21px; gap: 6px; display: flex; font-size: 16px; }
     .score { font-size: 13px; }
-    /* doubleTapCenter 'like': the heart that pops over the post, Instagram style. */
+    /* doubleTapCenter 'like': a ❤️ over the post that grows, shrinks back,
+       grows a little again and shrinks away to nothing, Instagram style. */
     .likeheart {
-      position: absolute; left: 50%; top: 50%; z-index: 6; font-size: 110px; line-height: 1; color: #ff3b5c;
-      text-shadow: 0 2px 14px rgba(0, 0, 0, .55); pointer-events: none; opacity: 0;
-      transform: translate(-50%, -50%) scale(0); animation: likepop .9s ease-out forwards;
+      position: absolute; left: 50%; top: 50%; z-index: 6; font-size: 110px; line-height: 1;
+      filter: drop-shadow(0 2px 10px rgba(0, 0, 0, .5)); pointer-events: none; opacity: 0;
+      transform: translate(-50%, -50%) scale(0); animation: likepop 1s ease-in-out forwards;
     }
     @keyframes likepop {
-      15% { opacity: 1; transform: translate(-50%, -50%) scale(1.25); }
-      30% { transform: translate(-50%, -50%) scale(.95); }
-      45%, 70% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-      100% { opacity: 0; transform: translate(-50%, -62%) scale(1); }
+      20% { opacity: 1; transform: translate(-50%, -50%) scale(1.3); }
+      38% { opacity: 1; transform: translate(-50%, -50%) scale(.85); }
+      55% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+      72% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+      100% { opacity: 0; transform: translate(-50%, -50%) scale(0); }
     }
     .badge {
       position: absolute; left: 50%; top: 64px; transform: translateX(-50%);
@@ -6658,7 +6660,7 @@
   // heart and favorites the post, which upvotes it as the ♥ does. One already
   // in the favorites only gets the heart: a double tap never takes it back.
   function modalLike() {
-    const heart = el('div', { class: 'likeheart', text: '♥' })
+    const heart = el('div', { class: 'likeheart', text: '❤️' })
     modal.box.appendChild(heart)
     heart.addEventListener('animationend', () => heart.remove(), { once: true })
     setTimeout(() => heart.remove(), 1500)   // no animation (reduced motion): it still goes
