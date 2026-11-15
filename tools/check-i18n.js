@@ -4,9 +4,21 @@
 'use strict'
 const fs = require('fs')
 const path = require('path')
+const esbuild = require('esbuild')
 
-const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'main.js'), 'utf8')
-const I18N = new Function(`${src.match(/^const I18N = \{[\s\S]*?\n\}\n/m)[0]}return I18N`)()
+// A module of src/ that imports nothing, run in Node: esbuild bundles it
+// alone, as CommonJS.
+function srcModule(name) {
+  const file = ['ts', 'js'].map(ext => path.join(__dirname, '..', 'src', `${name}.${ext}`)).find(f => fs.existsSync(f))
+  if (!file) throw new Error(`no src/${name}`)
+  const { outputFiles } = esbuild.buildSync({ entryPoints: [file], bundle: true, write: false, format: 'cjs', logLevel: 'silent' })
+  const module = { exports: {} }
+  new Function('module', 'exports', outputFiles[0].text)(module, module.exports)
+  return module.exports
+}
+
+const { I18N } = srcModule('core/strings')
+if (!I18N) throw new Error('src/core/strings exports no I18N')
 const en = Object.keys(I18N.en)
 const pt = Object.keys(I18N['pt-BR'])
 const onlyEn = en.filter(k => !pt.includes(k))

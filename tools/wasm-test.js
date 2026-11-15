@@ -11,9 +11,20 @@
 'use strict'
 const fs = require('fs')
 const path = require('path')
-const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'main.js'), 'utf8')
-const block = src.slice(src.indexOf('// MP4 boxes between start and end'), src.indexOf('// A minimal MP4 around the keyframes'))
-const { mp4Boxes, mp4VideoTrack } = new Function(block + '\nreturn { mp4Boxes, mp4Child, mp4VideoTrack }')()
+const esbuild = require('esbuild')
+
+// A module of src/ that imports nothing, run in Node: esbuild bundles it
+// alone, as CommonJS.
+function srcModule(name) {
+  const file = ['ts', 'js'].map(ext => path.join(__dirname, '..', 'src', `${name}.${ext}`)).find(f => fs.existsSync(f))
+  if (!file) throw new Error(`no src/${name}`)
+  const { outputFiles } = esbuild.buildSync({ entryPoints: [file], bundle: true, write: false, format: 'cjs', logLevel: 'silent' })
+  const module = { exports: {} }
+  new Function('module', 'exports', outputFiles[0].text)(module, module.exports)
+  return module.exports
+}
+
+const { mp4Boxes, mp4VideoTrack } = srcModule('video/mp4')
 const [file, n = '10', maxW = '0', outDir] = process.argv.slice(2)
 if (!file) { console.error('usage: node tools/wasm-test.js <file.mp4> [scenes] [maxWidth] [ppm folder]'); process.exit(1) }
 

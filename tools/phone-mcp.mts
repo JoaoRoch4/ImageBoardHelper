@@ -25,6 +25,7 @@ import * as path from 'node:path'
 import * as https from 'node:https'
 import * as readline from 'node:readline'
 import { execFileSync, spawn } from 'node:child_process'
+import * as esbuild from 'esbuild'
 import * as ff from './ffrdp.mts'
 import { ROOTFS, rish, shizukuUp } from './rish.mts'
 import type { Connection, PrefAction, Tab } from './ffrdp.mts'
@@ -318,8 +319,9 @@ function termuxJob({ id, lines = 40 }: { id?: string; lines?: number } = {}) {
 // ─── the userscript's own code, reused: the MP4 reader and the decoder rules ───
 
 // What scriptParts() hands out, as the userscript defines it (mp4Boxes,
-// mp4Child, mp4VideoTrack, avcConfig, pastDecoder there). The code comes
-// from the script's text, so these types are a promise, not a check.
+// mp4Child, mp4VideoTrack, avcConfig in src/video/mp4, pastDecoder in
+// src/video/limits). The code is bundled from there at run time, so these
+// types are a promise, not a check.
 interface Mp4Box {
   type: string
   start: number
@@ -347,18 +349,24 @@ interface ScriptParts {
   pastDecoder(w: number, h: number): boolean
 }
 
+// A module of src/ that imports nothing, run here: esbuild bundles it
+// alone, as CommonJS.
+function srcModule(name: string): Record<string, unknown> {
+  const file = ['ts', 'js'].map(ext => path.join(REPO, 'src', `${name}.${ext}`)).find(f => fs.existsSync(f))
+  if (!file) throw new Error(`no src/${name}`)
+  const out = esbuild.buildSync({ entryPoints: [file], bundle: true, write: false, format: 'cjs', logLevel: 'silent' }).outputFiles[0]
+  if (!out) throw new Error(`esbuild wrote nothing for src/${name}`)
+  const module = { exports: {} as Record<string, unknown> }
+  new Function('module', 'exports', out.text)(module, module.exports)
+  return module.exports
+}
+
 function scriptParts(): ScriptParts {
-  const src = fs.readFileSync(path.join(REPO, 'src', 'main.js'), 'utf8')
-  const cut = (from: string, to: string) => {
-    const i = src.indexOf(from)
-    const j = src.indexOf(to, i)
-    if (i < 0 || j < 0) throw new Error(`cannot find "${from.trim()}" in src/main.js`)
-    return src.slice(i, j)
+  const parts = { ...srcModule('video/mp4'), ...srcModule('video/limits') }
+  for (const name of ['mp4Boxes', 'mp4Child', 'mp4VideoTrack', 'avcConfig', 'pastDecoder']) {
+    if (typeof parts[name] !== 'function') throw new Error(`src/video/ exports no ${name}`)
   }
-  const mp4 = cut('// MP4 boxes between start and end', '// A minimal MP4 around the keyframes')
-  const avc = cut('// The decoder configuration (avcC) of an H.264 track', 'async function showReelWasm')
-  const past = cut('const MB_PER_S', '\n\n')
-  return new Function(`${mp4}${avc}${past}\nreturn { mp4Boxes, mp4Child, mp4VideoTrack, avcConfig, pastDecoder }`)()
+  return parts as unknown as ScriptParts
 }
 
 // A byte range of a file, as the site's own pages would ask for it.
