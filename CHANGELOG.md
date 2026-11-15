@@ -6,9 +6,13 @@
   (`holdResume`, on by default): lift the finger and hold the same post
   again within a minute, and the video, sound included, picks up from that
   spot instead of 00:00. Meanwhile the thumbnail shows ⏮ with the time;
-  tap it to drop the spot and start from the beginning on the next hold.
-  Applies to `holdVideo` and to the short clips played at 2×; the scene
-  slideshows still start from 00:00
+  tap it to drop the spot and start from the beginning on the next hold,
+  and the thumbnail goes back to its own frame (after the minute, both
+  happen by themselves). Applies to `holdVideo` and to the short clips
+  played at 2×; the scene slideshows still start from 00:00
+- A hold that plays shows 🔊 or 🔇 at the thumbnail's top left, until a
+  minute after the lift: a tap switches `previewSound`, and unmutes a hold
+  playing, since the tap is what lets Firefox allow sound
 
 ## 1.17.0
 

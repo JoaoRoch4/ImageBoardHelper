@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.18.0-snapshot
+// @version      1.18.0-snapshot.2
 // @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -68,7 +68,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.18.0-snapshot'
+  const VERSION = '1.18.0-snapshot.2'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // The site's thumbnail list. Gelbooru 0.2 sites (rule34, safebooru, xbooru)
@@ -252,7 +252,7 @@
       tScrub: 'Scene preview on video thumbnails',
       tScrubMode: 'scene preview gesture', modeDrag: 'Drag sideways', modeHold: 'Hold (slideshow)',
       tSlideStep: 'slideshow jump', tSlideDwell: 'time per scene', scenes: 'scenes', tSlideReel: 'Keyframes only (faster, MP4)', tWasmDecode: 'Decode keyframes in WebAssembly',
-      tHoldVideo: 'Hold plays the video (hardware)', tPreviewSound: 'Sound when the hold plays the video', tHoldResume: 'Hold goes on where it stopped (1 min)', resumeRestart: 'Start from the beginning', heavyMark: 'Past this phone’s hardware decoder (1080p60)',
+      tHoldVideo: 'Hold plays the video (hardware)', tPreviewSound: 'Sound when the hold plays the video', tHoldResume: 'Hold goes on where it stopped (1 min)', resumeRestart: 'Start from the beginning', soundToggle: 'Hold sound: tap to switch', heavyMark: 'Past this phone’s hardware decoder (1080p60)',
       tMemory: 'Release off-screen memory',
       tUrlCache: 'Remember working file URLs',
       tNav: 'Top / previous / next buttons',
@@ -333,7 +333,7 @@
       tScrub: 'Prévia de cenas nas miniaturas de vídeo',
       tScrubMode: 'gesto da prévia de cenas', modeDrag: 'Arrastar de lado', modeHold: 'Segurar (slideshow)',
       tSlideStep: 'pulo do slideshow', tSlideDwell: 'tempo por cena', scenes: 'cenas', tSlideReel: 'Só keyframes (mais rápido, MP4)', tWasmDecode: 'Decodificar keyframes em WebAssembly',
-      tHoldVideo: 'Segurar toca o vídeo (hardware)', tPreviewSound: 'Som quando o segurar toca o vídeo', tHoldResume: 'Segurar continua de onde parou (1 min)', resumeRestart: 'Recomeçar do início', heavyMark: 'Acima do decodificador de hardware do celular (1080p60)',
+      tHoldVideo: 'Segurar toca o vídeo (hardware)', tPreviewSound: 'Som quando o segurar toca o vídeo', tHoldResume: 'Segurar continua de onde parou (1 min)', resumeRestart: 'Recomeçar do início', soundToggle: 'Som do segurar: toque para trocar', heavyMark: 'Acima do decodificador de hardware do celular (1080p60)',
       tMemory: 'Liberar memória fora da tela',
       tUrlCache: 'Lembrar endereços que funcionaram',
       tNav: 'Botões topo / anterior / próximo',
@@ -2094,8 +2094,8 @@
   function onScrubDown(ev) {
     if (scrub || insidePanel(ev) || (modal && modal.open)) return
     if (ev.pointerType === 'mouse' && ev.button !== 0) return
-    // A press on the ⏮ chip is a tap on it (onScrubClick), not a hold.
-    if (asElement(ev.target)?.closest('[data-ibh-resume]')) return
+    // A press on a hold chip (⏮, 🔊) is a tap on it (onScrubClick), not a hold.
+    if (asElement(ev.target)?.closest('[data-ibh-chip]')) return
     // data-ibh-video marks cards (trackCard).
     const card = /** @type {HTMLElement | null | undefined} */ (asElement(ev.target)?.closest('[data-ibh-video]'))
     if (!card || card.dataset.ibhKind === 'gif') return
@@ -3086,6 +3086,7 @@
     // user activation). Refused, it plays muted as before.
     v.muted = !CFG.previewSound
     if (CFG.previewSound) s.stats.sound = 'with sound'
+    soundChip(s.card)
     s.onPlayTime = () => {
       if (scrub !== s || !v.duration) return
       s.bar.style.width = `${(v.currentTime / v.duration) * 100}%`
@@ -3121,8 +3122,10 @@
   // ── Resume a hold (holdResume) ──
   // Lifting the finger off a hold that plays the video keeps where it was for
   // a minute: holding the same post again plays on from there, sound and all.
-  // A ⏮ chip on the card shows that spot for the minute; a tap on it drops
-  // it, and the next hold starts from the beginning again.
+  // Meanwhile the card shows two chips: ⏮ and that time (a tap drops the
+  // spot, and the cover goes back to its own frame), and 🔊/🔇, which
+  // switches previewSound. They go a minute after the last lift, and the
+  // spot and the cover's lifted frame go with them.
   const RESUME_MS = 60000
   /** @type {Map<string, { t: number, until: number }>} */
   const resumes = new Map()   // post id -> where its hold lifted, and until when that counts
@@ -3151,46 +3154,89 @@
     if (!CFG.holdResume || id === '?' || !(t >= 1)) return
     resumes.set(id, { t, until: Date.now() + RESUME_MS })
     s.stats.kept = t
-    resumeChip(s.card, t)
   }
 
-  // The ⏮ chip, one per card: a new lift moves its time and restarts its minute.
   /**
+   * One of the hold's chips on a card, made on first use: ⏮ bottom left (where
+   * the time label sits during a hold), 🔊/🔇 top left. A press on either is
+   * a tap, not a hold (onScrubDown); the tap goes to onScrubClick, ahead of
+   * the modal's handler.
    * @param {HTMLElement} card
-   * @param {number} at   s
+   * @param {'resume' | 'sound'} kind
+   * @returns {HTMLElement}
    */
-  function resumeChip(card, at) {
-    let chip = /** @type {HTMLElement | null} */ (card.querySelector('[data-ibh-resume]'))
-    if (!chip) {
-      chip = document.createElement('span')
-      chip.dataset.ibhResume = '1'
-      chip.dataset.ibhUi = '1'   // painted by us: the site theme leaves it alone
-      chip.setAttribute('role', 'button')
-      chip.title = t('resumeRestart')
-      chip.setAttribute('aria-label', t('resumeRestart'))
-      // Where the scrub's time label sits, which is gone once the finger lifts;
-      // z-index over the cover video, like the label.
-      chip.style.cssText =
-        'position:absolute;left:4px;bottom:8px;padding:2px 8px;border-radius:10px;font:12px/1.4 ' +
-        'ui-monospace,monospace;color:#fff;background:rgba(0,0,0,.65);z-index:3;cursor:pointer'
-      if (getComputedStyle(card).position === 'static') card.style.position = 'relative'
-      card.appendChild(chip)
-    }
-    chip.textContent = `⏮ ${mmss(at)}`
-    clearTimeout(Number(chip.dataset.ibhTimer))
-    const it = chip
-    chip.dataset.ibhTimer = String(setTimeout(() => it.remove(), RESUME_MS))   // harmless on a card gone from the page
+  function holdChip(card, kind) {
+    const had = /** @type {HTMLElement | null} */ (card.querySelector(`[data-ibh-chip="${kind}"]`))
+    if (had) return had
+    const chip = document.createElement('span')
+    chip.dataset.ibhChip = kind
+    chip.dataset.ibhUi = '1'   // painted by us: the site theme leaves it alone
+    chip.setAttribute('role', 'button')
+    const label = t(kind === 'resume' ? 'resumeRestart' : 'soundToggle')
+    chip.title = label
+    chip.setAttribute('aria-label', label)
+    // About 32 px tall, a finger's width; z-index over the cover video and
+    // the scrub's bar and label (3).
+    chip.style.cssText = `position:absolute;${kind === 'resume' ? 'bottom:8px' : 'top:4px'};left:4px;` +
+      'padding:6px 12px;border-radius:16px;font:15px/1.3 ui-monospace,monospace;color:#fff;' +
+      'background:rgba(0,0,0,.65);z-index:4;cursor:pointer'
+    if (getComputedStyle(card).position === 'static') card.style.position = 'relative'
+    card.appendChild(chip)
+    return chip
   }
 
-  // A tap on the chip: the next hold on that post starts from 00:00.
+  /** @param {HTMLElement} card */
+  function soundChip(card) {
+    holdChip(card, 'sound').textContent = CFG.previewSound ? '🔊' : '🔇'
+  }
+
+  // After a playing hold: the chips, for a minute from this lift.
+  /** @param {HTMLElement} card */
+  function lingerChips(card) {
+    const at = resumePoint(card)
+    if (at !== null) holdChip(card, 'resume').textContent = `⏮ ${mmss(at)}`
+    soundChip(card)
+    clearTimeout(Number(card.dataset.ibhChipTimer))
+    card.dataset.ibhChipTimer = String(setTimeout(() => {   // harmless on a card gone from the page
+      removeChips(card)
+      if (resumes.delete(postId(card))) coverBack(card)
+    }, RESUME_MS))
+  }
+
+  /** @param {HTMLElement} card */
+  function removeChips(card) {
+    clearTimeout(Number(card.dataset.ibhChipTimer))
+    delete card.dataset.ibhChipTimer
+    for (const chip of card.querySelectorAll('[data-ibh-chip]')) chip.remove()
+  }
+
+  // The cover shows its own frame again (COVER_POINT), as before any hold.
+  /** @param {HTMLElement} card */
+  function coverBack(card) {
+    const v = card.querySelector('video[data-ibh]')
+    if (!v || v.readyState < 1 || !Number.isFinite(v.duration) || !(v.duration > 0)) return
+    v.currentTime = v.duration * COVER_POINT
+    dbg(`hold: post ${postId(card)}'s cover back to its own frame`)
+  }
+
+  // A tap on ⏮: the next hold on that post starts from 00:00, and its cover
+  // leaves the frame where the finger lifted.
   /** @param {HTMLElement} chip */
   function forgetResume(chip) {
     const card = /** @type {HTMLElement | null} */ (chip.closest('[data-ibh-video]'))
-    clearTimeout(Number(chip.dataset.ibhTimer))
     chip.remove()
     if (!card) return
     resumes.delete(postId(card))
+    coverBack(card)
     info(`hold: post ${postId(card)} starts from 00:00 again`)
+  }
+
+  // A tap on 🔊/🔇: previewSound flips for the holds from now on, and for one
+  // playing (a tap is a user activation, so the browser lets it unmute).
+  function flipSound() {
+    setCfg('previewSound', !CFG.previewSound)
+    for (const chip of document.querySelectorAll('[data-ibh-chip="sound"]')) chip.textContent = CFG.previewSound ? '🔊' : '🔇'
+    if (scrub && scrub.onPlayTime) scrub.video.muted = !CFG.previewSound
   }
 
   // Called with a scrub under way.
@@ -3236,8 +3282,10 @@
   function scrubUi(s) {
     if (s.bar) return
     const { card } = s
-    // The time label takes the ⏮ chip's place; lifting puts a fresh chip back.
-    card.querySelector('[data-ibh-resume]')?.remove()
+    // The time label takes the ⏮ chip's place, and the chips' minute stops
+    // while the finger is down: the lift starts it again (lingerChips).
+    card.querySelector('[data-ibh-chip="resume"]')?.remove()
+    clearTimeout(Number(card.dataset.ibhChipTimer))
     // z-index: the card's cover video comes later in the DOM and would paint
     // over them otherwise (it did on site pages, where every video has one).
     s.bar = document.createElement('div')
@@ -3279,7 +3327,8 @@
     clearTimeout(s.holdTimer)
     if (!s.on) { nextGif(); return }
     if (s.tick) endSlideshow(s)
-    if (s.onPlayTime) { keepResume(s); endPlayShow(s) }
+    if (s.onPlayTime) { keepResume(s); endPlayShow(s); lingerChips(s.card) }
+    else removeChips(s.card)   // a slideshow or a drag: no chips (one a fallback left)
     if (s.stats) logSlideStats(s)
     endReel(s)
     s.bar.remove()
@@ -3320,12 +3369,13 @@
   // Registered before the modal's click handler, so stopping it here wins.
   /** @param {MouseEvent} ev */
   function onScrubClick(ev) {
-    // The ⏮ chip sits inside the card's link: its tap must not open the post.
-    const chip = /** @type {HTMLElement | null | undefined} */ (asElement(ev.target)?.closest('[data-ibh-resume]'))
+    // The hold chips sit inside the card's link: a tap must not open the post.
+    const chip = /** @type {HTMLElement | null | undefined} */ (asElement(ev.target)?.closest('[data-ibh-chip]'))
     if (chip) {
       ev.preventDefault()
       ev.stopImmediatePropagation()
-      forgetResume(chip)
+      if (chip.dataset.ibhChip === 'sound') flipSound()
+      else forgetResume(chip)
       return
     }
     if (Date.now() > scrubClickUntil) return
