@@ -123,7 +123,7 @@ As configurações ficam no `localStorage` (`IBH_CFG`), com uma cópia no armaze
 
 ## Limitações conhecidas
 
-**Mirrors só de miniatura.** Alguns boorus servem miniatura e arquivo de hosts diferentes, e certos mirrors não têm os arquivos. A lista fica em `HOSTS` no topo do script; hoje só o rule34 está mapeado. Se a capa falhar em outro site, use **Testar URLs** no painel para descobrir o host e adicione ali.
+**Mirrors só de miniatura.** Alguns boorus servem miniatura e arquivo de hosts diferentes, e certos mirrors não têm os arquivos. A lista fica em `HOSTS`, em `src/urls/hosts.ts`; hoje só o rule34 está mapeado. Se a capa falhar em outro site, use **Testar URLs** no painel para descobrir o host e adicione ali.
 
 ---
 
@@ -134,6 +134,12 @@ As configurações ficam no `localStorage` (`IBH_CFG`), com uma cópia no armaze
 - `GM_getResourceURL` com `@resource h264dec` — o decodificador de keyframes do slideshow ao segurar: o decodificador H.264 do FFmpeg (LGPL 2.1+) compilado para WebAssembly a partir de `wasm/h264dec.c` e `wasm/build.sh`, que fixa o código do FFmpeg pelo hash. O Violentmonkey baixa uma vez junto com o script, de um link fixo num commit.
 - `unsafeWindow` — põe o `window.__ibh` na `window` da própria página, para o console; com permissões GM, a `window` do script é um invólucro em volta dela.
 - `@inject-into page` — roda o script no contexto da própria página, onde ele sempre foi testado nesses sites; as chamadas aos endpoints do site (favoritar, votar, comentários, páginas de favoritos) levam o login do site.
+
+---
+
+## Build
+
+O `image-board-helper.user.js`, o arquivo que se instala, é gerado: o código-fonte são os módulos em `src/` (TypeScript e JavaScript), juntados pelo [esbuild](https://esbuild.github.io/) num script só, sem minificar. Depois de mudar `src/`, rode `npm install` uma vez e `npm run build`, e faça commit dos dois. O `npm run check` falha quando o arquivo commitado não é o que `src/` gera.
 
 ---
 

@@ -123,7 +123,7 @@ Settings live in `localStorage` (`IBH_CFG`), with a copy in Violentmonkey's stor
 
 ## Known limitations
 
-**Thumbnail-only mirrors.** Some boorus serve thumbnails and files from different hosts, and certain mirrors do not carry the files. The list lives in `HOSTS` at the top of the script; only rule34 is mapped today. If covers fail on another site, use **Test URLs** in the panel to find the host and add it there.
+**Thumbnail-only mirrors.** Some boorus serve thumbnails and files from different hosts, and certain mirrors do not carry the files. The list lives in `HOSTS`, in `src/urls/hosts.ts`; only rule34 is mapped today. If covers fail on another site, use **Test URLs** in the panel to find the host and add it there.
 
 ---
 
@@ -134,6 +134,12 @@ Settings live in `localStorage` (`IBH_CFG`), with a copy in Violentmonkey's stor
 - `GM_getResourceURL` with `@resource h264dec` — the keyframe decoder for the hold slideshow: FFmpeg's H.264 decoder (LGPL 2.1+) built to WebAssembly from `wasm/h264dec.c` and `wasm/build.sh`, which pins the FFmpeg source by its hash. Violentmonkey downloads it once with the script, from a link pinned to a commit.
 - `unsafeWindow` — puts `window.__ibh` on the page's own `window`, for the console; with GM grants the script's `window` is a wrapper around it.
 - `@inject-into page` — runs the script in the page's own context, where it has always been tested on these sites; its calls to the site's endpoints (favorite, vote, comments, favorites pages) carry the site's login.
+
+---
+
+## Building
+
+`image-board-helper.user.js`, the file you install, is generated: its source is the modules in `src/` (TypeScript and JavaScript), joined by [esbuild](https://esbuild.github.io/) into one script, not minified. After changing `src/`, run `npm install` once, then `npm run build`, and commit both. `npm run check` fails when the committed file is not what `src/` builds.
 
 ---
 

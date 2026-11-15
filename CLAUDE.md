@@ -28,11 +28,19 @@ Cada uma tem um motivo concreto. Não mude sem entender o custo.
 
 **Armazenamento.** As listas (Ver depois, buscas salvas) ficam no armazenamento GM do script. **A exceção é o índice de favoritos** (desde a 1.16.3, escolha do usuário): fica no IndexedDB do site (`favsGet`/`favsSet`), porque o Violentmonkey entrega o armazenamento GM inteiro ao script em toda página, e 6.100 favoritos dão ~7 MB. O que estava no GM muda uma vez para lá, e o `moveIn` não traz `favs` dos dados do site. Ele é gravado durante a leitura, a cada `FAV_SAVE_MS`, com `next` (a próxima página) enquanto não terminou, para um F5 continuar de onde parou. As configurações ficam no `localStorage` (`IBH_CFG`), com cópia no GM e no IndexedDB do site, que voltam se outro script limpar o `localStorage` (o "Rule34 Favorites Search" fazia `localStorage.clear()`). Leia e grave sempre por `storeGet`/`storeSet`: os dois esperam `storeReady()`, a migração única da antiga ponte (`moveIn`), para nada gravado no carregamento (busca recente, índice de favoritos) passar por cima das listas trazidas dela. `STORE_KEYS` é a lista do que a ponte guardava; chave nova não entra lá, senão a migração espera por ela até o fim do prazo. Sem GM (outro gerenciador), tudo cai para o IndexedDB do site. **O cache de endereços** (qual candidata venceu por arquivo, desde a 1.16.4) fica em dois lugares: o `localStorage` (`IBH_URLCACHE_<site>`, as 1.500 mais novas, lidas de uma vez no primeiro uso, para o `cacheGet` continuar síncrono) e um banco próprio no IndexedDB do site, `ibh-urls` (até 20.000). Banco próprio, e não um store novo no `ibh`, porque um store novo pede subir a versão do banco, e uma aba antiga aberta na versão anterior bloqueia o `onupgradeneeded`. O IndexedDB é lido por cartão quando ele é varrido (`urlPrefetch`, em lotes), e capa, GIF e troca de miniatura esperam essa leitura até 0,4 s (`urlPending`) antes de descer a escada de candidatas. O `IBH_URLIDX_SYNC_<site>` marca até onde o `localStorage` já foi copiado para lá, o que cobre gravações perdidas ao fechar a aba. O 🗑 não apaga nenhum dos dois (nem o host): eles não ocupam memória e são o que faz a página voltar rápido.
 
-**Sem build, sem dependências.** Arquivo único, ES2020, nenhum import. O Greasy Fork rejeita código ofuscado ou minificado, e o repositório existe para ser auditável. O `package.json` só tem ferramentas de desenvolvimento (ESLint, TypeScript como verificador, Playwright); o script nunca importa nada delas. **A exceção são os complementos em WebAssembly** (`@resource`):
+**Módulos em `src/`, um arquivo gerado (exceção aprovada).** Até a 1.19.0 o script era um arquivo único, ES2020, sem import nem build. O usuário abriu a exceção em 2026-11-14 ("esse projeto vira exceção pelo tanto que inflou", com 8.607 linhas):
+- **Código-fonte:** em `src/`, em módulos TypeScript (`.ts`) e, enquanto a conversão não termina, JavaScript com JSDoc (`.js`), todos checados pelo `tsc` estrito. Os imports não levam extensão. O repositório continua auditável: os comentários estão em `src/`.
+- **O arquivo gerado:** `npm run build` (`tools/build.mts`) junta tudo com o esbuild num IIFE com o `"use strict"` dentro, sem minificar (`keepNames`, sem tree shaking, UTF-8 mantido), com `src/header.txt` (o bloco de metadados) no topo. O resultado continua sendo o `image-board-helper.user.js` commitado, porque o deploy instala pelo link do commit. **Nunca edite o gerado:** o `npm run check` falha se ele não for o que `src/` gera; `smoke`, `test:*` e o `smoke` do MCP fazem o build antes, e o `deploy` roda o `check`.
+- **O que o esbuild muda, e o build confere:** ele não guarda os comentários de instrução (só os de dentro de objetos e listas); ele renomeia um nome de topo que dois módulos declaram, e também um local com o mesmo nome de um nome de topo de outro módulo (`touch` → `touch2`), e o build recusa qualquer nome que não esteja em `src/`; e ele troca os `const`/`let` de topo por `var`, então um valor lido no carregamento antes de o módulo dele rodar vira `undefined` em silêncio, em vez de `ReferenceError`, e o build recusa essa leitura (`checkLoadOrder`; testes em `tools/build.test.mts`).
+- **Carregamento:** os módulos só montam as próprias constantes e estado; o resto do que roda no carregamento fica no `main.js`, na ordem do arquivo único. O esbuild ordena os módulos pelos imports, não pela lista do `main.js`: um valor de topo lido no carregamento só pode vir de um módulo que já rodou. Um `let` que outro módulo reatribui ganha um setter no próprio módulo (`setLiveCovers(…)`), porque um import não pode ser reatribuído.
+- **Greasy Fork:** as regras dele (conferidas em 2026-11-14) aceitam código juntado por build sem minificar, com espaços e nomes mantidos. O que proíbem é minificar e carregar o grosso do script de fora por `@require`, então os módulos não vão por `@require`.
+- **Ordem:** primeiro separar sem mudar comportamento (feito na branch `modules`, 2026-11-15); depois converter o resto para TypeScript, módulo a módulo; depois refatorar, com classes onde há estado com ciclo de vida (a fila de GIFs, o índice de URLs, o modal, o scrub).
+
+**Sem dependências em tempo de execução.** O `package.json` só tem ferramentas de desenvolvimento (esbuild, ESLint, TypeScript, Playwright, e espree e eslint-scope para as verificações do build); o script não importa nada delas. **A exceção são os complementos em WebAssembly** (`@resource`):
 - **Como chegam:** o GitHub serve o arquivo deste mesmo repositório por um link fixo num commit, e o Violentmonkey o baixa junto com o script.
 - **O primeiro:** o `h264dec`, o decodificador H.264 do FFmpeg, compilado a partir do código-fonte por `wasm/build.sh` (FFmpeg fixado por hash).
 - **Outros podem entrar quando forem a ferramenta certa** (o usuário, 2026-11-14): C/C++ compilado pelo emsdk (`emcc` no PATH do container; o build nativo no Termux é mais rápido, ver `wasm_build`) ou WebAssembly escrito à mão. Sempre com o código-fonte e o script de build no repositório, e tipados: a interface JS do módulo declarada em `types/`, como o `tools/webassembly.d.ts`.
-- **Ao mudar:** mudou um `.wasm`, commit primeiro e depois o link no cabeçalho. Um `@resource` novo ou trocado faz o Violentmonkey pedir confirmação ao atualizar.
+- **Ao mudar:** mudou um `.wasm`, commit primeiro e depois o link no cabeçalho (`src/header.txt`). Um `@resource` novo ou trocado faz o Violentmonkey pedir confirmação ao atualizar.
 
 ---
 
@@ -73,10 +81,10 @@ Desde a 1.14.0 (2026-11-13, no `main` desde 2026-11-14) o player externo é o ap
 
 ### Portar recursos do app para o script
 
-O usuário quer trazer vários recursos do app para o script no futuro (2026-11-14). **O script não compila nada nem roda código nativo**: é JavaScript num arquivo só, no Firefox. Código Qt/C++ do app nunca vem como está; ele vira uma de duas coisas:
+O usuário quer trazer vários recursos do app para o script no futuro (2026-11-14). **O script não compila nada nem roda código nativo**: é JavaScript no Firefox, gerado de `src/` por um build. Código Qt/C++ do app nunca vem como está; ele vira uma de duas coisas:
 
-- **JavaScript** no próprio `image-board-helper.user.js`, com a tipagem JSDoc checada pelo `tsc` como o resto. É o caminho para DOM, rede, armazenamento e lógica pequena.
-- **Um módulo WebAssembly** (`@resource`, ver "Sem build, sem dependências"), para cálculo pesado e puro (decodificar, converter, processar imagem) ou para portar uma biblioteca C/C++ inteira. Só C/C++ **sem Qt**, compilado pelo emsdk, ou WebAssembly escrito à mão. Se a lógica do app está misturada com Qt, primeiro separe a parte pura.
+- **TypeScript** num módulo de `src/` (ou JavaScript com JSDoc, enquanto a conversão não termina), checado pelo `tsc` como o resto. É o caminho para DOM, rede, armazenamento e lógica pequena.
+- **Um módulo WebAssembly** (`@resource`, ver "Sem dependências em tempo de execução"), para cálculo pesado e puro (decodificar, converter, processar imagem) ou para portar uma biblioteca C/C++ inteira. Só C/C++ **sem Qt**, compilado pelo emsdk, ou WebAssembly escrito à mão. Se a lógica do app está misturada com Qt, primeiro separe a parte pura.
 
 **O Qt não existe aqui.** Equivalentes no navegador:
 - QML e widgets: DOM e CSS (o painel e o modal são Shadow DOM).
@@ -90,24 +98,54 @@ O usuário quer trazer vários recursos do app para o script no futuro (2026-11-
 
 ---
 
-## Mapa do arquivo
+## Mapa do código
 
-`image-board-helper.user.js`, seções na ordem:
+`src/`, um módulo por assunto, na ordem do antigo arquivo único (é a ordem dos imports do `main.js`). Os `.ts` já foram convertidos; os `.js` são JavaScript com JSDoc, checado pelo mesmo `tsc`.
 
-1. Configuração persistida (`IBH_CFG`, `DEFAULTS`, `NEEDS_RELOAD`) e `setCfg`
-2. Textos da interface — `I18N`
-3. Log — buffer de 250, níveis, espelho no console sob `debug`
-4. `STATE` observável pelo painel
-5. Resolução de servidor de imagens — `HOSTS`, `imageBase`, `thumbParts`, `fileCandidates`
-6. Cache de endereços — `cacheGet`, `cacheSet`, `cachedFirst`, `flushUrlCache`, `clearUrlCache`; o lado IndexedDB (`urlDb`, `urlPrefetch`, `urlPending`, `readUrls`, `flushUrlIndex`, `syncUrlIndex`, `sweepUrlIndex`, `clearUrlIndex`)
-7. **A.** Capa de vídeo e GIF — `mountCover`, `unmountCover`, `COVER_MAX_LIVE` e a fila, `playGif`, `stopGif`, `IntersectionObserver`
-8. **B.** Miniatura nítida e feed — `upgradeToOriginal`, `upgradePlan`, `sampleCandidates`, `probeOriginal`, `raceImage`, `scanThumbs`
-9. **C.** Prévia de cenas — arraste na miniatura (ou segurar, `scrubMode`) e prévia na barra do modal (com `seekReel`, o keyframe mais próximo de uma fita de 40, decodificado em WebAssembly por `drawKeyframe`, até o `<video>` chegar ao quadro exato): `seekFraction`, `previewLoad`, `previewStop`, `borrowDecoder`, `onScrubDown/Move/Up`. O segurar usa a fita de keyframes (`slideReel`: `buildReel` lê o `moov` e os keyframes com Range pelo `GM_xmlhttpRequest`, `mp4VideoTrack`; `showReelWasm` decodifica cada keyframe no WebAssembly — `h264Decoder`, `decodeKeyframe`, `avcConfig` — e desenha num canvas; sem ele, `showReelVideo` toca o MP4 montado por `reelBlob`) e, se ela falha, `reelFailed` cai no slideshow por seek (`seekShow`, dois vídeos em revezamento, `tickSlide`); `logSlideStats` registra cada hold
-10. **D.** Gerenciamento de memória — `farViewport`, `releaseFar`, `pinHeight`, `onNodesRemoved`, `releaseAll`, varredura a cada 15 s
-11. **E.** Modal de post (vídeo, GIF, imagem, swipe) — `openModal`, `closeModal`, `stepModal`, `showVideo`, `showImage`, `sniffVideo`, `installModalSwipe`, `installImageZoom`, `suspendPage`, `resumePage`; no mesmo bloco: estado de ♥/▲ (`postInfo`, `favoritePost`, `upvotePost`), armazenamento (`storeGet/storeSet`, `storeReady`/`moveIn`, IndexedDB `idbGet/idbSet`, `restoreCfg`), Baixar (`modalDownload`, `saveFile`), o app QtMediaPlayer (`sendToApp`, `APP`), Ver depois (`showLater`), busca nos favoritos (`searchFavs`, `updateFavIndex`), favoritar em massa (`onBulkClick`), segurar para o raw (`holdRaw`), buscas salvas (`savedControls`), barra de busca do site (`ensureSiteSearch`, `homeSearchForm`, `orTags`), autopager (`favPagerNext`, `pageTarget`), menu de tags e abas Info/Comentários (`renderTags`, `readComments`, `voteComment`), próximo post pronto (`preloadAhead`)
-12. Diagnóstico — `probeVideoUrls`, `logSnapshot`, `freeMemory`, `redoThumbs`
-13. Painel — Shadow DOM, `renderStatus`, `copyLog`; botões flutuantes (`buildFeedNav`, `jumpPost`)
-14. Arranque — `feedCss`/`applyFeed`, `THEME_CSS`/`applySiteTheme`, o `MutationObserver` e `__ibh` (na `unsafeWindow`)
+- `header.txt` — o bloco `// ==UserScript==` (com o `@version`), o aviso de arquivo gerado e o comentário de abertura: o topo do arquivo gerado.
+- `core/site.js` — `VERSION`, `SITE`, `SITE_PROFILES`/`PROFILE` (lista, card, cores, sugestões) e os seletores `LIST`, `THUMB`, `ITEM`
+- `core/config.js` — configuração persistida (`IBH_CFG`, `DEFAULTS`, `NEEDS_RELOAD`, `CFG`, `readJSON`/`writeJSON`); o `setCfg` fica em `storage/storage.js`, junto do `backupCfg` que ele chama
+- `core/strings.js` — as duas tabelas de `I18N` (não importa nada: o `check-i18n` o carrega)
+- `core/i18n.js` — `resolveLang`, `LANG`, `t`
+- `core/log.ts` — buffer de 250, níveis, espelho no console sob `debug`
+- `core/state.ts` — `STATE` observável pelo painel, `touch`
+- `urls/hosts.ts` — resolução de servidor de imagens: `HOSTS`, `imageBase`, `thumbParts`, `fileCandidates`
+- `urls/url-cache.js` — cache de endereços: `cacheGet`, `cacheSet`, `cachedFirst`, `flushUrlCache`, `clearUrlCache`; o lado IndexedDB (`urlDb`, `urlPrefetch`, `urlPending`, `readUrls`, `flushUrlIndex`, `syncUrlIndex`, `sweepUrlIndex`, `clearUrlIndex`)
+- `video/limits.ts` — `pastDecoder`, a mesma regra do `vreduce::fits` do app (não importa nada: o MCP o carrega)
+- `video/mp4.ts` — o leitor de MP4: `mp4Boxes`, `mp4Child`, `mp4VideoTrack`, `avcConfig` (não importa nada: o `wasm-test` e o MCP o carregam)
+- `thumbs/badges.js` — ⚠️ e duração no cartão (`markPastDecoder`, `markDuration`, `cardBadge`)
+- `thumbs/marks.js` — as marcas do cartão (1.20.0): ❤️ num favorito (`likedBadge`; segurar desfavorita, `onHeartTouchStart`) e a resolução (`resBadge`: `setDims`, `paintRes`, `pumpDims`), `paintCardMarks`/`repaintCards`; a API do rule34 com a chave do usuário (`apiKey`, `parseApiKey`, a porta única `r34Api`) e a seção dela no painel (`apiSection`)
+- `thumbs/covers.js` — **A.** capa de vídeo e GIF: `mountCover`, `unmountCover`, `COVER_MAX_LIVE` e a fila, `playGif`, `stopGif`, as vagas de download (`takeImageSlot`), `IntersectionObserver`, `scanCards`
+- `thumbs/feed.js` — **B.** miniatura nítida e feed: `upgradeToOriginal`, `upgradePlan`, `sampleCandidates`, `probeOriginal`, `scanThumbs`
+- `thumbs/memory.js` — **D.** gerenciamento de memória: `farViewport`, `releaseFar`, `pinHeight`, `onNodesRemoved`, `releaseAll`, varredura a cada 15 s
+- `scrub/scrub.js` — **C.** prévia de cenas: arraste na miniatura (ou segurar, `scrubMode`): `seekFraction`, `previewLoad`, `previewStop`, `borrowDecoder`, `onScrubDown/Move/Up`; o slideshow por seek (`seekShow`, dois vídeos em revezamento, `tickSlide`), `holdVideoShow`, `playShow`; o segurar que toca e continua de onde parou (`holdResume`: `resumePoint`, `keepResume`, `forgetResume`), os chips do cartão (`holdChip`, `soundChip`, `lingerChips`, `removeChips`, `coverBack`, `flipSound`), deslizar para mover o vídeo (`holdRub`: `makeRub`, `rubMove`, também usados pelo player); `logSlideStats`, `installVideoScrub`
+- `scrub/reel.js` — a fita de keyframes do segurar (`slideReel`): `buildReel` lê o `moov` e os keyframes com Range pelo `GM_xmlhttpRequest`; `showReelWasm` decodifica cada keyframe e desenha num canvas; sem ele, `showReelVideo` toca o MP4 montado por `reelBlob`; se a fita falha, `reelFailed` cai no slideshow por seek
+- `scrub/h264.js` — o decodificador em WebAssembly: `h264Decoder`, `decodeKeyframe`, `dropH264`
+- `modal/modal.js` — **E.** o modal de post: `MODAL_CSS`, `LIKE_CSS`, `buildModal`, `flash`, as marcas de ♥/▲, `readCookie`, `insidePanel`
+- `modal/open.js` — `openModal`, `closeModal`, `stepModal`, `suspendPage`, `resumePage`, próximo post pronto (`preloadAhead`), `installVideoModal`
+- `modal/media.js` — `showVideo`, `showImage`, `raceImage`, `loadModalOriginal`, `sniffVideo`, `raceVideoAndGif`
+- `modal/player.js` — gestos e controles do vídeo (`installVideoGestures`, `installVideoControls`, `installGearMenu`), a prévia na barra (`seekReel`, `drawKeyframe`), o arraste lateral que move o vídeo (`playerRub`, com o `makeRub` do scrub), tela cheia
+- `modal/gestures.js` — `installModalSwipe`, `installImageHold`, `installImageZoom`
+- `modal/tags.js` — menu de tags e abas Info/Comentários (`renderTags`, `renderInfo`, `renderComments`, `voteComment`), `chipGestures`, `copyText`, `applyMarks`
+- `post/post.js` — `userId`, `onOwnFavorites`, `postInfo`, `readComments`, `readPostPage`, `lookUpFavorite`
+- `post/votes.js` — `favoritePost`, `upvotePost`, `modalFavorite`, `modalUpvote`; o curtir com toque duplo no meio (`modalLike`, `popHeart`, `centerDoubleTap`)
+- `post/download.js` — Baixar: `saveFile`, `modalDownload`, `rawFileUrl`, `copyRawLink`
+- `post/app.js` — o app QtMediaPlayer: `sendToApp`, `APP`, o servidor (`appCall`, `appDownload`, `followAppDownload`)
+- `storage/storage.js` — `setCfg` e as cópias (`backupCfg`, `restoreCfg`), IndexedDB `idbGet/idbSet`, `storeGet/storeSet`, `storeReady`/`moveIn`, `GM_STORE`, `STORE_KEYS`
+- `lists/later.js` — Ver depois (`showLater`, `toggleLaterHere`)
+- `lists/favorites.js` — busca nos favoritos (`searchFavs`, `updateFavIndex`, `ensureFavSearch`, `orInput`)
+- `lists/autopager.js` — autopager (`ensureFavPager`, `favPagerNext`), `sharpenTile`
+- `search/suggest.js` — sugestões de tags (`attachSuggest`), `orTags`, `orGroups`, `minScoreInput`, `kindSelect`
+- `search/site-search.js` — buscas salvas (`savedControls`), barra de busca do site (`ensureSiteSearch`, `homeSearchForm`)
+- `page/bulk.js` — favoritar em massa (`setBulkMode`, `bulkFavorite`, `onBulkClick`), `pageToast`
+- `page/raw-hold.js` — segurar para o raw (`holdRaw`) e para refazer um GIF (`onRawTouchStart`, `loadRaw`, `undoRaw`)
+- `page/double-tap.js` — toque duplo favorita (`onDoubleTapClick`)
+- `page/feed-css.js`, `page/theme.js`, `page/page-css.js` — `feedCss`/`applyFeed`, `THEME_CSS`/`applySiteTheme`, `injectPageCSS`
+- `page/ads.js` — `blockAds`: `AD_POLICY`, `applyAdBlock`, `installAdBlock`
+- `diag.js` — diagnóstico: `probeVideoUrls`, `logSnapshot`, `freeMemory`, `redoThumbs`, `tabChannel`
+- `panel/panel.js` — painel em Shadow DOM, `el`, `renderStatus`, `copyLog`, `mountPanel`, `rebuildPanel`
+- `panel/nav.js` — botões flutuantes (`ensureFeedNav`, `buildFeedNav`, `jumpPost`, `pageTarget`)
+- `main.js` — o arranque: o que rodava entre as seções (o `pagehide`, o `urlDb()`, o `tabChannel`, o `pointerdown` do painel) e depois o `MutationObserver`, os listeners, `boot` e `__ibh` (na `unsafeWindow`)
 
 ---
 
@@ -160,9 +198,9 @@ Não sugira estas de novo sem um motivo novo.
 - Nada de parede de texto. Direto ao ponto.
 - Toda função nova que mexe no DOM da página precisa ser idempotente: o `MutationObserver` reprocessa o mesmo nó várias vezes. Use `WeakSet` ou `dataset`.
 - Todo recurso novo entra com uma chave em `DEFAULTS`, uma entrada no painel, uma linha de log e uma linha na tabela de opções dos dois READMEs. Se só vale no carregamento da página, a chave entra também em `NEEDS_RELOAD`.
-- A versão vive em dois lugares — `@version` no cabeçalho e `const VERSION` — e os dois sobem junto com uma entrada no `CHANGELOG.md`.
-- Site novo precisa de uma linha `@match` no cabeçalho e da marcação Gelbooru (o card `<a>` com `<img>` e as tags no `title`/`alt`, o `a[alt="next"]`, os arquivos em `thumbnails/`, `samples/`, `images/`). Se a lista não for `.image-list > span.thumb`, o site ganha uma linha em `SITE_PROFILES` (`list`, `card`, `item` — o filho direto da lista — e, se os scripts legítimos dele vierem de outro host, `scriptHosts` para o `blockAds`), e uma linha igual em `PROFILES` no `tools/smoke.js`, que precisa passar com `node tools/smoke.js '<listagem>'`.
-- Todo texto novo de painel ou modal entra nas duas tabelas de `I18N`. Texto de log é escrito direto, em inglês.
+- A versão vive em dois lugares — `@version` em `src/header.txt` e `VERSION` em `src/core/site.js` — e os dois sobem junto com uma entrada no `CHANGELOG.md` (o build recusa os dois diferentes); depois, `npm run build`.
+- Site novo precisa de uma linha `@match` em `src/header.txt` e da marcação Gelbooru (o card `<a>` com `<img>` e as tags no `title`/`alt`, o `a[alt="next"]`, os arquivos em `thumbnails/`, `samples/`, `images/`). Se a lista não for `.image-list > span.thumb`, o site ganha uma linha em `SITE_PROFILES` (`src/core/site.js`; `list`, `card`, `item` — o filho direto da lista — e, se os scripts legítimos dele vierem de outro host, `scriptHosts` para o `blockAds`), e uma linha igual em `PROFILES` no `tools/smoke.js`, que precisa passar com `node tools/smoke.js '<listagem>'`.
+- Todo texto novo de painel ou modal entra nas duas tabelas de `I18N` (`src/core/strings.js`). Texto de log é escrito direto, em inglês.
 - Código e comentários em inglês no repositório. Comigo, no chat, fale português.
 - Erro e aviso sempre vão ao console; `debug` só espelha o resto.
 
@@ -175,22 +213,23 @@ O que dá para verificar sem o celular:
 ```bash
 npm install                      # uma vez: ESLint, TypeScript, Playwright
 npx playwright install firefox   # uma vez: o Firefox do Playwright (build arm64)
-npm run check                    # sintaxe, ESLint e tipos (tsc --checkJs, nada é gerado)
+npm run build                    # gera image-board-helper.user.js a partir de src/
+npm run check                    # o gerado igual ao build, ESLint, tipos (tsc) e os testes das ferramentas
 npm run smoke                    # Firefox headless no safebooru, com o script injetado
 ```
 
-- `npm run check` pega variável ou função que não existe mais, chave duplicada no `I18N`, as duas tabelas de idioma com chaves diferentes (`tools/check-i18n.js`, quebra em silêncio), código morto e erro de tipo. `types/userscript.d.ts` declara os `GM_*` e afrouxa o retorno do `querySelector` para `any`, em vez de casts pelo código; erro novo ali é sinal, não ruído. Também confere as ferramentas em TypeScript (`tsc -p tools`, estrito, com `noUncheckedIndexedAccess`): `tools/*.mts` são ESM que o Node 24 roda direto, apagando os tipos, então só vale sintaxe que se apaga (nada de `enum`), import de tipo é `import type` e o caminho leva a extensão (`./ffrdp.mts`). O ESLint não lê `.mts`; o `noUnusedLocals` faz o papel do `no-unused-vars`. O `WebAssembly` vem de `tools/webassembly.d.ts`, porque a biblioteca DOM do TypeScript fica de fora.
+- `npm run check` pega o `image-board-helper.user.js` diferente do que `src/` gera (alguém o editou à mão, ou esqueceu o build), variável ou função que não existe mais, chave duplicada no `I18N`, as duas tabelas de idioma com chaves diferentes (`tools/check-i18n.js`, quebra em silêncio), código morto e erro de tipo. `types/userscript.d.ts` declara os `GM_*` e afrouxa o retorno do `querySelector` para `any`, em vez de casts pelo código; erro novo ali é sinal, não ruído. Também confere as ferramentas em TypeScript (`tsc -p tools`, estrito, com `noUncheckedIndexedAccess`): `tools/*.mts` são ESM que o Node 24 roda direto, apagando os tipos, então só vale sintaxe que se apaga (nada de `enum`), import de tipo é `import type` e o caminho leva a extensão (`./ffrdp.mts`). O ESLint não lê `.mts` nem os `.ts` de `src/`; o `noUnusedLocals` (nos dois `tsconfig`) faz o papel do `no-unused-vars`. O `WebAssembly` vem de `tools/webassembly.d.ts`, porque a biblioteca DOM do TypeScript fica de fora.
 - `npm run smoke` (`tools/smoke.js`, ~1 min no aparelho) confere arranque, painel, barra de busca, botão 👁, feed, modal abrindo e fechando, autopager e ausência de erros. O rule34 responde CAPTCHA a navegador headless; o safebooru tem a mesma marcação. Outro site: `node tools/smoke.js '<URL da listagem>'`. É o mesmo motor do celular (Gecko), não o mesmo navegador: toque, decodificação de vídeo e o próprio Violentmonkey continuam sendo teste no aparelho. Pesa na memória do aparelho: enquanto ele rodava, o Shizuku caiu uma vez e o Firefox do celular ficou sem abas carregadas.
 - `npm run test:gif` (`tools/gif-test.js`, ~1 min) abre uma listagem falsa no Firefox headless, com a rede simulada pelo Playwright (GIFs que respondem na hora ou nunca), e confere que nenhum GIF fica preso na imagem parada: download de GIF que saiu da tela devolve a vaga, a vez de um GIF não se perde enquanto um dedo está num vídeo, e uma prévia que não começa não pausa os GIFs. Sem rede nem celular.
 - `npm run test:fav` (`tools/fav-test.js`, ~1 min) faz o mesmo com as páginas de favoritos do rule34 (sem o cookie `user_id`, como o site está desde 2026-11-14): a barra aparece na sua página e não na de outro, o índice é gravado durante a leitura e um F5 continua dali, e uma busca restaurada sobre um índice velho mostra os resultados antes de atualizar.
 - `npm run test:url` (`tools/url-test.js`, ~1 min) faz o mesmo com o cache de endereços: numa listagem falsa em que só o `.png` existe, a primeira visita desce a escada, as vencedoras e a falha chegam ao IndexedDB, e com o `localStorage` limpo antes do script cada cartão faz um pedido só; o 🗑 mantém as entradas e traz o cartão de volta, e o ↻ apaga as falhas nos dois lugares.
 - `node tools/test.mts [URL]` abre o **rule34** (o padrão) no Firefox headless do Playwright do projeto, com o script injetado como no `smoke`, se passando pelo Firefox do celular (user agent, 360 px, DPR 2, toque). Com essa identidade o rule34 deixou entrar sem CAPTCHA na primeira vez, ao contrário do `smoke`. Relata versão, miniaturas e as últimas linhas do log (`--eval` roda uma expressão, `--shot` salva o print) e guarda um perfil em `~/.cache/ibh-test/profile`. Num desafio da Cloudflare, reabre o mesmo navegador **visível** numa tela virtual (Xvfb + x11vnc + websockify/noVNC, tudo em `127.0.0.1`, senha de uso único, Firefox em modo quiosque) e abre essa tela no Firefox do celular pelo `am` do `rish` (`--firefox` escolhe qual; `--solve` força). Começou em Python (`test.py`), mas o `websockify` não subia quando lançado de lá; do Node sobe em ~4,5 s. O zsh daqui não tem `/dev/tcp`: teste de porta é com `curl` ou Node. Docker não roda no proot (sem namespaces, cgroups nem root de verdade). Ver a tarefa aberta.
 - O servidor MCP `browser` (`.mcp.json`) é o Playwright MCP num Firefox headless, sem o script injetado: serve para olhar de perto a marcação de um site (navegar, `browser_evaluate`, snapshot), como a das listagens do tbib e do realbooru. Fica fixado na 0.0.80 porque ela usa o mesmo Playwright 1.63 do projeto e roda no Firefox que o `npx playwright install firefox` já baixou (rev. 1543). O plugin `playwright` usa `@latest`, que procura o Chrome (não existe em arm64) e pediria outro Firefox a cada versão. Se o Playwright do projeto subir, suba os dois juntos. A primeira chamada leva ~30 s.
-- O LSP (plugin `typescript-lsp`) roda no TypeScript 5 global, porque o 7 do projeto não traz `tsserver`. Serve para referências, definição e chamadas no arquivo de 6 mil linhas. O 5 é mais rígido com JS que o 7 (não aceita propriedade criada depois num objeto literal nem atribuição feita dentro de callback para estreitar tipo), e o script passa nos dois: erro novo no LSP é sinal. Para ver a lista inteira sem o LSP: `node /usr/local/lib/node_modules/typescript/bin/tsc -p .`. As dicas ★ (parâmetro sem tipo) são só sugestão.
+- O LSP (plugin `typescript-lsp`) roda no TypeScript 5 global, porque o 7 do projeto não traz `tsserver`. Serve para referências, definição e chamadas entre os módulos de `src/`. O 5 é mais rígido com JS que o 7 (não aceita propriedade criada depois num objeto literal nem atribuição feita dentro de callback para estreitar tipo), e o script passa nos dois: erro novo no LSP é sinal. Para ver a lista inteira sem o LSP: `node /usr/local/lib/node_modules/typescript/bin/tsc -p .`. As dicas ★ (parâmetro sem tipo) são só sugestão.
 
 O decodificador em WebAssembly (`wasm/`): `bash wasm/build.sh` recompila (o `configure` do FFmpeg leva uns 15 min no proot, porque cada teste abre processos rastreados; fica em cache em `~/.cache/ibh-wasm` e as recompilações seguintes levam ~20 s), e `node tools/wasm-test.js <arquivo.mp4> [cenas] [largura] [pasta]` decodifica os keyframes de um MP4 local com ele, mede decodificação e conversão de cores separadas e, com pasta, grava PPMs para comparar com o `ffmpeg` (no vídeo de 15 min em 854×480: 8–21 ms de decodificação e ~11 ms de conversão por quadro; PSNR de 44 dB contra o `ffmpeg`). No celular, na 1.4.0: o `.wasm` compila em 170 ms e cada keyframe leva 116–248 ms de 1218×1370 a 1800×2560, dentro do tempo por cena. Não edite o `build.sh` enquanto ele roda: o bash lê o script aos pedaços.
 
-Funções puras (`thumbParts`, `fileCandidates`, `orTags`) também podem ser extraídas com regex e rodadas num `new Function` com stubs — veja o padrão usado no histórico do projeto. Vale a pena quando mexer na derivação de URL ou na montagem da busca.
+Um módulo que não importa nada roda no Node como está: o esbuild o junta sozinho como CommonJS (`srcModule` em `tools/check-i18n.js`, `tools/wasm-test.js` e no phone MCP, que assim leem `I18N`, o leitor de MP4 e o `pastDecoder` direto de `src/`). Funções puras de módulos que importam outros (`thumbParts`, `fileCandidates`, `orTags`) dão para testar do mesmo jeito, com os imports trocados por stubs (a opção `alias` ou um plugin do esbuild). Vale a pena quando mexer na derivação de URL ou na montagem da busca.
 
 O resto é testado no aparelho, pelo painel: **Testar URLs** lista cada candidata com OK ou FALHA, e **Copiar log** monta um relatório com versão, `userAgent`, host resolvido e histórico. Com o painel desligado, o console tem `window.__ibh` (`version`, `cfg`, `state`, `log()`, `probe()`, `clearHostCache()`, `set(chave, valor)`, `stored()` — tamanho de cada lista guardada e o estado da migração; `moveAgain()` — junta de novo as listas da ponte, se uma aba antiga gravou nela depois da migração; `gifs()` — vagas de download, fila e estado de cada GIF, e o que os segura, para um GIF preso na imagem parada; `await urlIndex()` — o lado IndexedDB do cache de endereços: entradas, falhas e o limite).
 
