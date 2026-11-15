@@ -1,0 +1,69 @@
+// ==UserScript==
+// @name         Image Board Helper
+// @namespace    joao.imageboardhelper
+// @version      1.20.0-snapshot.4
+// @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
+// @author       João
+// @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
+// @supportURL   https://github.com/JoaoRoch4/ImageBoardHelper/issues
+// @downloadURL  https://raw.githubusercontent.com/JoaoRoch4/ImageBoardHelper/main/image-board-helper.user.js
+// @license      MIT
+// @match        https://rule34.xxx/*
+// @match        https://safebooru.org/*
+// @match        https://xbooru.com/*
+// @match        https://gelbooru.com/*
+// @run-at       document-start
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_xmlhttpRequest
+// @grant        unsafeWindow
+// @grant        GM_getResourceURL
+// @resource     h264dec https://raw.githubusercontent.com/JoaoRoch4/ImageBoardHelper/c1c4cc5cf7fbc409bd4db502dd5e186d76ac9fb4/wasm/h264dec.wasm
+// @connect      *
+// @inject-into  page
+// @noframes
+// ==/UserScript==
+
+// Generated from src/ by `npm run build` (tools/build.mts): edit src/, not
+// this file. esbuild joins the modules, not minified; their comments stay in src/.
+
+/*
+ * Image Board Helper: a standalone layer over the pages of Gelbooru 0.2
+ * boards (rule34.xxx, safebooru, xbooru), aimed at phones.
+ * It works on the site's own markup (.image-list > span.thumb > a > img, or
+ * gelbooru.com's .thumbnail-container > article.thumbnail-preview) and
+ * calls only the site's own endpoints.
+ *
+ *   A. VIDEO COVERS AND GIFS
+ *      A <video muted preload="metadata"> over each video thumbnail shows a
+ *      real frame (the browser paints it and nothing is read back, so CORS
+ *      never enters the picture, unlike grabbing it through a <canvas>). GIF
+ *      thumbnails animate while on screen, a few at a time.
+ *
+ *   B. FEED AND SHARP THUMBNAILS
+ *      An optional feed (columns, masonry or grid) where thumbnails become
+ *      the sample; the original only where the box needs more pixels.
+ *
+ *   C. SCENE PREVIEW
+ *      Drag across a video thumbnail, or hold it for a slideshow.
+ *
+ *   D. MEMORY MANAGEMENT
+ *      What scrolls far away goes back to the thumbnail; hidden tabs park
+ *      their videos; Free memory lets go of everything.
+ *
+ *   E. POST MODAL AND THE REST
+ *      Tapping a thumbnail opens the post in an overlay (video with sound,
+ *      GIF, image), with swipes, zoom, favorite and vote, tags, info and
+ *      comments, downloads, Watch later, mass favorite, search bars,
+ *      favorites search and an autopager.
+ *
+ * Grants: GM storage keeps the lists and a copy of the settings, and
+ * GM_xmlhttpRequest saves files (the image hosts send no CORS headers, so a
+ * page script cannot). The one dependency is an @resource: FFmpeg's H.264
+ * decoder built to WebAssembly (wasm/, built from source by wasm/build.sh),
+ * pinned to a commit and read through GM_getResourceURL. With any grant, this script's window is a wrapper:
+ * window.__ibh goes on unsafeWindow. @inject-into page runs it in the page's
+ * own context, where it has always been tested on these sites; its calls to
+ * the site's endpoints carry the site's login. Nothing of the page's own
+ * (fetch, history, navigator) is patched.
+ */

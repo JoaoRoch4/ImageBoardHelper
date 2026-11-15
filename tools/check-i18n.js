@@ -5,8 +5,8 @@
 const fs = require('fs')
 const path = require('path')
 
-const src = fs.readFileSync(path.join(__dirname, '..', 'image-board-helper.user.js'), 'utf8')
-const I18N = new Function(`${src.match(/const I18N = \{[\s\S]*?\n {2}\}\n/)[0]}return I18N`)()
+const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'main.js'), 'utf8')
+const I18N = new Function(`${src.match(/^const I18N = \{[\s\S]*?\n\}\n/m)[0]}return I18N`)()
 const en = Object.keys(I18N.en)
 const pt = Object.keys(I18N['pt-BR'])
 const onlyEn = en.filter(k => !pt.includes(k))

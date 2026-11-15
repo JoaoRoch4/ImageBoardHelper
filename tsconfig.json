@@ -1,14 +1,18 @@
 {
-  // Type check of the plain-JS userscript (npm run typecheck): nothing is
-  // emitted, the file stays as it is.
+  // Type check of the userscript's source, src/ (npm run typecheck). Nothing
+  // is emitted: esbuild builds the userscript (npm run build), and both read
+  // the same modules.
   "compilerOptions": {
     "target": "ES2020",
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "moduleDetection": "force",           // every file is a module, even one without import or export
     "allowJs": true,
     "checkJs": true,
     "noEmit": true,
     "strict": true,
     "types": []
   },
-  "files": ["image-board-helper.user.js", "types/userscript.d.ts", "types/qtmediaplayer.d.ts"]
+  "include": ["src/**/*.js", "src/**/*.ts", "types/userscript.d.ts", "types/qtmediaplayer.d.ts"]
 }

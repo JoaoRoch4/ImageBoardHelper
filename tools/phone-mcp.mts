@@ -348,16 +348,16 @@ interface ScriptParts {
 }
 
 function scriptParts(): ScriptParts {
-  const src = fs.readFileSync(path.join(REPO, SCRIPT), 'utf8')
+  const src = fs.readFileSync(path.join(REPO, 'src', 'main.js'), 'utf8')
   const cut = (from: string, to: string) => {
     const i = src.indexOf(from)
     const j = src.indexOf(to, i)
-    if (i < 0 || j < 0) throw new Error(`cannot find "${from.trim()}" in ${SCRIPT}`)
+    if (i < 0 || j < 0) throw new Error(`cannot find "${from.trim()}" in src/main.js`)
     return src.slice(i, j)
   }
-  const mp4 = cut('  // MP4 boxes between start and end', '  // A minimal MP4 around the keyframes')
-  const avc = cut('  // The decoder configuration (avcC) of an H.264 track', '  async function showReelWasm')
-  const past = (src.match(/const pastDecoder = [^\n]+/) || ['const pastDecoder = (w, h) => Math.max(w, h) > 1920 || Math.min(w, h) > 1088'])[0]
+  const mp4 = cut('// MP4 boxes between start and end', '// A minimal MP4 around the keyframes')
+  const avc = cut('// The decoder configuration (avcC) of an H.264 track', 'async function showReelWasm')
+  const past = cut('const MB_PER_S', '\n\n')
   return new Function(`${mp4}${avc}${past}\nreturn { mp4Boxes, mp4Child, mp4VideoTrack, avcConfig, pastDecoder }`)()
 }
 
@@ -1113,7 +1113,8 @@ async function check() {
 }
 
 async function smoke({ url }: { url?: string } = {}) {
-  const r = await runAsync('node', ['tools/smoke.js', ...(url ? [url] : [])], { timeout: 600000 })
+  // npm run smoke builds the userscript from src/ first, then tests that.
+  const r = await runAsync('npm', ['run', '-s', 'smoke', ...(url ? ['--', url] : [])], { timeout: 600000 })
   return clip(`${r.code === 0 ? 'smoke test passed' : `smoke test FAILED (exit ${r.code})`}\n${tail(r.out, 30)}`)
 }
 
@@ -1148,7 +1149,7 @@ async function deploy({ confirm = false, dry_run = false, wait_s = 60, match = '
   const steps = []
   const git = (...args: string[]) => run('git', ['-C', REPO, ...args]).trim()
   const sha = git('rev-parse', 'HEAD')
-  if (git('status', '--porcelain', '--', SCRIPT)) steps.push(`warning: ${SCRIPT} has uncommitted changes; the committed version is what ships`)
+  if (git('status', '--porcelain', '--', SCRIPT, 'src')) steps.push(`warning: ${SCRIPT} or src/ has uncommitted changes; the committed version is what ships`)
   try { git('fetch', '-q', 'origin') } catch (e) { steps.push(`warning: git fetch failed (${firstLine(e)})`) }
   if (!git('branch', '-r', '--contains', sha)) throw new Error(`HEAD ${sha.slice(0, 7)} is not on the remote: push first (the raw link serves pushed commits only)`)
   if (!skip_check) steps.push(await check().then(r => r.split('\n')[0] ?? ''))
@@ -1294,7 +1295,7 @@ const TOOLS: Tool[] = [
     inputSchema: obj({ action: { type: 'string', enum: ['start', 'restart', 'stop', 'log', 'install_boot'], description: 'default start (does nothing when it already answers)' }, lines: num('log lines (default 30)') }),
     description: 'Starts, restarts (after a change to its code) or stops the phone server, in the "server" window of the native tmux session ibh; shows its log (one line per request, never the body); or writes the Termux:Boot script that starts it when the phone boots.' },
   { name: 'check', run: check, inputSchema: obj(),
-    description: 'npm run check in the repo: syntax, I18N parity, ESLint, and the TypeScript checks of the userscript and of these tools. deploy runs it first.' },
+    description: 'npm run check in the repo: the committed userscript is what src/ builds (npm run build), I18N parity, ESLint, and the TypeScript checks of src/ and of these tools. deploy runs it first.' },
   { name: 'smoke', run: smoke, inputSchema: obj({ url: str('a Gelbooru 0.2 listing (default safebooru)') }),
     description: 'The Playwright smoke test (headless Firefox, the script injected): boot, panel, search bar, eye button, feed, modal, autopager. About a minute, and heavy on the phone\'s memory (Firefox\'s tabs may unload).' },
   { name: 'termux_run', run: termuxRun,

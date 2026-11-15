@@ -5,14 +5,16 @@ const globals = require('globals')
 const unused = ['warn', { args: 'none', caughtErrors: 'none' }]
 
 module.exports = [
-  { ignores: ['node_modules/'] },
+  // The userscript is generated from src/ (npm run build): its source is what gets linted.
+  { ignores: ['node_modules/', 'image-board-helper.user.js'] },
   js.configs.recommended,
   {
-    // The userscript: one classic script, ES2020, browser globals plus what it is granted.
-    files: ['image-board-helper.user.js'],
+    // The userscript's source: ES2020 modules, browser globals plus what it is granted.
+    // The .ts modules are left to tsc (noUnusedLocals there does no-unused-vars' job).
+    files: ['src/**/*.js'],
     languageOptions: {
       ecmaVersion: 2020,
-      sourceType: 'script',
+      sourceType: 'module',
       globals: {
         ...globals.browser,
         GM_getValue: 'readonly',

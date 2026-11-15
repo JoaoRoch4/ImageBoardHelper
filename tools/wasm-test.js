@@ -11,8 +11,8 @@
 'use strict'
 const fs = require('fs')
 const path = require('path')
-const src = fs.readFileSync(path.join(__dirname, '..', 'image-board-helper.user.js'), 'utf8')
-const block = src.slice(src.indexOf('  // MP4 boxes between start and end'), src.indexOf('  // A minimal MP4 around the keyframes'))
+const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'main.js'), 'utf8')
+const block = src.slice(src.indexOf('// MP4 boxes between start and end'), src.indexOf('// A minimal MP4 around the keyframes'))
 const { mp4Boxes, mp4VideoTrack } = new Function(block + '\nreturn { mp4Boxes, mp4Child, mp4VideoTrack }')()
 const [file, n = '10', maxW = '0', outDir] = process.argv.slice(2)
 if (!file) { console.error('usage: node tools/wasm-test.js <file.mp4> [scenes] [maxWidth] [ppm folder]'); process.exit(1) }

@@ -1,21 +1,25 @@
 {
   "name": "image-board-helper",
   "private": true,
-  "description": "Development tools only: the userscript itself has no dependencies and no build",
+  "description": "Development tools and the build: src/ is joined by esbuild into image-board-helper.user.js (npm run build)",
   "scripts": {
-    "check": "node --check image-board-helper.user.js && node tools/check-i18n.js && eslint && tsc -p . && tsc -p tools && npm run -s test:tools",
+    "build": "node tools/build.mts",
+    "check": "node tools/build.mts --check && node tools/check-i18n.js && eslint && tsc -p . && tsc -p tools && npm run -s test:tools",
     "lint": "eslint",
     "typecheck": "tsc -p . && tsc -p tools",
-    "smoke": "node tools/smoke.js",
-    "test:gif": "node tools/gif-test.js",
-    "test:fav": "node tools/fav-test.js",
-    "test:url": "node tools/url-test.js",
+    "smoke": "npm run -s build && node tools/smoke.js",
+    "test:gif": "npm run -s build && node tools/gif-test.js",
+    "test:fav": "npm run -s build && node tools/fav-test.js",
+    "test:url": "npm run -s build && node tools/url-test.js",
     "test:tools": "node --test tools/rish.test.mts tools/phone-server.test.mts tools/video-reducer.test.mts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.19.1",
+    "esbuild": "^0.28.2",
     "eslint": "^10.12.0",
+    "eslint-scope": "^9.1.2",
+    "espree": "^11.2.0",
     "globals": "^17.13.0",
     "playwright": "^1.63.0",
     "typescript": "^7.0.2"
