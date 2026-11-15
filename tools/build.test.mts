@@ -45,6 +45,11 @@ test('load order: a callback that an array method runs at once counts', () => {
   assert.throws(() => checkLoadOrder(code), /reads COLOR/)
 })
 
+test('load order: a Promise executor and a replace callback run at once too', () => {
+  assert.throws(() => checkLoadOrder(bundle(cycle('export const fromB = new Promise(ok => ok(COLOR))')).code), /reads COLOR/)
+  assert.throws(() => checkLoadOrder(bundle(cycle("export const fromB = 'x'.replace('x', () => COLOR)")).code), /reads COLOR/)
+})
+
 test('names: a local named like another module\'s top-level name is refused (esbuild renames it)', () => {
   const { code, inputs } = bundle({
     'main.js': "import { touch } from './x.js'\nimport { f } from './y.js'\ntouch(); f({})\n",

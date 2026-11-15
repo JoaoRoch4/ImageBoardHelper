@@ -116,8 +116,9 @@ export function checkNames(bundle: string, inputs: string[]) {
   }
 }
 
-// Array methods that call their callback before they return.
-const SYNC_CALLBACKS = new Set(['map', 'forEach', 'filter', 'some', 'every', 'find', 'findIndex', 'reduce', 'flatMap', 'sort', 'from'])
+// Methods that call their callback before they return (an array's, Array.from,
+// a string's replace); new Promise runs its executor at once too.
+const SYNC_CALLBACKS = new Set(['map', 'forEach', 'filter', 'some', 'every', 'find', 'findIndex', 'reduce', 'flatMap', 'sort', 'from', 'replace', 'replaceAll'])
 const isFunction = (n: Node | null | undefined): n is ESTree.FunctionExpression | ESTree.ArrowFunctionExpression =>
   !!n && (n.type === 'FunctionExpression' || n.type === 'ArrowFunctionExpression')
 
@@ -193,7 +194,8 @@ export function checkLoadOrder(bundle: string) {
           const fn = v && functions.get(v)
           if (fn) follow(fn)
         }
-        const sync = callee.type === 'MemberExpression' && callee.property.type === 'Identifier' && SYNC_CALLBACKS.has(callee.property.name)
+        const sync = (callee.type === 'MemberExpression' && callee.property.type === 'Identifier' && SYNC_CALLBACKS.has(callee.property.name)) ||
+          (node.type === 'NewExpression' && callee.type === 'Identifier' && callee.name === 'Promise')
         for (const a of node.arguments) {
           if (sync && isFunction(a as Node)) follow(a as ESTree.Function)
           else visit(a)
