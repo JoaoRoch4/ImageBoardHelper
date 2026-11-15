@@ -15,6 +15,11 @@
   starts works too, and the 2× gives way); a paused video stays paused,
   lifting mid-slide plays on, and a quick flick (under 0.3 s) still
   changes the post
+- A double tap in the middle of a post can like it instead of going
+  fullscreen (`doubleTapCenter`: `fullscreen`, the default, or `like`), on
+  videos (their middle third), images and GIFs: Instagram style, a heart
+  pops over the post and it goes to the favorites, upvoted, as with ♡. A
+  favorite already only gets the heart; a double tap never takes one back
 - The player's hold for 2× only answers in the middle third of the video,
   after 0.6 s instead of 0.4 s, so a drag that starts slowly no longer
   turns into 2×

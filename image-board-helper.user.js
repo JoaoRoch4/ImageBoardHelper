@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.19.0-snapshot.4
+// @version      1.19.0-snapshot.5
 // @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -68,7 +68,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.19.0-snapshot.4'
+  const VERSION = '1.19.0-snapshot.5'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // The site's thumbnail list. Gelbooru 0.2 sites (rule34, safebooru, xbooru)
@@ -144,6 +144,7 @@
     seekReel:       true,   // modal seek bar: the nearest keyframe at once (WebAssembly), the exact frame when the finger rests
     playRate:       1,      // modal player speed, picked in its ⚙ (0.5 to 2), kept for every video
     seekStep:       5,      // modal player: seconds a double tap on a side jumps, picked in its ⚙
+    doubleTapCenter: 'fullscreen', // modal: a double tap in the middle of a post: 'fullscreen' (a common player) or 'like' (Instagram: ♥ favorite + ▲)
     memorySaver:    true,   // release far off-screen images and removed videos (needs reload)
     urlCache:       true,   // remember which candidate URL worked for each file
     feedNav:        true,   // ⤒ ‹ › buttons: top of page, previous and next post in the feed (needs reload)
@@ -303,6 +304,7 @@
       tagOpened: 'Opened in a new tab', tagCopied: 'Copied', tagCopyFail: 'Could not copy', tagsNone: 'No tags', mTurn: 'Rotate the screen',
       mPlay: 'Play / pause', mMute: 'Sound on / off', mFavUp: 'Favorite and upvote', mGear: 'Speed and double tap',
       gearRate: 'Speed', gearStep: 'Double tap jumps', tPlayRate: 'Player speed', tSeekStep: 'Player double tap jump',
+      tDoubleTapCenter: 'Double tap in the middle of a post', dtFullscreen: 'Fullscreen (common player)', dtLike: 'Like: ♥ favorite + ▲ (Instagram)',
       tRotate: 'Landscape in player fullscreen',
       tPreload: 'Next post loaded in the player',
       tModalOrig: 'original image in the player', origZoom: 'When zooming in (sample first, faster)', origAlways: 'Always (slower)',
@@ -384,6 +386,7 @@
       tagOpened: 'Aberto em outra aba', tagCopied: 'Copiado', tagCopyFail: 'Não foi possível copiar', tagsNone: 'Sem tags', mTurn: 'Girar a tela',
       mPlay: 'Tocar / pausar', mMute: 'Som liga / desliga', mFavUp: 'Favoritar e dar ▲', mGear: 'Velocidade e duplo toque',
       gearRate: 'Velocidade', gearStep: 'Duplo toque pula', tPlayRate: 'Velocidade do player', tSeekStep: 'Pulo do duplo toque no player',
+      tDoubleTapCenter: 'Toque duplo no meio do post', dtFullscreen: 'Tela cheia (player comum)', dtLike: 'Curtir: ♥ favorito + ▲ (Instagram)',
       tRotate: 'Paisagem na tela cheia do player',
       tPreload: 'Próximo post carregado no player',
       tModalOrig: 'imagem original no player', origZoom: 'Ao dar zoom (sample antes, mais rápido)', origAlways: 'Sempre (mais lento)',
@@ -3903,6 +3906,18 @@
     button.on { background: ${ACCENT}; color: #0f1417; border-color: ${ACCENT}; }
     button.up { width: auto; min-width: 42px; padding: 0 12px; border-radius: 21px; gap: 6px; display: flex; font-size: 16px; }
     .score { font-size: 13px; }
+    /* doubleTapCenter 'like': the heart that pops over the post, Instagram style. */
+    .likeheart {
+      position: absolute; left: 50%; top: 50%; z-index: 6; font-size: 110px; line-height: 1; color: #ff3b5c;
+      text-shadow: 0 2px 14px rgba(0, 0, 0, .55); pointer-events: none; opacity: 0;
+      transform: translate(-50%, -50%) scale(0); animation: likepop .9s ease-out forwards;
+    }
+    @keyframes likepop {
+      15% { opacity: 1; transform: translate(-50%, -50%) scale(1.25); }
+      30% { transform: translate(-50%, -50%) scale(.95); }
+      45%, 70% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+      100% { opacity: 0; transform: translate(-50%, -62%) scale(1); }
+    }
     .badge {
       position: absolute; left: 50%; top: 64px; transform: translateX(-50%);
       padding: 6px 14px; border-radius: 16px; background: rgba(15, 20, 23, .9); color: ${ACCENT};
@@ -6639,6 +6654,25 @@
     }
   }
 
+  // doubleTapCenter 'like' (Instagram): a double tap in the middle pops a
+  // heart and favorites the post, which upvotes it as the ♥ does. One already
+  // in the favorites only gets the heart: a double tap never takes it back.
+  function modalLike() {
+    const heart = el('div', { class: 'likeheart', text: '♥' })
+    modal.box.appendChild(heart)
+    heart.addEventListener('animationend', () => heart.remove(), { once: true })
+    setTimeout(() => heart.remove(), 1500)   // no animation (reduced motion): it still goes
+    if (modal.fav.classList.contains('on')) { dbg(`modal: double tap, post ${postId(modal.link)} already a favorite`); return }
+    modalFavorite()
+  }
+
+  // A double tap in the middle of the video, or anywhere on an image or GIF.
+  function centerDoubleTap() {
+    if (CFG.doubleTapCenter === 'like') { modalLike(); return }
+    dbg('modal: double tap in the middle, fullscreen')
+    toggleModalFullscreen()
+  }
+
   // Answers with the new score as plain text, which the post page shows.
   // `quiet` (from the heart): no toast of its own, the heart's one stays.
   /** @param {boolean | Event} [quiet] */
@@ -6809,14 +6843,15 @@
       if (pts.size === 0) {
         pan = null
         if (zoom.scale < 1.05) resetZoom()   // let go near 1x: snap back
-        // Double tap: fullscreen, as on videos (the tap is the user gesture it
-        // needs); zoomed in, it first comes back to 1x. Zoom is the pinch.
+        // Double tap: fullscreen or a like, as on videos (doubleTapCenter; the
+        // tap is the user gesture fullscreen needs); zoomed in, it first comes
+        // back to 1x. Zoom is the pinch.
         if (ev.type === 'pointerup' && p && !zoom.multi && Date.now() - p.t < 250 &&
             Math.hypot(ev.clientX - p.x, ev.clientY - p.y) < 10) {
           const now = Date.now()
           if (now - lastTap.t < 300 && Math.hypot(ev.clientX - lastTap.x, ev.clientY - lastTap.y) < 30) {
             if (zoom.scale > 1) resetZoom()
-            else toggleModalFullscreen()
+            else centerDoubleTap()
             lastTap.t = 0
           } else {
             lastTap = { t: now, x: ev.clientX, y: ev.clientY }
@@ -6977,10 +7012,8 @@
       // fullscreen needs.
       if (tap && Date.now() - tap.t < 300) {
         clearTimeout(tap.timer)
-        if (!side && !tap.side) {
-          dbg('modal: double tap in the centre, fullscreen')
-          toggleModalFullscreen()
-        } else if (side && side === tap.side) {
+        if (!side && !tap.side) centerDoubleTap()
+        else if (side && side === tap.side) {
           const d = Number.isFinite(video.duration) ? video.duration : Infinity
           const step = Number(CFG.seekStep) || 5
           video.currentTime = Math.min(d, Math.max(0, video.currentTime + side * step))
@@ -8619,6 +8652,7 @@
     const onScreen = () => { if (modal) applyPlayRate(modal.video) }
     body.appendChild(choiceSelect('playRate', t('tPlayRate'), PLAY_RATES.map(r => [r, `${r.toLocaleString(LANG)}×`]), onScreen))
     body.appendChild(choiceSelect('seekStep', t('tSeekStep'), SEEK_JUMPS.map(s => [s, `${s} s`])))
+    body.appendChild(choiceSelect('doubleTapCenter', t('tDoubleTapCenter'), [['fullscreen', t('dtFullscreen')], ['like', t('dtLike')]]))
     body.appendChild(choiceSelect('modalOriginal', t('tModalOrig'), [['zoom', t('origZoom')], ['always', t('origAlways')]]))
     body.appendChild(toggle('videoCovers', t('tCovers')))
     body.appendChild(toggle('thumbBadges', t('tBadges'), t('noteReload')))
