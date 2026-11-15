@@ -20,6 +20,9 @@
   videos (their middle third), images and GIFs: Instagram style, a ❤️
   grows over the post, shrinks back and vanishes, and it goes to the favorites, upvoted, as with ♡. A
   favorite already only gets the heart; a double tap never takes one back
+- The double tap on a thumbnail (`doubleTapFav`) gets the same ❤️
+  (`doubleTapLike`: `heart`, the default, or `quiet`, only the ♥ badge as
+  before), sized to the thumbnail; it shows on a favorite already too
 - The player's hold for 2× only answers in the middle third of the video,
   after 0.6 s instead of 0.4 s, so a drag that starts slowly no longer
   turns into 2×

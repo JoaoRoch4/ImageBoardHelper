@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.19.0-snapshot.6
+// @version      1.19.0-snapshot.7
 // @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -68,7 +68,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.19.0-snapshot.6'
+  const VERSION = '1.19.0-snapshot.7'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // The site's thumbnail list. Gelbooru 0.2 sites (rule34, safebooru, xbooru)
@@ -152,6 +152,7 @@
     favsButton:     true,   // 🔖 button next to ♥ and 🕒 on rule34: your favorites page
     bulkFavButton:  true,   // ♥ button next to 🕒 on site pages: a mode where each tapped post is favorited and upvoted
     doubleTapFav:   true,   // double tap a thumbnail on rule34: favorite and upvote it; a single tap opens the post a moment later
+    doubleTapLike:  'heart', // that double tap: 'heart' (a ❤️ grows over the thumbnail and vanishes) or 'quiet' (only the ♥ badge)
     freeButton:     true,   // trash-can button next to them: Free memory & cache in one tap
     redoButton:     true,   // ↻ button beside it: free memory, then redo every thumbnail
     eyeButton:      true,   // 👁 button beside ◐: hides the other floating buttons, and brings them back
@@ -271,7 +272,7 @@
       appBadToken: 'Wrong token', appNoStore: 'Needs Violentmonkey storage', appQueued: 'Downloading in the app',
       appReduceQueued: 'Downloading in the app, to convert', appSaved: 'Saved by the app', appFailed: 'The app’s download failed',
       appConverting: 'Converting in the app', appConverted: 'Converted by the app', appFits: 'Saved: it plays as it is',
-      tRedoBtn: 'Redo-thumbnails shortcut button', navRedo: 'Free memory, then redo thumbnails', tDoubleTap: 'Double tap a thumbnail: favorite + upvote',
+      tRedoBtn: 'Redo-thumbnails shortcut button', navRedo: 'Free memory, then redo thumbnails', tDoubleTap: 'Double tap a thumbnail: favorite + upvote', tDoubleTapLike: 'Thumbnail like', likeHeart: 'With the ❤️ animation', likeQuiet: 'Quiet (♥ badge only)',
       tEyeBtn: '👁 button: hides the other buttons', eyeHide: 'Hide the buttons', eyeShow: 'Show the buttons',
       tFreeBtn: 'Free-memory shortcut button', navFree: 'Free memory & cache',
       tFavSearch: 'Search your favorites', tSiteSearch: 'Search bar on site pages', tSuggest: 'Tag suggestions while typing',
@@ -353,7 +354,7 @@
       appBadToken: 'Token errado', appNoStore: 'Precisa do armazenamento do Violentmonkey', appQueued: 'Baixando no app',
       appReduceQueued: 'Baixando no app, para converter', appSaved: 'Salvo pelo app', appFailed: 'O download do app falhou',
       appConverting: 'Convertendo no app', appConverted: 'Convertido pelo app', appFits: 'Salvo: toca como está',
-      tRedoBtn: 'Botão de atalho para refazer as miniaturas', navRedo: 'Limpar a memória e refazer as miniaturas', tDoubleTap: 'Toque duplo na miniatura: favoritar + votar',
+      tRedoBtn: 'Botão de atalho para refazer as miniaturas', navRedo: 'Limpar a memória e refazer as miniaturas', tDoubleTap: 'Toque duplo na miniatura: favoritar + votar', tDoubleTapLike: 'Curtida na miniatura', likeHeart: 'Com a animação do ❤️', likeQuiet: 'Discreta (só o selo ♥)',
       tEyeBtn: 'Botão 👁: oculta os outros botões', eyeHide: 'Ocultar os botões', eyeShow: 'Mostrar os botões',
       tFreeBtn: 'Botão de atalho para limpar a memória', navFree: 'Limpar memória e cache',
       tFavSearch: 'Buscar nos seus favoritos', tSiteSearch: 'Barra de busca nas páginas do site', tSuggest: 'Sugestões de tags ao digitar',
@@ -3802,6 +3803,22 @@
   /** @returns {HTMLAnchorElement[]} */
   const siteLinks = () => /** @type {HTMLAnchorElement[]} */ ([...document.querySelectorAll(SITE_LINK)])   // SITE_LINK ends in a
 
+  // A like's ❤️ (popHeart): over the post or the thumbnail, it grows, shrinks
+  // back, grows a little again and shrinks away to nothing, Instagram style.
+  // In the modal's shadow root and in the page (injectPageCSS) alike.
+  const LIKE_CSS = `
+    .ibh-likeheart {
+      position: absolute; left: 50%; top: 50%; z-index: 6; line-height: 1;
+      filter: drop-shadow(0 2px 10px rgba(0, 0, 0, .5)); pointer-events: none; opacity: 0;
+      transform: translate(-50%, -50%) scale(0); animation: ibh-likepop 1s ease-in-out forwards;
+    }
+    @keyframes ibh-likepop {
+      20% { opacity: 1; transform: translate(-50%, -50%) scale(1.3); }
+      38% { opacity: 1; transform: translate(-50%, -50%) scale(.85); }
+      55% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
+      72% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+      100% { opacity: 0; transform: translate(-50%, -50%) scale(0); }
+    }`
   const MODAL_CSS = `
     :host { all: initial; }
     * { box-sizing: border-box; font-family: system-ui, -apple-system, sans-serif; }
@@ -3906,20 +3923,7 @@
     button.on { background: ${ACCENT}; color: #0f1417; border-color: ${ACCENT}; }
     button.up { width: auto; min-width: 42px; padding: 0 12px; border-radius: 21px; gap: 6px; display: flex; font-size: 16px; }
     .score { font-size: 13px; }
-    /* doubleTapCenter 'like': a ❤️ over the post that grows, shrinks back,
-       grows a little again and shrinks away to nothing, Instagram style. */
-    .likeheart {
-      position: absolute; left: 50%; top: 50%; z-index: 6; font-size: 110px; line-height: 1;
-      filter: drop-shadow(0 2px 10px rgba(0, 0, 0, .5)); pointer-events: none; opacity: 0;
-      transform: translate(-50%, -50%) scale(0); animation: likepop 1s ease-in-out forwards;
-    }
-    @keyframes likepop {
-      20% { opacity: 1; transform: translate(-50%, -50%) scale(1.3); }
-      38% { opacity: 1; transform: translate(-50%, -50%) scale(.85); }
-      55% { opacity: 1; transform: translate(-50%, -50%) scale(1.1); }
-      72% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
-      100% { opacity: 0; transform: translate(-50%, -50%) scale(0); }
-    }
+    ${LIKE_CSS}
     .badge {
       position: absolute; left: 50%; top: 64px; transform: translateX(-50%);
       padding: 6px 14px; border-radius: 16px; background: rgba(15, 20, 23, .9); color: ${ACCENT};
@@ -5897,6 +5901,9 @@
     if (pendingTap && pendingTap.link === link) {
       clearTimeout(pendingTap.timer)
       pendingTap = null
+      // doubleTapLike 'heart': the ❤️ on every double tap, a favorite already
+      // too (as in the player); 'quiet': only the ♥ badge bulkFavorite puts.
+      if (CFG.doubleTapLike === 'heart') popHeart(link, Math.min(110, link.getBoundingClientRect().width * 0.5))
       bulkFavorite(link, 'double tap')
       return
     }
@@ -6660,12 +6667,23 @@
   // heart and favorites the post, which upvotes it as the ♥ does. One already
   // in the favorites only gets the heart: a double tap never takes it back.
   function modalLike() {
-    const heart = el('div', { class: 'likeheart', text: '❤️' })
-    modal.box.appendChild(heart)
-    heart.addEventListener('animationend', () => heart.remove(), { once: true })
-    setTimeout(() => heart.remove(), 1500)   // no animation (reduced motion): it still goes
+    popHeart(modal.box, 110)
     if (modal.fav.classList.contains('on')) { dbg(`modal: double tap, post ${postId(modal.link)} already a favorite`); return }
     modalFavorite()
+  }
+
+  /**
+   * The like's ❤️ over `parent` (positioned), `size` px tall at rest (LIKE_CSS).
+   * @param {HTMLElement} parent
+   * @param {number} size
+   */
+  function popHeart(parent, size) {
+    const heart = el('div', { class: 'ibh-likeheart', 'data-ibh-ui': '', text: '❤️' })   // the site theme leaves it alone
+    heart.style.fontSize = `${Math.round(size)}px`
+    if (getComputedStyle(parent).position === 'static') parent.style.position = 'relative'
+    parent.appendChild(heart)
+    heart.addEventListener('animationend', () => heart.remove(), { once: true })
+    setTimeout(() => heart.remove(), 1500)   // no animation (reduced motion): it still goes
   }
 
   // A double tap in the middle of the video, or anywhere on an image or GIF.
@@ -8630,7 +8648,8 @@
     }
     body.appendChild(toggle('feedNav', t('tNav'), t('noteReload')))
     body.appendChild(toggle('bulkFavButton', t('tBulkBtn'), null, ensureFeedNav))
-    body.appendChild(toggle('doubleTapFav', t('tDoubleTap')))
+    body.appendChild(toggle('doubleTapFav', t('tDoubleTap'), null, rebuildPanel))
+    if (CFG.doubleTapFav) body.appendChild(choiceSelect('doubleTapLike', t('tDoubleTapLike'), [['heart', t('likeHeart')], ['quiet', t('likeQuiet')]]))
     body.appendChild(toggle('favsButton', t('tFavsBtn'), null, ensureFeedNav))
     body.appendChild(toggle('holdRaw', t('tHoldRaw')))
     body.appendChild(toggle('freeButton', t('tFreeBtn'), null, ensureFeedNav))
@@ -9268,7 +9287,7 @@
   function injectPageCSS() {
     if (document.querySelector('style[data-ibh]')) return
     const style = el('style', { 'data-ibh': '1' })
-    style.textContent = NATIVE_MARK_CSS + THEME_CSS + FAVSEARCH_CSS + TAP_CSS + HEADER_CSS +
+    style.textContent = NATIVE_MARK_CSS + THEME_CSS + FAVSEARCH_CSS + TAP_CSS + HEADER_CSS + LIKE_CSS +
       (CFG.videoScrub ? SCRUB_CSS : '') + (CFG.blockAds ? ADS_CSS : '')
     ;(document.head || document.documentElement).appendChild(style)
   }

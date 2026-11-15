@@ -88,6 +88,7 @@ All of them live in the panel and are stored in `localStorage` under `IBH_CFG`.
 | `feedNav` | on | with `nativeFeed`, round buttons in the bottom-right corner, in two rows: ⤒ top, ‹ › previous/next post (e.g. to skip a long comic), ⤓ bottom; « » (top left) previous/next page through the site's own pagination (needs reload) |
 | `bulkFavButton` | on | on rule34 site pages (logged in), a ♥ button next to 🕒 turns on mass favorite: a tap on a thumbnail favorites and upvotes the post instead of opening it, and marks it ♥ (✕ on failure). Tap ♥ again to leave |
 | `doubleTapFav` | on | on rule34 (logged in), a double tap on a thumbnail favorites and upvotes the post without opening it, and marks it ♥ (✕ on failure), as mass favorite does; a single tap still opens the post, about 0.3 s later (the wait for a second tap) |
+| `doubleTapLike` | `heart` | how that double tap shows: `heart`, a ❤️ grows over the thumbnail, shrinks back and vanishes (on a post already in your favorites too, as in the player), or `quiet`, only the small ♥ badge on the thumbnail |
 | `favsButton` | on | on rule34 (logged in), a 🔖 button top right, beside ♥ and 🕒, opens your favorites page |
 | `freeButton` | on | trash-can shortcut button with the floating buttons: one tap runs **Free memory & cache** (other tabs of the site included) |
 | `redoButton` | on | ↻ shortcut beside the trash can: runs **Free memory & cache** on this tab, then **Redo thumbnails** (every thumbnail starts over, failures included) |
