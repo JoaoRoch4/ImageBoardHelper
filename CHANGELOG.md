@@ -15,6 +15,9 @@
   starts works too, and the 2× gives way); a paused video stays paused,
   lifting mid-slide plays on, and a quick flick (under 0.3 s) still
   changes the post
+- The player's hold for 2× only answers in the middle third of the video,
+  after 0.6 s instead of 0.4 s, so a drag that starts slowly no longer
+  turns into 2×
 
 ## 1.18.0
 

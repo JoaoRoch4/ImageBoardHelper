@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.19.0-snapshot.3
+// @version      1.19.0-snapshot.4
 // @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -68,7 +68,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.19.0-snapshot.3'
+  const VERSION = '1.19.0-snapshot.4'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // The site's thumbnail list. Gelbooru 0.2 sites (rule34, safebooru, xbooru)
@@ -6837,12 +6837,13 @@
   }
 
   // On the modal video: drag sideways to move the video (holdRub: a rub, see
-  // makeRub; a quick flick stays a swipe to the next post); hold for 2x
-  // while the finger stays down, and slide from there to move it too; double
+  // makeRub; a quick flick stays a swipe to the next post); hold the middle
+  // third for 2x while the finger stays down, and slide from there to move
+  // it too; double
   // tap on the right or left third to jump seekStep seconds (5, or what ⚙
   // picked) forward or back. The control strip is
   // left to the player. Turned, "left/right" follow the viewer, not the screen.
-  const HOLD_FAST_MS = 400
+  const HOLD_FAST_MS = 600   // the user's pick (2026-11-15): 400 ms caught drags that started slowly
   const FLICK_MS = 300   // a sideways drag shorter than this is a swipe to the next post, not a rub
   const HOLD_RATE = 2
   const videoPress = { held: false }
@@ -6924,6 +6925,8 @@
       const fx = viewerX(ev)
       press = { id: ev.pointerId, x: ev.clientX, y: ev.clientY, t: Date.now(), fx, rate: video.playbackRate || 1, timer: 0 }
       dbg(`modal: video press at ${Math.round(fx * 100)}%`)
+      // Only the middle third holds for 2x; the sides are for double taps and drags.
+      if (fx < 0.35 || fx > 0.65) return
       press.timer = setTimeout(() => {
         if (!press) return
         // From here a slide moves the video. A paused one stays paused, at 1×.
