@@ -12,9 +12,8 @@ import { clearUrlCache } from './url-cache'
 // gives a silent 404. Resolve the host once, skipping known mirrors.
 // ═══════════════════════════════════════════════════════════
 
-/** @typedef {{ thumbsOnly: string[], fallback: string, videoHosts: string[] }} HostConfig */
-/** @type {Record<string, HostConfig>} */
-const HOSTS = {
+type HostConfig = { thumbsOnly: string[], fallback: string, videoHosts: string[] }
+const HOSTS: Record<string, HostConfig> = {
   'rule34.xxx': {
     thumbsOnly: ['miami.rule34.xxx', 'ny.rule34.xxx'],
     fallback: 'https://wimg.rule34.xxx/images',
@@ -33,13 +32,11 @@ const HOSTS = {
   },
 }
 
-/** @type {Partial<HostConfig>} */
-const HOST_CFG = HOSTS[SITE] || {}
+const HOST_CFG: Partial<HostConfig> = HOSTS[SITE] || {}
 const HOST_KEY = `IBH_IMGBASE_${SITE}`
 const HOST_TTL = 7 * 24 * 60 * 60 * 1000
 
-/** @returns {string | null} */
-export function imageBase() {
+export function imageBase(): string | null {
   const cached = readJSON(HOST_KEY, null)
   if (cached && Date.now() < cached.exp) {
     STATE.imageBase = cached.base
@@ -47,8 +44,7 @@ export function imageBase() {
     return cached.base
   }
 
-  /** @type {string | null} */
-  let base = null
+  let base: string | null = null
   const thumb = document.querySelector('img[src*="/thumbnails/"]')
   if (thumb) {
     try {
@@ -86,10 +82,8 @@ export function clearHostCache() {
 
 /**
  * Pull DIR and HASH out of .../thumbnails/DIR/thumbnail_HASH.jpg or .../samples/DIR/sample_HASH.jpg
- * @param {string | null | undefined} thumbUrl
- * @returns {{ dir: string, hash: string } | null}
  */
-export function thumbParts(thumbUrl) {
+export function thumbParts(thumbUrl: string | null | undefined): { dir: string, hash: string } | null {
   if (!thumbUrl) return null
   const m = thumbUrl.replace(/\?.*$/, '')
     .match(/\/(?:thumbnails|samples)\/(.+)\/(?:thumbnail|sample)_([^/]+)\.(?:jpe?g|png)$/i)
@@ -99,11 +93,8 @@ export function thumbParts(thumbUrl) {
 
 /**
  * URLs to try, most likely first.
- * @param {string} thumbUrl
- * @param {string[]} exts
- * @returns {string[]}
  */
-export function fileCandidates(thumbUrl, exts) {
+export function fileCandidates(thumbUrl: string, exts: string[]): string[] {
   const p = thumbParts(thumbUrl)
   if (!p) return []
 

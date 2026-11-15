@@ -733,7 +733,7 @@
     return value === void 0 ? I18N.en[key] : value;
   }, "t");
 
-  // src/core/log.js
+  // src/core/log.ts
   var LOG = [];
   var LOG_MAX = 250;
   var onLogEntry = null;
@@ -759,7 +759,7 @@
   var describeError = /* @__PURE__ */ __name((e) => e && e.message ? e.message : String(e), "describeError");
   var logLine = /* @__PURE__ */ __name((e) => `${new Date(e.t).toTimeString().slice(0, 8)} [${e.level}] ${e.msg}`, "logLine");
 
-  // src/core/state.js
+  // src/core/state.ts
   var STATE = {
     imageBase: null,
     baseCached: false,
@@ -1145,7 +1145,7 @@
   }
   __name(clearUrlIndex, "clearUrlIndex");
 
-  // src/urls/hosts.js
+  // src/urls/hosts.ts
   var HOSTS = {
     "rule34.xxx": {
       thumbsOnly: ["miami.rule34.xxx", "ny.rule34.xxx"],
@@ -1237,7 +1237,7 @@
   }
   __name(fileCandidates, "fileCandidates");
 
-  // src/video/limits.js
+  // src/video/limits.ts
   var MB_PER_S = 489600;
   var pastDecoder = /* @__PURE__ */ __name((w, h, fps) => Math.max(w, h) > 1920 || Math.min(w, h) > 1088 || !!fps && Math.ceil(w / 16) * Math.ceil(h / 16) * Math.round(fps) > MB_PER_S, "pastDecoder");
 
@@ -1607,7 +1607,7 @@
   }
   __name(ensureSiteSearch, "ensureSiteSearch");
 
-  // src/video/mp4.js
+  // src/video/mp4.ts
   function* mp4Boxes(b, start, end) {
     const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
     let p = start;
@@ -1638,18 +1638,8 @@
       const hdlr = mdia && mp4Child(b, mdia, "hdlr");
       if (!hdlr || String.fromCharCode(...b.subarray(hdlr.body + 8, hdlr.body + 12)) !== "vide") continue;
       const tkhd = mp4Child(b, trak, "tkhd");
-      const mdhd = mp4Child(
-        b,
-        /** @type {Mp4Box} */
-        mdia,
-        "mdhd"
-      );
-      const minf = mp4Child(
-        b,
-        /** @type {Mp4Box} */
-        mdia,
-        "minf"
-      );
+      const mdhd = mp4Child(b, mdia, "mdhd");
+      const minf = mp4Child(b, mdia, "minf");
       const stbl = minf && mp4Child(b, minf, "stbl");
       if (!tkhd || !mdhd || !stbl) return null;
       const [stsd, stts, stss, stsz, stsc, stco, co64] = ["stsd", "stts", "stss", "stsz", "stsc", "stco", "co64"].map((t2) => mp4Child(b, stbl, t2));
@@ -1663,10 +1653,7 @@
       const count = u32(stsz.body + 8);
       const size = /* @__PURE__ */ __name((k) => fixed || u32(stsz.body + 12 + k * 4), "size");
       const chunks = u32(offsets.body + 4);
-      const chunkAt = /* @__PURE__ */ __name((c) => stco ? u32(stco.body + 8 + c * 4) : u64(
-        /** @type {Mp4Box} */
-        co64.body + 8 + c * 8
-      ), "chunkAt");
+      const chunkAt = /* @__PURE__ */ __name((c) => stco ? u32(stco.body + 8 + c * 4) : u64(co64.body + 8 + c * 8), "chunkAt");
       const perChunk = [];
       for (let i = 0, n = u32(stsc.body + 4); i < n; i++) perChunk.push([u32(stsc.body + 8 + i * 12) - 1, u32(stsc.body + 12 + i * 12)]);
       const v1 = b[mdhd.body] === 1;
@@ -1679,10 +1666,7 @@
         // Frames over seconds, from the sample table: exact, no decoding.
         samples: runs.reduce((sum, [count2]) => sum + count2, 0),
         stsd: b.slice(stsd.start, stsd.end),
-        /**
-         * The sample showing at time t (timescale units).
-         * @param {number} t
-         */
+        // The sample showing at time t (timescale units).
         sampleAt(t2) {
           let k = 0;
           let at = 0;
@@ -1693,7 +1677,6 @@
           }
           return Math.max(0, count - 1);
         },
-        /** @param {number} k */
         timeOf(k) {
           let at = 0;
           for (const [n, delta] of runs) {
@@ -1703,7 +1686,6 @@
           }
           return at;
         },
-        /** @param {number} k */
         keyAtOrBefore(k) {
           if (!sync.length) return k;
           let lo = 0;
@@ -1718,11 +1700,7 @@
           }
           return best;
         },
-        /**
-         * [offset, size] of sample k in the file: its chunk, plus the samples before it in there.
-         * @param {number} k
-         * @returns {[number, number] | null}
-         */
+        // [offset, size] of sample k in the file: its chunk, plus the samples before it in there.
         place(k) {
           let first = 0;
           for (let i = 0; i < perChunk.length; i++) {
