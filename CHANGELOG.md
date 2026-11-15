@@ -10,8 +10,9 @@
   date (`favAutoIndex`, on), from every way the script favorites: the
   double tap, the player's ♥, mass favorite and the ❤️ hold
 - The resolution in each thumbnail's top left (`resBadge`, on). On rule34
-  it comes from the site's API with your own key, pasted in the panel
-  (kept in the script's storage only); without one, videos and opened
+  it comes from the site's API with your own key, pasted in the panel's
+  rule34 API section, which gathers what needs the key and warns while
+  there is none (kept in the script's storage only); without one, videos and opened
   posts still show theirs. Sizes are remembered per post
 - `doubleTapLike` `quiet` now means no animation: the corner ❤️ marks the
   favorite instead of the ♥ badge

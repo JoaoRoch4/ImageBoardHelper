@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.20.0-snapshot.2
+// @version      1.20.0-snapshot.3
 // @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -68,7 +68,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.20.0-snapshot.2'
+  const VERSION = '1.20.0-snapshot.3'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // The site's thumbnail list. Gelbooru 0.2 sites (rule34, safebooru, xbooru)
@@ -277,7 +277,7 @@
       appConverting: 'Converting in the app', appConverted: 'Converted by the app', appFits: 'Saved: it plays as it is',
       tRedoBtn: 'Redo-thumbnails shortcut button', navRedo: 'Free memory, then redo thumbnails', tDoubleTap: 'Double tap a thumbnail: favorite + upvote', tDoubleTapLike: 'Thumbnail like', likeHeart: 'With the ❤️ animation', likeQuiet: 'Quiet (no animation)',
       tLikedBadge: '❤️ on favorites’ thumbnails (hold it: unfavorite)', heartHint: 'Hold ❤️ to remove it from your favorites', unlikeFail: 'Could not unfavorite',
-      tFavAutoIndex: 'Keep the favorites index up to date when liking', tResBadge: 'Resolution on thumbnails', apiKey: 'rule34 API key',
+      tFavAutoIndex: 'Keep the favorites index up to date when liking', tResBadge: 'Resolution on thumbnails', apiKey: 'rule34 API key', apiSec: 'rule34 API (your key)', apiWarn: '⚠️ Paste your API key below to turn these on. rule34 → My Account → Options → API Access Credentials: copy the whole &api_key=…&user_id=… line.', apiPartial: 'videos only',
       apiKeyHint: 'Paste &api_key=…&user_id=… (rule34 → My Account → Options)', apiKeySet: 'Key saved: resolutions from the API', apiKeyNone: 'No key: only videos and opened posts', apiKeyBad: 'Not a key: paste the whole &api_key=…&user_id=… line',
       tEyeBtn: '👁 button: hides the other buttons', eyeHide: 'Hide the buttons', eyeShow: 'Show the buttons',
       tFreeBtn: 'Free-memory shortcut button', navFree: 'Free memory & cache',
@@ -362,7 +362,7 @@
       appConverting: 'Convertendo no app', appConverted: 'Convertido pelo app', appFits: 'Salvo: toca como está',
       tRedoBtn: 'Botão de atalho para refazer as miniaturas', navRedo: 'Limpar a memória e refazer as miniaturas', tDoubleTap: 'Toque duplo na miniatura: favoritar + votar', tDoubleTapLike: 'Curtida na miniatura', likeHeart: 'Com a animação do ❤️', likeQuiet: 'Discreta (sem animação)',
       tLikedBadge: '❤️ nas miniaturas dos favoritos (segurar: descurtir)', heartHint: 'Segure o ❤️ para tirar dos favoritos', unlikeFail: 'Não deu para descurtir',
-      tFavAutoIndex: 'Manter o índice de favoritos em dia ao curtir', tResBadge: 'Resolução nas miniaturas', apiKey: 'Chave da API do rule34',
+      tFavAutoIndex: 'Manter o índice de favoritos em dia ao curtir', tResBadge: 'Resolução nas miniaturas', apiKey: 'Chave da API do rule34', apiSec: 'API do rule34 (sua chave)', apiWarn: '⚠️ Cole sua chave da API abaixo para ligar estas funções. rule34 → My Account → Options → API Access Credentials: copie a linha inteira &api_key=…&user_id=….', apiPartial: 'só vídeos',
       apiKeyHint: 'Cole &api_key=…&user_id=… (rule34 → My Account → Options)', apiKeySet: 'Chave salva: resoluções pela API', apiKeyNone: 'Sem chave: só vídeos e posts abertos', apiKeyBad: 'Não é uma chave: cole a linha &api_key=…&user_id=… inteira',
       tEyeBtn: 'Botão 👁: oculta os outros botões', eyeHide: 'Ocultar os botões', eyeShow: 'Mostrar os botões',
       tFreeBtn: 'Botão de atalho para limpar a memória', navFree: 'Limpar memória e cache',
@@ -5990,7 +5990,22 @@
     }
   }
 
-  // The panel's key field, under the resolution option.
+  // The panel's section for what rule34's API serves with the user's key:
+  // the key's field first, a warning while there is none, then every option
+  // that depends on it. Other sites have no key: their options stay plain.
+  /** @param {HTMLElement} body */
+  function apiSection(body) {
+    if (SITE !== 'rule34.xxx') {
+      body.appendChild(toggle('resBadge', t('tResBadge'), null, repaintCards))
+      return
+    }
+    body.appendChild(el('div', { class: 'sec', text: t('apiSec') }))
+    if (!apiKey()) body.appendChild(el('div', { class: 'apiwarn', text: t(GM_STORE ? 'apiWarn' : 'appNoStore') }))
+    body.appendChild(apiKeyControls())
+    body.appendChild(toggle('resBadge', t('tResBadge'), apiKey() ? null : t('apiPartial'), repaintCards))
+  }
+
+  // The key's field: saved as soon as a key is pasted.
   function apiKeyControls() {
     const field = el('input', { class: 'apptoken', type: 'password', autocomplete: 'off', placeholder: t(GM_STORE ? 'apiKeyHint' : 'appNoStore') })
     field.disabled = !GM_STORE
@@ -6013,6 +6028,9 @@
       status.textContent = shown(key)
       info(`resolution: API key ${key ? `saved (user ${keyUser(key)})` : 'cleared'}`)
       repaintCards()
+      // The warning and the notes follow the key; a field still being typed
+      // in keeps its focus until it is done.
+      if (final || key) setTimeout(rebuildPanel, 0)
     }
     field.addEventListener('input', () => save(false))
     field.addEventListener('change', () => save(true))
@@ -8752,6 +8770,8 @@
     label.tog input { accent-color: ${ACCENT}; width: 16px; height: 16px; }
     label.tog .note { margin-left: auto; color: #4e6469; font-size: 10px; }
 
+    .apiwarn { margin: 4px 12px 6px; padding: 7px 9px; border-radius: 6px; font-size: 11px; line-height: 1.4;
+      color: #f5d38a; background: rgba(245, 180, 60, .12); border: 1px solid rgba(245, 180, 60, .35); }
     .lang { padding: 4px 12px 8px; }
     .lang .lbl { color: #4e6469; font-size: 11px; padding-bottom: 4px; }
     .lang .appstatus { padding: 4px 0 0; }
@@ -8999,8 +9019,6 @@
     body.appendChild(choiceSelect('modalOriginal', t('tModalOrig'), [['zoom', t('origZoom')], ['always', t('origAlways')]]))
     body.appendChild(toggle('videoCovers', t('tCovers')))
     body.appendChild(toggle('thumbBadges', t('tBadges'), t('noteReload')))
-    body.appendChild(toggle('resBadge', t('tResBadge'), null, () => { repaintCards(); rebuildPanel() }))
-    if (CFG.resBadge && SITE === 'rule34.xxx') body.appendChild(apiKeyControls())
     body.appendChild(toggle('gifInline', t('tGif')))
     body.appendChild(choiceSelect('gifMaxLive', t('tGifMax'), [1, 2, 3, 4, 6, 10].map(n => [n, String(n)]), applyGifLimit))
     body.appendChild(toggle('holdGif', t('tHoldGif')))
@@ -9009,6 +9027,8 @@
     body.appendChild(toggle('memorySaver', t('tMemory'), t('noteReload')))
     body.appendChild(toggle('urlCache', t('tUrlCache')))
     body.appendChild(toggle('debug', t('tDebug')))
+
+    apiSection(body)
 
     body.appendChild(el('div', { class: 'sec', text: t('language') }))
     body.appendChild(languageSelect())
