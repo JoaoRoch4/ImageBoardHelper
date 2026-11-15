@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      1.19.0-snapshot
+// @version      1.19.0-snapshot.2
 // @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
@@ -68,7 +68,7 @@
 ;(function () {
   'use strict'
 
-  const VERSION = '1.19.0-snapshot'
+  const VERSION = '1.19.0-snapshot.2'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // The site's thumbnail list. Gelbooru 0.2 sites (rule34, safebooru, xbooru)
@@ -136,7 +136,7 @@
     holdVideo:      false,  // hold mode: the video itself plays (1×, Firefox's hardware decoder) instead of the slideshow
     previewSound:   false,  // hold mode: a video that plays (holdVideo, a short clip) plays with sound
     holdResume:     true,   // hold mode: a video that plays goes on where the last hold lifted, for a minute (⏮ on the card starts over)
-    holdRub:        true,   // hold mode: while the video plays, sliding the finger sideways moves it forward or back
+    holdRub:        true,   // hold, then slide sideways to move the video forward or back: a thumbnail's playing hold (hold mode) and the post's player
     slideStep:      10,     // hold slideshow: jump between scenes, in % of the video
     slideDwell:     0.2,    // hold slideshow: seconds each scene stays once painted
     slideReel:      true,   // hold slideshow from keyframes only (MP4): one small read per scene, no seeking the file
@@ -253,7 +253,7 @@
       tScrub: 'Scene preview on video thumbnails',
       tScrubMode: 'scene preview gesture', modeDrag: 'Drag sideways', modeHold: 'Hold (slideshow)',
       tSlideStep: 'slideshow jump', tSlideDwell: 'time per scene', scenes: 'scenes', tSlideReel: 'Keyframes only (faster, MP4)', tWasmDecode: 'Decode keyframes in WebAssembly',
-      tHoldVideo: 'Hold plays the video (hardware)', tPreviewSound: 'Sound when the hold plays the video', tHoldResume: 'Hold goes on where it stopped (1 min)', tHoldRub: 'Slide the finger to move the video', resumeRestart: 'Start from the beginning', soundToggle: 'Hold sound: tap to switch', heavyMark: 'Past this phone’s hardware decoder (1080p60)',
+      tHoldVideo: 'Hold plays the video (hardware)', tPreviewSound: 'Sound when the hold plays the video', tHoldResume: 'Hold goes on where it stopped (1 min)', tHoldRub: 'Hold, then slide to move the video', resumeRestart: 'Start from the beginning', soundToggle: 'Hold sound: tap to switch', heavyMark: 'Past this phone’s hardware decoder (1080p60)',
       tMemory: 'Release off-screen memory',
       tUrlCache: 'Remember working file URLs',
       tNav: 'Top / previous / next buttons',
@@ -334,7 +334,7 @@
       tScrub: 'Prévia de cenas nas miniaturas de vídeo',
       tScrubMode: 'gesto da prévia de cenas', modeDrag: 'Arrastar de lado', modeHold: 'Segurar (slideshow)',
       tSlideStep: 'pulo do slideshow', tSlideDwell: 'tempo por cena', scenes: 'cenas', tSlideReel: 'Só keyframes (mais rápido, MP4)', tWasmDecode: 'Decodificar keyframes em WebAssembly',
-      tHoldVideo: 'Segurar toca o vídeo (hardware)', tPreviewSound: 'Som quando o segurar toca o vídeo', tHoldResume: 'Segurar continua de onde parou (1 min)', tHoldRub: 'Deslizar o dedo move o vídeo', resumeRestart: 'Recomeçar do início', soundToggle: 'Som do segurar: toque para trocar', heavyMark: 'Acima do decodificador de hardware do celular (1080p60)',
+      tHoldVideo: 'Segurar toca o vídeo (hardware)', tPreviewSound: 'Som quando o segurar toca o vídeo', tHoldResume: 'Segurar continua de onde parou (1 min)', tHoldRub: 'Segurar e deslizar move o vídeo', resumeRestart: 'Recomeçar do início', soundToggle: 'Som do segurar: toque para trocar', heavyMark: 'Acima do decodificador de hardware do celular (1080p60)',
       tMemory: 'Liberar memória fora da tela',
       tUrlCache: 'Lembrar endereços que funcionaram',
       tNav: 'Botões topo / anterior / próximo',
@@ -2085,18 +2085,7 @@
    * @property {(() => void) | null} [onPlayTime]
    * @property {Rub | null} [rub]          the finger sliding a playing hold (holdRub)
    */
-  /**
-   * A rub: while a hold plays the video, the finger sliding sideways moves it.
-   * @typedef {object} Rub
-   * @property {boolean} active   the finger is moving the video, which waits paused
-   * @property {number} x         px, where the finger was when this rub began (or rested)
-   * @property {number} t         s, the video's time then
-   * @property {number} target    s, where the finger asks for now
-   * @property {number} asked     s, the last target handed to a seek
-   * @property {boolean} busy     a seek in flight: the next waits for its seeked
-   * @property {number} still     timer: a resting finger plays on from the target
-   * @property {() => void} onSeeked
-   */
+
   /** @typedef {{ t0: number, method: string | null, first: number | null, last: number, shown: number, gaps: number[], detail?: string, wasm?: string, reelError?: string, rate?: number, fps?: number, sound?: string, resumed?: number, kept?: number, rubs?: number }} SlideStats */
   /** @typedef {{ v: HTMLVideoElement, helper: boolean, f: number, ready: boolean, slow: boolean, since: number, onSeeked?: () => void }} SlideView */
 
@@ -3104,7 +3093,7 @@
     if (CFG.previewSound) s.stats.sound = 'with sound'
     soundChip(s.card)
     s.onPlayTime = () => {
-      if (scrub !== s || !v.duration || s.rub?.active) return   // a rub paints its own target
+      if (scrub !== s || !v.duration || s.rub?.active()) return   // a rub paints its own target
       s.bar.style.width = `${(v.currentTime / v.duration) * 100}%`
       s.label.textContent = `${mmss(v.currentTime)} / ${mmss(v.duration)} · ${rate}×`
     }
@@ -3255,97 +3244,124 @@
     if (scrub && scrub.onPlayTime) scrub.video.muted = !CFG.previewSound
   }
 
-  // ── Rub a playing hold (holdRub) ──
-  // While a hold plays the video, sliding the finger sideways moves it: to
-  // the right forward, to the left back, from wherever it is. Where the
-  // finger sits on the card doesn't matter, only how far it slides: the
-  // card's width spans the whole video, at most RUB_SPAN_S. While the finger
-  // moves, the video waits on the frame there (fastSeek: the nearest
-  // keyframe, quick to decode); once the finger rests, it seeks the exact
-  // frame and plays on, and the next slide starts from there.
+  // ── Rub: hold, then slide to move the video (holdRub) ──
+  // On a thumbnail whose hold plays the video, and on the post's player once
+  // a hold has started, sliding the finger sideways moves the video: to the
+  // right forward, to the left back, from wherever it is. Where the finger
+  // sits doesn't matter, only how far it slides: the width under the finger
+  // (the card, the player) spans the whole video, at most RUB_SPAN_S. While
+  // the finger moves, the video waits on the frame there (fastSeek: the
+  // nearest keyframe, quick to decode); once it rests, the exact frame, and
+  // the next slide starts from there.
   const RUB_SPAN_S = 120
   const RUB_REST_MS = 250
 
   /**
+   * A finger rubbing one video; makeRub builds it.
+   * @typedef {object} Rub
+   * @property {(x: number) => void} move   the finger at x px
+   * @property {() => void} end             the finger lifts: mid-rub, the video stays on the exact target
+   * @property {() => boolean} active       moving the video now (it waits paused)
+   * @property {() => number} count         rubs so far (each start after the finger rested)
+   */
+
+  /**
+   * @param {HTMLVideoElement} v
+   * @param {number} x0   px, where the finger went down
+   * @param {() => number} width   px that span the whole video
+   * @param {{ alive(): boolean, begin(): void, paint(t: number): void, rest(): void }} hooks
+   *   alive: the gesture still runs; begin: a rub starts (before the pause);
+   *   paint: the target changed; rest: the finger rests on the exact frame
+   * @returns {Rub}
+   */
+  function makeRub(v, x0, width, hooks) {
+    let active = false
+    let count = 0
+    let x = x0          // where the finger was when this rub began (or rested)
+    let t = 0           // the video's time then
+    let target = 0
+    let asked = -1      // the last target handed to a seek
+    let busy = false    // a seek in flight: the next waits for its seeked
+    let still = 0
+    const seek = () => {
+      busy = true
+      asked = target
+      if (typeof v.fastSeek === 'function') v.fastSeek(target)
+      else v.currentTime = target
+    }
+    // One seek at a time: a finger sends moves faster than seeks land, and
+    // each queued seek would decode. When one lands, the newest target goes.
+    const onSeeked = () => {
+      busy = false
+      if (active && hooks.alive() && asked !== target) seek()
+    }
+    v.addEventListener('seeked', onSeeked)
+    /** @param {number} at  px, where the finger rests */
+    const rest = at => {
+      if (!active || !hooks.alive()) return
+      active = false
+      x = at
+      busy = true
+      asked = target
+      v.currentTime = target   // fastSeek stopped on a keyframe
+      hooks.rest()
+    }
+    return {
+      move(nx) {
+        if (!Number.isFinite(v.duration) || !(v.duration > 0)) return
+        if (!active) {
+          if (Math.abs(nx - x) <= SCRUB_SLOP) return   // a resting finger trembles
+          active = true
+          count++
+          x = nx
+          t = v.currentTime
+          hooks.begin()
+          v.pause()
+        }
+        const span = Math.min(v.duration, RUB_SPAN_S)
+        target = Math.min(v.duration - 0.05, Math.max(0, t + ((nx - x) / (width() || 1)) * span))
+        hooks.paint(target)
+        if (!busy) seek()
+        clearTimeout(still)
+        still = setTimeout(() => rest(nx), RUB_REST_MS)
+      },
+      end() {
+        clearTimeout(still)
+        v.removeEventListener('seeked', onSeeked)
+        if (active) v.currentTime = target
+        active = false
+      },
+      active: () => active,
+      count: () => count,
+    }
+  }
+
+  // The thumbnail's rub, made on the first move of a playing hold.
+  /**
    * @param {Scrub} s
-   * @param {number} x   the finger, px
+   * @param {number} x
    */
   function rubMove(s, x) {
     const v = s.video
-    if (!Number.isFinite(v.duration) || !(v.duration > 0)) return
-    let r = s.rub
-    if (!r) {
-      /** @type {Rub} */
-      const rub = { active: false, x: s.x0, t: 0, target: 0, asked: -1, busy: false, still: 0, onSeeked: () => {} }
-      // One seek at a time: a finger sends moves faster than seeks land, and
-      // each queued seek would decode. When one lands, the newest target goes.
-      rub.onSeeked = () => {
-        rub.busy = false
-        if (scrub === s && rub.active && rub.asked !== rub.target) rubSeek(s)
-      }
-      v.addEventListener('seeked', rub.onSeeked)
-      r = s.rub = rub
+    if (!s.rub) {
+      s.rub = makeRub(v, s.x0, () => s.card.getBoundingClientRect().width, {
+        alive: () => scrub === s,
+        begin: () => { s.stats.rubs = (s.stats.rubs || 0) + 1 },
+        paint: at => {
+          s.bar.style.width = `${(at / v.duration) * 100}%`
+          s.label.textContent = `${mmss(at)} / ${mmss(v.duration)}`
+        },
+        rest: () => {
+          v.play().catch(e => {
+            // Unmuted, it needs the page's user activation, as playShow found out.
+            if (e.name !== 'NotAllowedError' || v.muted || scrub !== s) { dbg(`rub: play refused — ${describeError(e)}`); return }
+            v.muted = true
+            v.play().catch(e2 => dbg(`rub: play refused — ${describeError(e2)}`))
+          })
+        },
+      })
     }
-    if (!r.active) {
-      if (Math.abs(x - r.x) <= SCRUB_SLOP) return   // a resting finger trembles
-      r.active = true
-      r.x = x
-      r.t = v.currentTime
-      v.pause()
-      s.stats.rubs = (s.stats.rubs || 0) + 1
-    }
-    const span = Math.min(v.duration, RUB_SPAN_S)
-    const width = s.card.getBoundingClientRect().width || 1
-    r.target = Math.min(v.duration - 0.05, Math.max(0, r.t + ((x - r.x) / width) * span))
-    s.bar.style.width = `${(r.target / v.duration) * 100}%`
-    s.label.textContent = `${mmss(r.target)} / ${mmss(v.duration)}`
-    if (!r.busy) rubSeek(s)
-    clearTimeout(r.still)
-    r.still = setTimeout(() => rubRest(s, x), RUB_REST_MS)
-  }
-
-  // Called with s.rub set.
-  /** @param {Scrub} s */
-  function rubSeek(s) {
-    const r = /** @type {Rub} */ (s.rub)
-    const v = s.video
-    r.busy = true
-    r.asked = r.target
-    if (typeof v.fastSeek === 'function') v.fastSeek(r.target)
-    else v.currentTime = r.target
-  }
-
-  // The finger rests: the exact frame, and the video plays on from it.
-  /**
-   * @param {Scrub} s
-   * @param {number} x   where it rests, px
-   */
-  function rubRest(s, x) {
-    const r = s.rub
-    if (scrub !== s || !r || !r.active) return
-    const v = s.video
-    r.active = false
-    r.x = x
-    r.busy = true
-    r.asked = r.target
-    v.currentTime = r.target   // fastSeek stopped on a keyframe
-    v.play().catch(e => {
-      // Unmuted, it needs the page's user activation, as playShow found out.
-      if (e.name !== 'NotAllowedError' || v.muted || scrub !== s) { dbg(`rub: play refused — ${describeError(e)}`); return }
-      v.muted = true
-      v.play().catch(e2 => dbg(`rub: play refused — ${describeError(e2)}`))
-    })
-  }
-
-  // The finger lifts: a rub under way leaves the cover on its exact frame,
-  // which keepResume then keeps.
-  /** @param {Scrub} s */
-  function endRub(s) {
-    const r = /** @type {Rub} */ (s.rub)
-    clearTimeout(r.still)
-    s.video.removeEventListener('seeked', r.onSeeked)
-    if (r.active) s.video.currentTime = r.target
-    s.rub = null
+    s.rub.move(x)
   }
 
   // Called with a scrub under way.
@@ -3436,7 +3452,7 @@
     clearTimeout(s.holdTimer)
     if (!s.on) { nextGif(); return }
     if (s.tick) endSlideshow(s)
-    if (s.rub) endRub(s)
+    if (s.rub) { s.rub.end(); s.rub = null }   // mid-rub, the cover and keepResume get the exact target
     if (s.onPlayTime) { keepResume(s); endPlayShow(s); lingerChips(s.card) }
     else removeChips(s.card)   // a slideshow or a drag: no chips (one a fallback left)
     if (s.stats) logSlideStats(s)
@@ -6817,9 +6833,10 @@
     stage.addEventListener('pointercancel', end)
   }
 
-  // On the modal video: hold for 2x while the finger stays down; double tap on
-  // the right or left third to jump seekStep seconds (5, or what ⚙ picked)
-  // forward or back. The control strip is
+  // On the modal video: hold for 2x while the finger stays down, and then
+  // slide sideways to move the video (holdRub: a rub, see makeRub); double
+  // tap on the right or left third to jump seekStep seconds (5, or what ⚙
+  // picked) forward or back. The control strip is
   // left to the player. Turned, "left/right" follow the viewer, not the screen.
   const HOLD_FAST_MS = 400
   const HOLD_RATE = 2
@@ -6834,9 +6851,39 @@
     if (!sticky) badgeTimer = setTimeout(() => { modal.badge.hidden = true }, 700)
   }
 
+  // The player's rub: a hold's 2× gives way to it, the time shows in the
+  // badge with the seek bar up, and a resting finger plays on only when the
+  // video was playing.
+  /**
+   * @param {HTMLVideoElement} video
+   * @param {{ x: number, rate: number }} press
+   * @param {HTMLElement} layer
+   * @returns {Rub}
+   */
+  function playerRub(video, press, layer) {
+    let playing = false
+    const box = modal.box
+    return makeRub(video, press.x, () => layer.getBoundingClientRect().width, {
+      alive: () => !!modal && modal.open && modal.box === box,
+      begin: () => {
+        playing = !video.paused
+        video.playbackRate = press.rate
+        dbg('modal: rub, the hold slides the video')
+      },
+      paint: at => {
+        showBadge(`${mmss(at)} / ${mmss(video.duration)}`, true)
+        modal.controls.poke()
+      },
+      rest: () => {
+        showBadge(mmss(video.currentTime))
+        if (playing) video.play().catch(e => dbg(`modal: rub, play refused — ${describeError(e)}`))
+      },
+    })
+  }
+
   /** @param {HTMLElement} layer @param {HTMLVideoElement} video */
   function installVideoGestures(layer, video) {
-    /** @type {{ id: number, x: number, y: number, t: number, fx: number, rate: number, timer: number } | null} */
+    /** @type {{ id: number, x: number, y: number, t: number, fx: number, rate: number, timer: number, rub?: Rub } | null} */
     let press = null
     /** @type {{ t: number, side: number, timer: number } | null} */
     let tap = null   // a first tap waiting to see whether a second one follows
@@ -6848,6 +6895,10 @@
     const release = () => {
       if (!press) return
       clearTimeout(press.timer)
+      if (press.rub) {
+        press.rub.end()
+        if (press.rub.count()) info(`modal: rubbed ${press.rub.count()}×, left at ${mmss(video.currentTime)}`)
+      }
       if (videoPress.held) {
         video.playbackRate = press.rate
         modal.badge.hidden = true
@@ -6868,7 +6919,13 @@
       dbg(`modal: video press at ${Math.round(fx * 100)}%`)
       press.timer = setTimeout(() => {
         if (!press) return
-        if (video.paused) { dbg('modal: hold ignored, video is paused'); return }
+        // From here a slide moves the video. A paused one stays paused, at 1×.
+        if (CFG.holdRub) press.rub = playerRub(video, press, layer)
+        if (video.paused) {
+          if (CFG.holdRub) videoPress.held = true
+          dbg(`modal: hold on a paused video${CFG.holdRub ? ': a slide moves it' : ', ignored'}`)
+          return
+        }
         videoPress.held = true
         video.playbackRate = HOLD_RATE
         showBadge(`${HOLD_RATE}×`, true)
@@ -6876,7 +6933,8 @@
       }, HOLD_FAST_MS)
     })
     layer.addEventListener('pointermove', ev => {
-      if (!press || videoPress.held || ev.pointerId !== press.id) return
+      if (!press || ev.pointerId !== press.id) return
+      if (videoPress.held) { press.rub?.move(ev.clientX); return }
       if (Math.hypot(ev.clientX - press.x, ev.clientY - press.y) > 10) {   // a swipe, handled on the stage
         clearTimeout(press.timer)
         press = null
@@ -8448,12 +8506,12 @@
   function scrubModeControls(body) {
     body.appendChild(choiceSelect('scrubMode', t('tScrubMode'),
       [['drag', t('modeDrag')], ['hold', t('modeHold')]], rebuildPanel))
+    body.appendChild(toggle('holdRub', t('tHoldRub')))   // also the post's player, whatever the mode
     if (CFG.scrubMode !== 'hold') return
     // The slideshow's own settings only matter without holdVideo.
     body.appendChild(toggle('holdVideo', t('tHoldVideo'), null, rebuildPanel))
     body.appendChild(toggle('previewSound', t('tPreviewSound')))
     body.appendChild(toggle('holdResume', t('tHoldResume')))
-    body.appendChild(toggle('holdRub', t('tHoldRub')))
     if (CFG.holdVideo) return
     /** @param {number} n */
     const num = n => n.toLocaleString(LANG)

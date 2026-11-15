@@ -2,14 +2,17 @@
 
 ## 1.19.0
 
-- Slide the finger during a hold to move the video (`holdRub`, on by
-  default): while the hold plays it (`holdVideo`, or a short clip at 2×),
-  sliding right moves it forward and left moves it back, from wherever it
-  is: only how far the finger slides counts, not where it sits. The
-  thumbnail's width spans the whole video, at most 2 minutes. The video
-  waits on the frame while the finger moves (the nearest keyframe first,
-  quick, then the exact frame) and plays on once the finger rests. Lifting
-  keeps that spot for the next hold (`holdResume`)
+- Hold, then slide the finger to move the video (`holdRub`, on by
+  default), on a thumbnail whose hold plays it (`holdVideo`, or a short
+  clip at 2×) and in the post's player: sliding right moves it forward and
+  left moves it back, from wherever it is; only how far the finger slides
+  counts, not where it sits. The width under the finger spans the whole
+  video, at most 2 minutes. The video waits on the frame while the finger
+  moves (the nearest keyframe first, quick, then the exact frame) and plays
+  on once the finger rests. On a thumbnail, lifting keeps that spot for the
+  next hold (`holdResume`). In the player the hold's 2× gives way to the
+  slide, a paused video can be slid too (and stays paused), and a quick
+  swipe without the hold still changes the post
 
 ## 1.18.0
 
