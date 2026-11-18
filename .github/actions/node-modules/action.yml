@@ -1,0 +1,24 @@
+# Node 24 and the project's node_modules, which the cache keeps between runs
+# under a key of package-lock.json: npm ci runs only when the dependencies
+# change (it took 18-24 s in every job). Used by every job of the Build and
+# Tests workflows, after actions/checkout.
+name: Node and node_modules
+description: Node 24 and node_modules, from the cache while package-lock.json is the same
+runs:
+  using: composite
+  steps:
+    - uses: actions/setup-node@v7
+      with:
+        node-version: 24   # runs tools/*.mts as they are (type stripping)
+    - name: node_modules, from the cache
+      id: modules
+      uses: actions/cache@v6
+      with:
+        path: node_modules
+        key: node-modules-${{ runner.os }}-node24-${{ hashFiles('package-lock.json') }}
+    # Only on a miss: a node_modules from an older lock would be wrong, so
+    # there is no fallback key.
+    - name: npm ci
+      if: steps.modules.outputs.cache-hit != 'true'
+      shell: bash
+      run: npm ci

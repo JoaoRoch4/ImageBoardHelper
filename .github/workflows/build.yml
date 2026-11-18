@@ -19,11 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24   # runs tools/build.mts as it is (type stripping)
-          cache: npm
-      - run: npm ci
+      - uses: ./.github/actions/node-modules
       - name: Build
         run: npm run -s build
       - name: The committed userscript is what src/ builds

@@ -18,11 +18,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
-        with:
-          node-version: 24   # runs tools/*.mts as they are (type stripping)
-          cache: npm
-      - run: npm ci
+      - uses: ./.github/actions/node-modules
       # The build erases the types and joins src/ into the userscript, with
       # its own checks (the code unchanged, one scope for all the modules,
       # no value read before its module loads), and the committed file must
@@ -55,11 +51,23 @@ jobs:
         test: [smoke, 'test:gif', 'test:fav', 'test:url']
     steps:
       - uses: actions/checkout@v7
-      - uses: actions/setup-node@v7
+      - uses: ./.github/actions/node-modules
+      # Playwright's Firefox kept by the cache under the Playwright version
+      # it belongs to (its download took 14-19 s in every job). The system
+      # libraries it needs are installed in every run: a runner starts clean.
+      - name: Playwright's version
+        id: playwright
+        run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+      - name: Playwright's Firefox, from the cache
+        id: firefox
+        uses: actions/cache@v6
         with:
-          node-version: 24
-          cache: npm
-      - run: npm ci
+          path: ~/.cache/ms-playwright
+          key: playwright-firefox-${{ runner.os }}-${{ steps.playwright.outputs.version }}
       - name: Playwright's Firefox
+        if: steps.firefox.outputs.cache-hit != 'true'
         run: npx playwright install --with-deps firefox
+      - name: Firefox's system libraries
+        if: steps.firefox.outputs.cache-hit == 'true'
+        run: npx playwright install-deps firefox
       - run: npm run -s ${{ matrix.test }}
