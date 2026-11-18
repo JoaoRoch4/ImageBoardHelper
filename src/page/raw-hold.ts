@@ -1,4 +1,3 @@
-import { ACCENT_MID } from '../core/site'
 import { CFG } from '../core/config'
 import { t } from '../core/i18n'
 import { dbg, info } from '../core/log'
@@ -133,7 +132,7 @@ function loadRaw(img: HTMLImageElement, link: HTMLAnchorElement) {
   }
   img.dataset.ibhRaw = 'loading'
   img.dataset.ibhPreRaw = img.getAttribute('srcset') || ''   // what comes back on a second hold
-  bulkBadge(link, 'RAW…', 'rgba(15, 20, 23, .85)', 'ibh-rawbadge')
+  bulkBadge(link, 'RAW…', 'rgba(var(--ibh-base-rgb), .85)', 'ibh-rawbadge')
   if (navigator.vibrate) navigator.vibrate(15)
   // src: thumbParts found the parts in it.
   rawLoads.set(img, raceImage([fileCandidates(src as string, ORIGINAL_EXTS)], cached, probe => {
@@ -153,7 +152,7 @@ function loadRaw(img: HTMLImageElement, link: HTMLAnchorElement) {
       }
       pic.set(probe.src)
       img.dataset.ibhRaw = '1'
-      bulkBadge(link, 'RAW', ACCENT_MID, 'ibh-rawbadge')
+      bulkBadge(link, 'RAW', 'var(--ibh-accent-mid)', 'ibh-rawbadge')
       info(`raw: post ${postId(link)} shows its original (${probe.src.split('/').pop()})`)
     })
   }, () => {

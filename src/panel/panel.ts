@@ -1,7 +1,7 @@
 import type { Config } from '../core/config'
 import type { Lang } from '../core/i18n'
 import type { LogEntry } from '../core/log'
-import { ACCENT, SITE, VERSION } from '../core/site'
+import { SITE, VERSION } from '../core/site'
 import { CFG } from '../core/config'
 import { LANG, resolveLang, setLang, t } from '../core/i18n'
 import { LOG, LOG_MAX, dbg, describeError, error, info, logLine, setOnLogEntry } from '../core/log'
@@ -51,7 +51,7 @@ const PANEL_CSS = `
     .fab {
       position: fixed; left: 12px; bottom: 12px; z-index: 2147483000;
       width: 40px; height: 40px; border-radius: 50%;
-      border: 1px solid #2a3a3f; background: #0f1417; color: ${ACCENT};
+      border: 1px solid var(--ibh-edge); background: var(--ibh-base); color: var(--ibh-accent);
       font-size: 17px; line-height: 1; display: grid; place-items: center;
       box-shadow: 0 4px 14px rgba(0,0,0,.5);
     }
@@ -64,12 +64,12 @@ const PANEL_CSS = `
     .feednav .row { display: flex; gap: 8px; }
     .feednav button {
       width: 44px; height: 44px; border-radius: 50%;
-      border: 1px solid #2a3a3f; background: rgba(15, 20, 23, .8); color: ${ACCENT};
+      border: 1px solid var(--ibh-edge); background: rgba(var(--ibh-base-rgb), .8); color: var(--ibh-accent);
       font-size: 26px; line-height: 1; display: grid; place-items: center;
       padding: 0 0 3px; box-shadow: 0 4px 14px rgba(0,0,0,.5);
     }
-    .feednav button:active { background: #16211f; }
-    .feednav button.on { background: ${ACCENT}; color: #0f1417; border-color: ${ACCENT}; }
+    .feednav button:active { background: var(--ibh-tint); }
+    .feednav button.on { background: var(--ibh-accent); color: var(--ibh-base); border-color: var(--ibh-accent); }
     .feednav button.trash { display: grid; place-items: center; padding: 0; }
     .feednav button.trash svg { width: 20px; height: 20px; fill: currentColor; }
     /* Top right, against the top edge (lower, they covered the site's
@@ -77,20 +77,20 @@ const PANEL_CSS = `
     .laterfab {
       position: fixed; top: 6px; right: 12px; z-index: 2147483000;
       width: 44px; height: 44px; border-radius: 50%; padding: 0; display: grid; place-items: center;
-      border: 1px solid #2a3a3f; background: rgba(15, 20, 23, .8); color: ${ACCENT};
+      border: 1px solid var(--ibh-edge); background: rgba(var(--ibh-base-rgb), .8); color: var(--ibh-accent);
       box-shadow: 0 4px 14px rgba(0,0,0,.5);
     }
-    .laterfab:active { background: #16211f; }
+    .laterfab:active { background: var(--ibh-tint); }
     .laterfab svg { width: 22px; height: 22px; fill: currentColor; }
     .laterfab.bulkfab { right: 64px; }
     .laterfab.favsfab { right: 116px; }
     .feednav.pagenav { top: 6px; bottom: auto; right: auto; left: 12px; }
-    .laterfab.on { background: ${ACCENT}; color: #0f1417; border-color: ${ACCENT}; }
+    .laterfab.on { background: var(--ibh-accent); color: var(--ibh-base); border-color: var(--ibh-accent); }
     /* 👁: bottom left, beside ◐; in its place when the panel is off. */
     .eyefab {
       position: fixed; left: 60px; bottom: 12px; z-index: 2147483000;
       width: 40px; height: 40px; border-radius: 50%; padding: 0; display: grid; place-items: center;
-      border: 1px solid #2a3a3f; background: rgba(15, 20, 23, .8); color: ${ACCENT};
+      border: 1px solid var(--ibh-edge); background: rgba(var(--ibh-base-rgb), .8); color: var(--ibh-accent);
       box-shadow: 0 4px 14px rgba(0,0,0,.5);
     }
     .eyefab.solo { left: 12px; }
@@ -100,7 +100,7 @@ const PANEL_CSS = `
     :host(.ibh-clean) .eyefab { opacity: .4; box-shadow: none; }
     .pagetoast {
       position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); z-index: 2147483000; max-width: 86vw;
-      padding: 8px 14px; border-radius: 18px; background: rgba(15, 20, 23, .92); color: #d7dee0;
+      padding: 8px 14px; border-radius: 18px; background: rgba(var(--ibh-base-rgb), .92); color: var(--ibh-text2);
       font-size: 13px; text-align: center; pointer-events: none; transition: opacity .2s;
     }
     .panel:not([hidden]) ~ .laterfab, .panel:not([hidden]) ~ .bulkfab, .panel:not([hidden]) ~ .favsfab, .panel:not([hidden]) ~ .pagenav { display: none; }
@@ -110,8 +110,8 @@ const PANEL_CSS = `
       position: fixed; left: 12px; bottom: 60px; z-index: 2147483000;
       width: min(360px, calc(100vw - 24px)); max-height: 70vh;
       display: flex; flex-direction: column;
-      background: #0f1417; color: #d7dee0;
-      border: 1px solid #2a3a3f; border-radius: 10px;
+      background: var(--ibh-base); color: var(--ibh-text2);
+      border: 1px solid var(--ibh-edge); border-radius: 10px;
       box-shadow: 0 10px 30px rgba(0,0,0,.6);
       font-size: 13px;
     }
@@ -122,20 +122,20 @@ const PANEL_CSS = `
 
     header {
       display: flex; align-items: center; gap: 8px;
-      padding: 10px 12px; border-bottom: 1px solid #1c272b;
+      padding: 10px 12px; border-bottom: 1px solid var(--ibh-edge-soft);
     }
-    header b { font-weight: 600; font-size: 13px; color: #e8f0f1; }
-    header span { color: #62777d; font-size: 11px; }
+    header b { font-weight: 600; font-size: 13px; color: var(--ibh-text); }
+    header span { color: var(--ibh-dim); font-size: 11px; }
     header button {
       margin-left: auto; background: none; border: 0;
-      color: #62777d; font-size: 18px; line-height: 1; padding: 0 4px;
+      color: var(--ibh-dim); font-size: 18px; line-height: 1; padding: 0 4px;
     }
 
     .body { overflow-y: auto; padding: 4px 0; }
 
     .row { display: flex; align-items: baseline; gap: 8px; padding: 5px 12px; }
-    .row .k { color: #7c9297; min-width: 104px; flex-shrink: 0; }
-    .row .v { color: #d7dee0; word-break: break-all; }
+    .row .k { color: var(--ibh-dim); min-width: 104px; flex-shrink: 0; }
+    .row .v { color: var(--ibh-text2); word-break: break-all; }
     .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; align-self: center; }
     /* Scoped to .dot: log lines reuse the level names as classes. */
     .dot.ok   { background: #4ade80; }
@@ -144,43 +144,43 @@ const PANEL_CSS = `
     .dot.idle { background: #475569; }
 
     .sec {
-      padding: 8px 12px 4px; color: #4e6469; font-size: 11px;
-      border-top: 1px solid #1c272b; margin-top: 4px;
+      padding: 8px 12px 4px; color: var(--ibh-faint); font-size: 11px;
+      border-top: 1px solid var(--ibh-edge-soft); margin-top: 4px;
     }
 
     label.tog { display: flex; align-items: center; gap: 10px; padding: 7px 12px; }
-    label.tog input { accent-color: ${ACCENT}; width: 16px; height: 16px; }
-    label.tog .note { margin-left: auto; color: #4e6469; font-size: 10px; }
+    label.tog input { accent-color: var(--ibh-accent); width: 16px; height: 16px; }
+    label.tog .note { margin-left: auto; color: var(--ibh-faint); font-size: 10px; }
 
     .apiwarn { margin: 4px 12px 6px; padding: 7px 9px; border-radius: 6px; font-size: 11px; line-height: 1.4;
       color: #f5d38a; background: rgba(245, 180, 60, .12); border: 1px solid rgba(245, 180, 60, .35); }
     .lang { padding: 4px 12px 8px; }
-    .lang .lbl { color: #4e6469; font-size: 11px; padding-bottom: 4px; }
+    .lang .lbl { color: var(--ibh-faint); font-size: 11px; padding-bottom: 4px; }
     .lang .appstatus { padding: 4px 0 0; }
     .lang select, .lang input.apptoken {
       width: 100%; box-sizing: border-box; padding: 7px 8px; font-size: 12px;
-      background: #0a0e10; color: #d7dee0;
-      border: 1px solid #234a45; border-radius: 6px;
+      background: var(--ibh-deep); color: var(--ibh-text2);
+      border: 1px solid var(--ibh-accent-edge); border-radius: 6px;
     }
 
     .acts { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px 12px; }
     .acts button {
       flex: 1 1 auto; padding: 7px 10px;
-      background: #16211f; color: ${ACCENT};
-      border: 1px solid #234a45; border-radius: 6px; font-size: 12px;
+      background: var(--ibh-tint); color: var(--ibh-accent);
+      border: 1px solid var(--ibh-accent-edge); border-radius: 6px; font-size: 12px;
     }
 
     .log {
       margin: 0 12px 12px; padding: 8px; max-height: 190px; overflow-y: auto;
-      background: #0a0e10; border: 1px solid #1c272b; border-radius: 6px;
+      background: var(--ibh-deep); border: 1px solid var(--ibh-edge-soft); border-radius: 6px;
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       font-size: 11px; line-height: 1.5;
     }
     .log div { display: flex; gap: 6px; }
     .log .ts { color: #3c4d51; flex-shrink: 0; }
     .log .ts + span { min-width: 0; overflow-wrap: anywhere; }   /* long URLs wrap */
-    .log .debug { color: #6b8085; }
-    .log .info  { color: #a8b8bb; }
+    .log .debug { color: var(--ibh-dim); }
+    .log .info  { color: var(--ibh-dim2); }
     .log .warn  { color: #fbbf24; }
     .log .error { color: #f87171; }
   `
@@ -367,7 +367,8 @@ function buildPanel() {
   body.appendChild(toggle('siteSearch', t('tSiteSearch'), null, ensureSiteSearch))
   body.appendChild(toggle('searchSuggest', t('tSuggest')))
   body.appendChild(toggle('videoModal', t('tModal'), t('noteReload')))
-  body.appendChild(toggle('siteTheme', t('tTheme'), null, applySiteTheme))
+  body.appendChild(choiceSelect('theme', t('tTheme'), [['normal', t('themeNormal')], ['gelbooru', t('themeGelbooru')], ['oled', t('themeOled')],
+    ['gray', t('themeGray')], ['qtmp', t('themeQtmp')], ['site', t('themeSite')]], applySiteTheme))
   body.appendChild(toggle('blockAds', t('tAds'), t('noteReload')))
   body.appendChild(toggle('rotateLandscape', t('tRotate')))
   body.appendChild(toggle('modalPreload', t('tPreload')))

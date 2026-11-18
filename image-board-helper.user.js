@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      2.0.1
+// @version      2.1.0
 // @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @icon         https://raw.githubusercontent.com/JoaoRoch4/ImageBoardHelper/105fa38fc20327b5a6b067538c0cc880d2cdf196/src/logo.png
@@ -74,7 +74,7 @@
   "use strict";
 
   // src/core/site.ts
-  const VERSION = '2.0.1'
+  const VERSION = '2.1.0'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // The site's thumbnail list. Gelbooru 0.2 sites (rule34, safebooru, xbooru)
@@ -86,25 +86,23 @@
   // paginator's a[alt="next"], the file layout. scriptHosts: other hosts the
   // site's own scripts come from, which blockAds lets through (gelbooru's
   // jQuery); adSlots: the site's own ad boxes, hidden with the shared ones;
-  // colors: the theme's accent (links, buttons), its lines, and two darker
-  // tones (a selected item's background, the text selection). suggest: where
+  // theme: the site's own look among the themes (page/theme.ts), the default
+  // one and what the panel and the post viewer wear under "Site's own". suggest: where
   // the site's own search box gets its tag suggestions, the typed word
   // appended (JSON: [{label: "tag (count)", value, type}], or gelbooru's
   // [{value, post_count, category}]).
-  const TEAL = { accent: '#5eead4', line: '#39ff14', dark: '#1d3b38', mid: '#2f7d72' }
   const SITE_PROFILES = {
     'gelbooru.com': {
       list: '.thumbnail-container', card: 'article.thumbnail-preview', item: 'article', scriptHosts: ['https://ajax.googleapis.com'],
       // Clickadu's 300x250 spots (in fixed-size wrappers), the footer one, ExoClick's video slider.
       adSlots: ['center:has([id^="__clb-spot_"])', 'div:has(> [id^="__clb-spot_"])', '[id^="__clb-spot_"]', '.footerAd2', '.exo_wrapper', '[id$="-msg-video-slider-content"]'],
-      colors: { accent: '#5aa9ff', line: '#2f8cff', dark: '#1b3552', mid: '#2f5f9e' },   // the site's own blue
+      theme: 'gelbooru',   // the site's own blue
       suggest: '/index.php?page=autocomplete2&type=tag_query&limit=10&term=',
     },
     'safebooru.org': { suggest: '/autocomplete.php?q=' },
   }
-  const PROFILE = { list: '.image-list', card: 'span.thumb', item: 'span', scriptHosts: [], adSlots: [], colors: TEAL,
+  const PROFILE = { list: '.image-list', card: 'span.thumb', item: 'span', scriptHosts: [], adSlots: [], theme: 'normal',
     suggest: '/public/autocomplete.php?q=', ...SITE_PROFILES[SITE] }   // suggest: rule34's and xbooru's
-  const { accent: ACCENT, line: LINE, dark: ACCENT_DARK, mid: ACCENT_MID } = PROFILE.colors
   const LIST = PROFILE.list                 // the list of thumbnails
   const CARD = PROFILE.card                 // one thumbnail's wrapper, a child of the list
   const THUMB = `${LIST} ${CARD}`           // a card inside the list
@@ -167,7 +165,7 @@
     playerButton:   true,   // ▶ Media Player, ⬇ App and ⚡ 1080p in a video post's ☰ menu: the video played, downloaded or converted by the user's QtMediaPlayer app
     copyLinkButton: true,   // 🔗 in the post's ☰ menu: copies the link to the post's own file (raw, not the sample)
     modalOriginal:  'zoom', // images in the modal: 'zoom' shows the sample and fetches the original on zoom; 'always'
-    siteTheme:      true,   // the modal's dark theme on the site's pages
+    theme:          PROFILE.theme, // the site's pages, the panel and the post viewer: 'normal', 'gelbooru', 'oled', 'gray', 'qtmp' (the QtMediaPlayer app's) or 'site' (the site's own pages); the default is the site's: gelbooru on gelbooru.com
     blockAds:       true,   // only the site's own scripts and frames load: no ad networks, no popunders (needs reload)
     originalThumbs: false,  // the original where a thumbnail's box is wider than the sample (a desktop screen; needs reload)
     nativeFeed:     false,  // feed with sharp images on the site's own pages (applies at once)
@@ -175,8 +173,8 @@
     feedLayout:     'masonry', // 'masonry': whole images in columns; 'grid': even square tiles
   }
 
-  // The settings as stored: DEFAULTS' own shape, with the two keys whose
-  // default does not show every value they take.
+  // The settings as stored: DEFAULTS' own shape, with the keys whose default
+  // does not show every value they take.
 
   // Options that only take effect when the page loads.
   const NEEDS_RELOAD = new Set(['originalThumbs', 'memorySaver', 'feedNav', 'videoModal', 'videoScrub', 'blockAds', 'thumbBadges'])
@@ -185,7 +183,15 @@
   // site's localStorage (one did, on its reset) takes them along, and the
   // copy in Violentmonkey's storage brings them back (restoreCfg).
   const CFG_FOUND = (() => { try { return localStorage.getItem(CFG_KEY) !== null } catch (e) { return true } })()
-  const CFG = Object.assign({}, DEFAULTS, readJSON(CFG_KEY, {}))
+  const CFG = Object.assign({}, DEFAULTS, oldTheme(readJSON(CFG_KEY, {})))
+
+  // Until 2.1.0 the theme was on or off (siteTheme): off is the site's own look now.
+  function oldTheme(stored) {
+    if (!stored || typeof stored !== 'object') return {}
+    if (stored.siteTheme === false && stored.theme === undefined) stored.theme = 'site'
+    delete stored.siteTheme
+    return stored
+  }
 
   /**
    * Whatever was stored under the key, unchecked (any): the caller knows its shape.
@@ -273,7 +279,8 @@
       laterEmpty: 'Nothing saved yet. Use 🕒 in a post’s ☰ menu.', laterOnDevice: 'kept by Violentmonkey, on this device',
       laterOnSite: 'kept in this site’s data (IndexedDB)',
       tModal: 'Open posts in a player over the page',
-      tTheme: 'Dark theme on site pages',
+      tTheme: 'Theme: site pages, this panel and the post viewer', themeNormal: 'Normal (teal and neon)', themeGelbooru: 'Gelbooru (blue)',
+      themeOled: 'OLED black', themeGray: 'Grey', themeQtmp: 'QtMediaPlayer (the app)', themeSite: 'The site\'s own pages',
       tSeekReel: 'Seek bar preview from keyframes (WebAssembly)',
       tAds: 'Block ads (only the site\'s own scripts load)',
       mClose: 'Close', mOpen: 'Open the post', mPrev: 'Previous post', mNext: 'Next post',
@@ -357,7 +364,8 @@
       laterEmpty: 'Nada salvo ainda. Use o 🕒 no menu ☰ de um post.', laterOnDevice: 'guardado pelo Violentmonkey, neste aparelho',
       laterOnSite: 'guardado nos dados deste site (IndexedDB)',
       tModal: 'Abrir posts num player sobre a página',
-      tTheme: 'Tema escuro nas páginas do site',
+      tTheme: 'Tema: páginas do site, este painel e o post', themeNormal: 'Normal (verde-água e neon)', themeGelbooru: 'Gelbooru (azul)',
+      themeOled: 'Preto OLED', themeGray: 'Cinza', themeQtmp: 'QtMediaPlayer (o app)', themeSite: 'Original do site',
       tSeekReel: 'Prévia da barra de busca por keyframes (WebAssembly)',
       tAds: 'Bloquear anúncios (só os scripts do próprio site carregam)',
       mClose: 'Fechar', mOpen: 'Abrir o post', mPrev: 'Post anterior', mNext: 'Próximo post',
@@ -2754,61 +2762,142 @@
   }
 
   // src/page/theme.ts
-  // The modal's look on the site's own pages: dark slate background, light
-  // text, teal links and controls, tag kinds in the tags menu's colours. All
-  // of it hangs on html.ibh-theme, which applySiteTheme() sets with the
-  // option on.
-  // Backgrounds go transparent over the dark page (images, videos and icons
-  // keep theirs); the thumbnails' blue video frame is left alone.
+  // ── Themes ──
+  // One look for the site's pages, the panel and the post viewer, picked in
+  // the panel (theme). Every colour the script paints with is a CSS variable
+  // (--ibh-…) set on the page's root, and variables reach into the panel's
+  // and the viewer's shadow DOM too: a new theme repaints all of it at once.
+  // "site" leaves the site's pages as the site draws them; the panel and the
+  // viewer then wear the site's own theme (PROFILE.theme). Colours that mean
+  // something (the tag kinds, errors, warnings) stay the same in every theme.
+  const THEMES = ['normal', 'gelbooru', 'oled', 'gray', 'qtmp', 'site']
+
+  // The slate ground the script has always had; normal and gelbooru share it.
+  const SLATE = {
+    bg: '#182125', base: '#0f1417', baseRgb: '15, 20, 23', deep: '#0a0e10', surface: '#26363c', menu: '#1f2b30',
+    edge: '#2a3a3f', edgeSoft: '#1c272b', text: '#e6eef0', text2: '#d7dee0', dim: '#7f9aa0', dim2: '#a8b8bb', faint: '#4e6469',
+  }
+  // Teal accents and neon green lines.
+  const TEAL = {
+    tint: '#16211f', accentEdge: '#234a45', accent: '#5eead4', accentHover: '#99f6e4', line: '#39ff14',
+    accentDark: '#1d3b38', accentMid: '#2f7d72', glow: 'rgba(57, 255, 20, .35)',
+  }
+
+  const PALETTES = {
+    normal: { ...SLATE, ...TEAL },
+    // gelbooru.com's own blue on the same slate.
+    gelbooru: {
+      ...SLATE, tint: '#141f2c', accentEdge: '#23405f', accent: '#5aa9ff', accentHover: '#a9d0ff', line: '#2f8cff',
+      accentDark: '#1b3552', accentMid: '#2f5f9e', glow: 'rgba(47, 140, 255, .35)',
+    },
+    // Pure black grounds, which an OLED screen leaves dark; normal's accents.
+    oled: {
+      ...TEAL, bg: '#000000', base: '#000000', baseRgb: '0, 0, 0', deep: '#000000', surface: '#151515', menu: '#101010',
+      tint: '#0b1413', edge: '#262626', edgeSoft: '#161616', accentEdge: '#1f3d39',
+      text: '#e6eef0', text2: '#d7dee0', dim: '#8a9a9e', dim2: '#a8b8bb', faint: '#56676b',
+    },
+    // Neutral greys, no hue at all.
+    gray: {
+      bg: '#202020', base: '#161616', baseRgb: '22, 22, 22', deep: '#111111', surface: '#2e2e2e', menu: '#262626',
+      tint: '#1d1d1d', edge: '#3a3a3a', edgeSoft: '#262626', accentEdge: '#4a4a4a',
+      text: '#ececec', text2: '#d6d6d6', dim: '#8e8e8e', dim2: '#b4b4b4', faint: '#5c5c5c',
+      accent: '#d6d6d6', accentHover: '#ffffff', line: '#6e6e6e', accentDark: '#353535', accentMid: '#5a5a5a', glow: 'rgba(214, 214, 214, .3)',
+    },
+    // The QtMediaPlayer app's design system, Vulkanic Ashes (dark): grey ash
+    // surfaces, white text and actions, the Vulkan blue-violet only as a fill
+    // (a selection, an active control), never as text.
+    qtmp: {
+      bg: '#131313',          // ash-100, the ground
+      base: '#131313', baseRgb: '19, 19, 19', deep: '#131313',
+      surface: '#313131',     // ash-400, menus: the highest surface
+      menu: '#313131',
+      tint: '#1a1a1a',        // ash-200, dialogs and the rail
+      edge: '#3e3e3e',        // ash-500, hairline edges
+      edgeSoft: '#252525',    // ash-300
+      accentEdge: '#384589',  // vulkan-indigo
+      text: '#ffffff',        // secondaryColor
+      text2: '#d0d0d0',       // railLabelColor
+      dim: '#9a9a9a',         // secondaryTextColor
+      dim2: '#bbbbbb',        // dimTextColor
+      faint: '#888888',       // ash-800, progress and state
+      accent: '#ffffff',      // secondaryColor: text and the one action that goes ahead
+      accentHover: '#d6d6d6', // primaryPressedColor
+      line: '#3e3e3e',        // ash-500
+      accentDark: '#2d3b6a',  // vulkan-deep, activeColor: a selection under white text
+      accentMid: '#384589',   // vulkan-indigo
+      glow: 'rgba(56, 69, 137, .6)',
+    },
+  }
+
+  // The palette as the root's variables: accentHover is --ibh-accent-hover.
+  const variables = (palette) =>
+    Object.entries(palette).map(([key, value]) => `--ibh-${key.replace(/[A-Z]/g, c => `-${c.toLowerCase()}`)}: ${value};`).join(' ')
+
+  // The site's pages in the theme: backgrounds go transparent over the dark
+  // page (images, videos and icons keep theirs), light text, accent links and
+  // controls, the tag kinds in the tags menu's colours. All of it hangs on
+  // html.ibh-theme, which applySiteTheme() sets unless the theme is "site".
+  // The thumbnails' blue video frame is left alone.
   const THEME_CSS = `
-    html.ibh-theme, html.ibh-theme body { background: #182125 !important; color: #e6eef0 !important; }
+    html.ibh-theme, html.ibh-theme body { background: var(--ibh-bg) !important; color: var(--ibh-text) !important; }
     html.ibh-theme body *:not(img):not(video):not(canvas):not(iframe):not(svg):not(path):not([data-ibh-ui]) {
-      background-color: transparent !important; border-color: ${LINE} !important; }
-    html.ibh-theme body *:not(a):not(img):not(video):not(svg):not(path):not([data-ibh-ui]) { color: #e6eef0 !important; }
-    html.ibh-theme a, html.ibh-theme a:visited, html.ibh-theme summary { color: ${ACCENT} !important; }
-    html.ibh-theme a:hover { color: #99f6e4 !important; }
+      background-color: transparent !important; border-color: var(--ibh-line) !important; }
+    html.ibh-theme body *:not(a):not(img):not(video):not(svg):not(path):not([data-ibh-ui]) { color: var(--ibh-text) !important; }
+    html.ibh-theme a, html.ibh-theme a:visited, html.ibh-theme summary { color: var(--ibh-accent) !important; }
+    html.ibh-theme a:hover { color: var(--ibh-accent-hover) !important; }
     html.ibh-theme li[class*="tag-type-artist"] a { color: #f2ac08 !important; }
     html.ibh-theme li[class*="tag-type-character"] a { color: #3fb950 !important; }
     html.ibh-theme li[class*="tag-type-copyright"] a { color: #c678dd !important; }
     html.ibh-theme li[class*="tag-type-metadata"] a { color: #e5534b !important; }
-    /* Lines in neon green (${LINE}); controls stand on a lighter surface,
-       teal text for the ones that act. */
+    /* Lines in the theme's line colour; controls stand on a lighter surface,
+       accent text for the ones that act. */
     html.ibh-theme input, html.ibh-theme select, html.ibh-theme textarea, html.ibh-theme button {
-      background-color: #26363c !important; color: #e6eef0 !important;
-      border: 1px solid ${LINE} !important; border-radius: 8px !important; }
+      background-color: var(--ibh-surface) !important; color: var(--ibh-text) !important;
+      border: 1px solid var(--ibh-line) !important; border-radius: 8px !important; }
     html.ibh-theme input:focus, html.ibh-theme select:focus, html.ibh-theme textarea:focus {
-      border-color: ${LINE} !important; outline: none !important; box-shadow: 0 0 0 2px rgba(57, 255, 20, .35) !important; }
+      border-color: var(--ibh-line) !important; outline: none !important; box-shadow: 0 0 0 2px var(--ibh-glow) !important; }
     html.ibh-theme input[type="submit"], html.ibh-theme input[type="button"], html.ibh-theme button {
-      background-color: ${ACCENT_DARK} !important; color: ${ACCENT} !important; border-color: ${LINE} !important; font-weight: 600; }
-    html.ibh-theme ::placeholder { color: #7f9aa0 !important; }
+      background-color: var(--ibh-accent-dark) !important; color: var(--ibh-accent) !important; border-color: var(--ibh-line) !important; font-weight: 600; }
+    html.ibh-theme ::placeholder { color: var(--ibh-dim) !important; }
     html.ibh-theme #paginator a, html.ibh-theme #paginator b, html.ibh-theme .pagination a, html.ibh-theme .pagination b {
       display: inline-block; padding: 3px 9px; margin: 2px; border-radius: 8px;
-      background-color: #26363c !important; border: 1px solid ${LINE} !important; }
+      background-color: var(--ibh-surface) !important; border: 1px solid var(--ibh-line) !important; }
     html.ibh-theme #paginator b, html.ibh-theme .pagination b {
-      background-color: ${ACCENT} !important; color: #0f1417 !important; border-color: ${ACCENT} !important; }
+      background-color: var(--ibh-accent) !important; color: var(--ibh-base) !important; border-color: var(--ibh-accent) !important; }
     /* The sites' own suggestion lists (rule34's Awesomplete, gelbooru's jQuery UI) float over the page:
        they need a background back. :not(#ibh) adds an ID's weight, to outrank the broad rule above
        (two classes and eight :not()s); a class alone loses to it, !important or not. */
     html.ibh-theme .awesomplete > ul:not(#ibh), html.ibh-theme .awesomplete > ul:not(#ibh) *,
-    html.ibh-theme .ui-autocomplete:not(#ibh), html.ibh-theme .ui-autocomplete:not(#ibh) * { background-color: #26363c !important; }
+    html.ibh-theme .ui-autocomplete:not(#ibh), html.ibh-theme .ui-autocomplete:not(#ibh) * { background-color: var(--ibh-surface) !important; }
     html.ibh-theme .awesomplete > ul:not(#ibh) [aria-selected="true"],
-    html.ibh-theme .ui-autocomplete:not(#ibh) .ui-state-active { background-color: ${ACCENT_DARK} !important; }
+    html.ibh-theme .ui-autocomplete:not(#ibh) .ui-state-active { background-color: var(--ibh-accent-dark) !important; }
     /* The mobile layout's ☰ menus float over the page (position: absolute);
        made transparent above, an open one would lay its links over the posts. */
-    html.ibh-theme #navbar, html.ibh-theme #subnavbar { background-color: #26363c !important; box-shadow: 0 8px 18px rgba(0, 0, 0, .55); }
-    html.ibh-theme #navbar li, html.ibh-theme #subnavbar li { border-color: #2f4a4f !important; }
-    html.ibh-theme ::selection { background: ${ACCENT_MID}; }
-    html.ibh-theme hr { border: none !important; border-top: 1px solid ${LINE} !important; }
+    html.ibh-theme #navbar, html.ibh-theme #subnavbar { background-color: var(--ibh-surface) !important; box-shadow: 0 8px 18px rgba(0, 0, 0, .55); }
+    html.ibh-theme #navbar li, html.ibh-theme #subnavbar li { border-color: var(--ibh-edge) !important; }
+    html.ibh-theme ::selection { background: var(--ibh-accent-mid); }
+    html.ibh-theme hr { border: none !important; border-top: 1px solid var(--ibh-line) !important; }
   `
 
-  let themeOn = null
+  let applied = null
 
+  // The theme's variables on the page's root, and html.ibh-theme unless the
+  // site's own look was picked. Idempotent: the observer calls it on every
+  // change of the page, and the panel when the theme changes.
   function applySiteTheme() {
-    const on = !!CFG.siteTheme
-    if (on === themeOn && document.documentElement.classList.contains('ibh-theme') === on) return
-    themeOn = on
-    document.documentElement.classList.toggle('ibh-theme', on)
-    dbg(`site theme ${on ? 'on' : 'off'}`)
+    const name = THEMES.includes(CFG.theme) ? CFG.theme : PROFILE.theme
+    const root = document.documentElement
+    let style = document.getElementById('ibh-palette')
+    if (name === applied && style && style.isConnected && root.classList.contains('ibh-theme') === (name !== 'site')) return
+    if (!style) {
+      style = document.createElement('style')
+      style.id = 'ibh-palette'   // not data-ibh: injectPageCSS looks for that one
+    }
+    if (!style.isConnected) (document.head || root).appendChild(style)
+    style.textContent = `:root { ${variables(PALETTES[name === 'site' ? PROFILE.theme : name])} }`
+    root.classList.toggle('ibh-theme', name !== 'site')
+    if (name !== applied) info(`theme: ${name}${name === 'site' ? ` (the site's own pages; panel and viewer in ${PROFILE.theme})` : ''}`)
+    applied = name
   }
 
   // src/panel/panel.ts
@@ -2839,7 +2928,7 @@
     .fab {
       position: fixed; left: 12px; bottom: 12px; z-index: 2147483000;
       width: 40px; height: 40px; border-radius: 50%;
-      border: 1px solid #2a3a3f; background: #0f1417; color: ${ACCENT};
+      border: 1px solid var(--ibh-edge); background: var(--ibh-base); color: var(--ibh-accent);
       font-size: 17px; line-height: 1; display: grid; place-items: center;
       box-shadow: 0 4px 14px rgba(0,0,0,.5);
     }
@@ -2852,12 +2941,12 @@
     .feednav .row { display: flex; gap: 8px; }
     .feednav button {
       width: 44px; height: 44px; border-radius: 50%;
-      border: 1px solid #2a3a3f; background: rgba(15, 20, 23, .8); color: ${ACCENT};
+      border: 1px solid var(--ibh-edge); background: rgba(var(--ibh-base-rgb), .8); color: var(--ibh-accent);
       font-size: 26px; line-height: 1; display: grid; place-items: center;
       padding: 0 0 3px; box-shadow: 0 4px 14px rgba(0,0,0,.5);
     }
-    .feednav button:active { background: #16211f; }
-    .feednav button.on { background: ${ACCENT}; color: #0f1417; border-color: ${ACCENT}; }
+    .feednav button:active { background: var(--ibh-tint); }
+    .feednav button.on { background: var(--ibh-accent); color: var(--ibh-base); border-color: var(--ibh-accent); }
     .feednav button.trash { display: grid; place-items: center; padding: 0; }
     .feednav button.trash svg { width: 20px; height: 20px; fill: currentColor; }
     /* Top right, against the top edge (lower, they covered the site's
@@ -2865,20 +2954,20 @@
     .laterfab {
       position: fixed; top: 6px; right: 12px; z-index: 2147483000;
       width: 44px; height: 44px; border-radius: 50%; padding: 0; display: grid; place-items: center;
-      border: 1px solid #2a3a3f; background: rgba(15, 20, 23, .8); color: ${ACCENT};
+      border: 1px solid var(--ibh-edge); background: rgba(var(--ibh-base-rgb), .8); color: var(--ibh-accent);
       box-shadow: 0 4px 14px rgba(0,0,0,.5);
     }
-    .laterfab:active { background: #16211f; }
+    .laterfab:active { background: var(--ibh-tint); }
     .laterfab svg { width: 22px; height: 22px; fill: currentColor; }
     .laterfab.bulkfab { right: 64px; }
     .laterfab.favsfab { right: 116px; }
     .feednav.pagenav { top: 6px; bottom: auto; right: auto; left: 12px; }
-    .laterfab.on { background: ${ACCENT}; color: #0f1417; border-color: ${ACCENT}; }
+    .laterfab.on { background: var(--ibh-accent); color: var(--ibh-base); border-color: var(--ibh-accent); }
     /* 👁: bottom left, beside ◐; in its place when the panel is off. */
     .eyefab {
       position: fixed; left: 60px; bottom: 12px; z-index: 2147483000;
       width: 40px; height: 40px; border-radius: 50%; padding: 0; display: grid; place-items: center;
-      border: 1px solid #2a3a3f; background: rgba(15, 20, 23, .8); color: ${ACCENT};
+      border: 1px solid var(--ibh-edge); background: rgba(var(--ibh-base-rgb), .8); color: var(--ibh-accent);
       box-shadow: 0 4px 14px rgba(0,0,0,.5);
     }
     .eyefab.solo { left: 12px; }
@@ -2888,7 +2977,7 @@
     :host(.ibh-clean) .eyefab { opacity: .4; box-shadow: none; }
     .pagetoast {
       position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); z-index: 2147483000; max-width: 86vw;
-      padding: 8px 14px; border-radius: 18px; background: rgba(15, 20, 23, .92); color: #d7dee0;
+      padding: 8px 14px; border-radius: 18px; background: rgba(var(--ibh-base-rgb), .92); color: var(--ibh-text2);
       font-size: 13px; text-align: center; pointer-events: none; transition: opacity .2s;
     }
     .panel:not([hidden]) ~ .laterfab, .panel:not([hidden]) ~ .bulkfab, .panel:not([hidden]) ~ .favsfab, .panel:not([hidden]) ~ .pagenav { display: none; }
@@ -2898,8 +2987,8 @@
       position: fixed; left: 12px; bottom: 60px; z-index: 2147483000;
       width: min(360px, calc(100vw - 24px)); max-height: 70vh;
       display: flex; flex-direction: column;
-      background: #0f1417; color: #d7dee0;
-      border: 1px solid #2a3a3f; border-radius: 10px;
+      background: var(--ibh-base); color: var(--ibh-text2);
+      border: 1px solid var(--ibh-edge); border-radius: 10px;
       box-shadow: 0 10px 30px rgba(0,0,0,.6);
       font-size: 13px;
     }
@@ -2910,20 +2999,20 @@
 
     header {
       display: flex; align-items: center; gap: 8px;
-      padding: 10px 12px; border-bottom: 1px solid #1c272b;
+      padding: 10px 12px; border-bottom: 1px solid var(--ibh-edge-soft);
     }
-    header b { font-weight: 600; font-size: 13px; color: #e8f0f1; }
-    header span { color: #62777d; font-size: 11px; }
+    header b { font-weight: 600; font-size: 13px; color: var(--ibh-text); }
+    header span { color: var(--ibh-dim); font-size: 11px; }
     header button {
       margin-left: auto; background: none; border: 0;
-      color: #62777d; font-size: 18px; line-height: 1; padding: 0 4px;
+      color: var(--ibh-dim); font-size: 18px; line-height: 1; padding: 0 4px;
     }
 
     .body { overflow-y: auto; padding: 4px 0; }
 
     .row { display: flex; align-items: baseline; gap: 8px; padding: 5px 12px; }
-    .row .k { color: #7c9297; min-width: 104px; flex-shrink: 0; }
-    .row .v { color: #d7dee0; word-break: break-all; }
+    .row .k { color: var(--ibh-dim); min-width: 104px; flex-shrink: 0; }
+    .row .v { color: var(--ibh-text2); word-break: break-all; }
     .dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; align-self: center; }
     /* Scoped to .dot: log lines reuse the level names as classes. */
     .dot.ok   { background: #4ade80; }
@@ -2932,43 +3021,43 @@
     .dot.idle { background: #475569; }
 
     .sec {
-      padding: 8px 12px 4px; color: #4e6469; font-size: 11px;
-      border-top: 1px solid #1c272b; margin-top: 4px;
+      padding: 8px 12px 4px; color: var(--ibh-faint); font-size: 11px;
+      border-top: 1px solid var(--ibh-edge-soft); margin-top: 4px;
     }
 
     label.tog { display: flex; align-items: center; gap: 10px; padding: 7px 12px; }
-    label.tog input { accent-color: ${ACCENT}; width: 16px; height: 16px; }
-    label.tog .note { margin-left: auto; color: #4e6469; font-size: 10px; }
+    label.tog input { accent-color: var(--ibh-accent); width: 16px; height: 16px; }
+    label.tog .note { margin-left: auto; color: var(--ibh-faint); font-size: 10px; }
 
     .apiwarn { margin: 4px 12px 6px; padding: 7px 9px; border-radius: 6px; font-size: 11px; line-height: 1.4;
       color: #f5d38a; background: rgba(245, 180, 60, .12); border: 1px solid rgba(245, 180, 60, .35); }
     .lang { padding: 4px 12px 8px; }
-    .lang .lbl { color: #4e6469; font-size: 11px; padding-bottom: 4px; }
+    .lang .lbl { color: var(--ibh-faint); font-size: 11px; padding-bottom: 4px; }
     .lang .appstatus { padding: 4px 0 0; }
     .lang select, .lang input.apptoken {
       width: 100%; box-sizing: border-box; padding: 7px 8px; font-size: 12px;
-      background: #0a0e10; color: #d7dee0;
-      border: 1px solid #234a45; border-radius: 6px;
+      background: var(--ibh-deep); color: var(--ibh-text2);
+      border: 1px solid var(--ibh-accent-edge); border-radius: 6px;
     }
 
     .acts { display: flex; flex-wrap: wrap; gap: 6px; padding: 8px 12px 12px; }
     .acts button {
       flex: 1 1 auto; padding: 7px 10px;
-      background: #16211f; color: ${ACCENT};
-      border: 1px solid #234a45; border-radius: 6px; font-size: 12px;
+      background: var(--ibh-tint); color: var(--ibh-accent);
+      border: 1px solid var(--ibh-accent-edge); border-radius: 6px; font-size: 12px;
     }
 
     .log {
       margin: 0 12px 12px; padding: 8px; max-height: 190px; overflow-y: auto;
-      background: #0a0e10; border: 1px solid #1c272b; border-radius: 6px;
+      background: var(--ibh-deep); border: 1px solid var(--ibh-edge-soft); border-radius: 6px;
       font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
       font-size: 11px; line-height: 1.5;
     }
     .log div { display: flex; gap: 6px; }
     .log .ts { color: #3c4d51; flex-shrink: 0; }
     .log .ts + span { min-width: 0; overflow-wrap: anywhere; }   /* long URLs wrap */
-    .log .debug { color: #6b8085; }
-    .log .info  { color: #a8b8bb; }
+    .log .debug { color: var(--ibh-dim); }
+    .log .info  { color: var(--ibh-dim2); }
     .log .warn  { color: #fbbf24; }
     .log .error { color: #f87171; }
   `
@@ -3154,7 +3243,8 @@
     body.appendChild(toggle('siteSearch', t('tSiteSearch'), null, ensureSiteSearch))
     body.appendChild(toggle('searchSuggest', t('tSuggest')))
     body.appendChild(toggle('videoModal', t('tModal'), t('noteReload')))
-    body.appendChild(toggle('siteTheme', t('tTheme'), null, applySiteTheme))
+    body.appendChild(choiceSelect('theme', t('tTheme'), [['normal', t('themeNormal')], ['gelbooru', t('themeGelbooru')], ['oled', t('themeOled')],
+      ['gray', t('themeGray')], ['qtmp', t('themeQtmp')], ['site', t('themeSite')]], applySiteTheme))
     body.appendChild(toggle('blockAds', t('tAds'), t('noteReload')))
     body.appendChild(toggle('rotateLandscape', t('tRotate')))
     body.appendChild(toggle('modalPreload', t('tPreload')))
@@ -5834,19 +5924,19 @@
       position: absolute; left: 10px; right: 10px; bottom: 10px;
       display: flex; flex-direction: column; gap: 2px; padding: 4px 8px 4px 14px;
       border-radius: 20px; border: 1px solid rgba(255, 255, 255, .1);
-      background: rgba(12, 18, 21, .55); -webkit-backdrop-filter: blur(10px) saturate(1.2); backdrop-filter: blur(10px) saturate(1.2);
+      background: rgba(var(--ibh-base-rgb), .55); -webkit-backdrop-filter: blur(10px) saturate(1.2); backdrop-filter: blur(10px) saturate(1.2);
       box-shadow: 0 4px 18px rgba(0, 0, 0, .35); transition: opacity .25s, transform .25s;
     }
     .vctl.hide { opacity: 0; transform: translateY(16px); pointer-events: none; }
-    .vctl button { width: 34px; height: 34px; border: none; background: transparent; color: #e6eef0; padding: 0; flex: none; }
+    .vctl button { width: 34px; height: 34px; border: none; background: transparent; color: var(--ibh-text); padding: 0; flex: none; }
     .vctl button svg, .vbig svg { width: 24px; height: 24px; fill: currentColor; }
     .vrow { display: flex; align-items: center; gap: 6px; height: 34px; }
     .vgap { flex: 1; }
     .vctl .vfav.on { color: #e5534b; }
     /* ⚙'s menu, over the capsule's right end: the speed and the double tap's jump. */
     .vmenu { position: absolute; right: 10px; bottom: ${CONTROLS_BAND}px; display: grid; gap: 10px; padding: 10px 12px;
-      border-radius: 16px; border: 1px solid rgba(255, 255, 255, .1); background: rgba(12, 18, 21, .8);
-      -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); color: #e6eef0; font-size: 12px; }
+      border-radius: 16px; border: 1px solid rgba(255, 255, 255, .1); background: rgba(var(--ibh-base-rgb), .8);
+      -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); color: var(--ibh-text); font-size: 12px; }
     .vmenu { transition: opacity .2s, transform .2s, visibility 0s; }
     .vmenu[hidden] { display: grid !important; visibility: hidden; opacity: 0; transform: translateY(8px);
       transition: opacity .15s, transform .15s, visibility 0s .15s; }
@@ -5858,27 +5948,27 @@
     .vmrow .lbl { width: 100%; opacity: .75; }
     .vmrow button { min-width: 42px; height: 30px; padding: 0 8px; border-radius: 15px; border: 1px solid rgba(255, 255, 255, .18);
       background: transparent; color: inherit; font-size: 13px; }
-    .vmrow button.on { background: ${ACCENT}; color: #0f1417; border-color: ${ACCENT}; }
-    .vtime { color: #d7dee0; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .vmrow button.on { background: var(--ibh-accent); color: var(--ibh-base); border-color: var(--ibh-accent); }
+    .vtime { color: var(--ibh-text2); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
     /* Thin seek bar: played in the theme's teal (the range's own progress),
        downloaded in light grey (--buf, kept by the player), a thumb that
        grows while dragged; a tall input for the finger. */
     .vseek { flex: 1; min-width: 0; height: 24px; margin: 0; background: transparent; -moz-appearance: none; appearance: none; --buf: 0%; }
     .vseek::-moz-range-track { height: 4px; border-radius: 2px;
       background: linear-gradient(to right, rgba(255, 255, 255, .45) var(--buf), rgba(255, 255, 255, .16) var(--buf)); }
-    .vseek::-moz-range-progress { height: 4px; border-radius: 2px; background: ${ACCENT}; }
-    .vseek::-moz-range-thumb { width: 12px; height: 12px; border: none; border-radius: 50%; background: ${ACCENT}; transition: transform .15s; }
+    .vseek::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--ibh-accent); }
+    .vseek::-moz-range-thumb { width: 12px; height: 12px; border: none; border-radius: 50%; background: var(--ibh-accent); transition: transform .15s; }
     .vseek:active::-moz-range-thumb { transform: scale(1.6); }
     /* The big ▶ in the middle of a paused video. */
     .vbig {
       position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 64px; height: 64px;
-      border: 1px solid rgba(255, 255, 255, .14); background: rgba(12, 18, 21, .5); color: #fff;
+      border: 1px solid rgba(255, 255, 255, .14); background: rgba(var(--ibh-base-rgb), .5); color: #fff;
       -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); box-shadow: 0 4px 18px rgba(0, 0, 0, .35);
     }
     .vbig svg { width: 34px; height: 34px; margin-left: 4px; }
     .vprev {
       position: absolute; bottom: ${CONTROLS_BAND + 6}px; width: 160px; height: 90px;
-      border: 1px solid #2a3a3f; border-radius: 6px; overflow: hidden; background: #000; pointer-events: none;
+      border: 1px solid var(--ibh-edge); border-radius: 6px; overflow: hidden; background: #000; pointer-events: none;
     }
     /* seekReel: the nearest keyframe, over the preview video until it reaches the exact frame. */
     .vprev canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: opacity .15s; }
@@ -5901,29 +5991,29 @@
     [hidden] { display: none !important; }
     .bar { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 8px; padding: 10px; pointer-events: none; }
     .bar > * { pointer-events: auto; }
-    .count { margin-left: auto; color: #a8b8bb; font-size: 13px; text-shadow: 0 1px 3px #000; }
-    .dlq { padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, .12); background: rgba(12, 18, 21, .7);
-      color: #e6eef0; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    .status { position: absolute; left: 0; right: 0; top: 50%; text-align: center; color: #a8b8bb; font-size: 14px; pointer-events: none; }
+    .count { margin-left: auto; color: var(--ibh-dim2); font-size: 13px; text-shadow: 0 1px 3px #000; }
+    .dlq { padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, .12); background: rgba(var(--ibh-base-rgb), .7);
+      color: var(--ibh-text); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .status { position: absolute; left: 0; right: 0; top: 50%; text-align: center; color: var(--ibh-dim2); font-size: 14px; pointer-events: none; }
     button, a.btn {
       width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center;
-      border: 1px solid #2a3a3f; background: rgba(15, 20, 23, .85); color: ${ACCENT};
+      border: 1px solid var(--ibh-edge); background: rgba(var(--ibh-base-rgb), .85); color: var(--ibh-accent);
       font-size: 20px; line-height: 1; text-decoration: none; padding: 0;
     }
     .side { position: absolute; top: 50%; transform: translateY(-50%); font-size: 26px; padding-bottom: 3px; }
     .prev { left: 6px; } .next { right: 6px; }
-    button.on { background: ${ACCENT}; color: #0f1417; border-color: ${ACCENT}; }
+    button.on { background: var(--ibh-accent); color: var(--ibh-base); border-color: var(--ibh-accent); }
     button.up { width: auto; min-width: 42px; padding: 0 12px; border-radius: 21px; gap: 6px; display: flex; font-size: 16px; }
     .score { font-size: 13px; }
     ${LIKE_CSS}
     .badge {
       position: absolute; left: 50%; top: 64px; transform: translateX(-50%);
-      padding: 6px 14px; border-radius: 16px; background: rgba(15, 20, 23, .9); color: ${ACCENT};
+      padding: 6px 14px; border-radius: 16px; background: rgba(var(--ibh-base-rgb), .9); color: var(--ibh-accent);
       font-size: 15px; font-weight: 600; pointer-events: none;
     }
     .sheet {
       position: absolute; left: 0; right: 0; bottom: 0; max-height: 55%; overflow-y: auto; overscroll-behavior: contain;
-      background: rgba(10, 14, 16, .97); border-top: 1px solid #2a3a3f; border-radius: 14px 14px 0 0; padding: 10px 10px 18px;
+      background: rgba(var(--ibh-base-rgb), .97); border-top: 1px solid var(--ibh-edge); border-radius: 14px 14px 0 0; padding: 10px 10px 18px;
       transition: transform .25s ease-out, visibility 0s;
     }
     /* Closed, it waits below the screen (invisible, out of reach) instead of
@@ -5941,36 +6031,36 @@
     .taglist { display: flex; flex-wrap: wrap; gap: 6px; }
     button.tag {
       width: auto; height: auto; border-radius: 14px; padding: 6px 10px; font-size: 13px; line-height: 1.3;
-      display: inline-block; text-align: left; word-break: break-all; color: #d7dee0;
+      display: inline-block; text-align: left; word-break: break-all; color: var(--ibh-text2);
     }
     button.t-artist { color: #f2ac08; border-color: #6b4e0a; }
     button.t-character { color: #3fb950; border-color: #1f5a2a; }
     button.t-copyright { color: #c678dd; border-color: #5a3566; }
     button.t-metadata { color: #e5534b; border-color: #66282a; }
-    button.tag.copied { background: ${ACCENT}; color: #0f1417; border-color: ${ACCENT}; }
-    button.tag.held, button.pill.held { background: ${ACCENT_DARK}; border-color: ${ACCENT}; }
+    button.tag.copied { background: var(--ibh-accent); color: var(--ibh-base); border-color: var(--ibh-accent); }
+    button.tag.held, button.pill.held { background: var(--ibh-accent-dark); border-color: var(--ibh-accent); }
     button.tag { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
-    .sheet .none { color: #4e6469; font-size: 13px; }
+    .sheet .none { color: var(--ibh-faint); font-size: 13px; }
     button.quality { position: absolute; left: 12px; bottom: 16px; width: auto; height: 32px; padding: 0 12px;
       border-radius: 16px; font-size: 12px; font-weight: 700; letter-spacing: .5px; }
-    button.quality.raw { background: ${ACCENT_MID}; color: #fff; border-color: ${ACCENT_MID}; }
+    button.quality.raw { background: var(--ibh-accent-mid); color: #fff; border-color: var(--ibh-accent-mid); }
     .m.clean button.quality { opacity: 0; pointer-events: none; }
     .tabs { display: flex; gap: 6px; margin-bottom: 10px; }
     button.tab { width: auto; height: 32px; border-radius: 16px; padding: 0 16px; font-size: 13px; }
-    button.tab.on { background: ${ACCENT}; color: #0f1417; border-color: ${ACCENT}; }
-    .infolist { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 13px; color: #d7dee0; }
+    button.tab.on { background: var(--ibh-accent); color: var(--ibh-base); border-color: var(--ibh-accent); }
+    .infolist { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 13px; color: var(--ibh-text2); }
     .infolist[hidden], .commentlist[hidden] { display: none; }
-    .commentlist { display: flex; flex-direction: column; gap: 12px; font-size: 13px; color: #d7dee0; }
-    .commentlist .h { color: #7f9aa0; font-size: 12px; margin-bottom: 3px; }
-    .commentlist .h b, .commentlist .h a.who { color: ${ACCENT}; font-weight: 600; text-decoration: none; }
+    .commentlist { display: flex; flex-direction: column; gap: 12px; font-size: 13px; color: var(--ibh-text2); }
+    .commentlist .h { color: var(--ibh-dim); font-size: 12px; margin-bottom: 3px; }
+    .commentlist .h b, .commentlist .h a.who { color: var(--ibh-accent); font-weight: 600; text-decoration: none; }
     .commentlist button.cvote { width: auto; height: 24px; padding: 0 9px; border-radius: 12px; font-size: 12px;
       display: inline-flex; vertical-align: middle; margin-left: 4px; }
     .commentlist .b { white-space: pre-wrap; word-break: break-word; line-height: 1.4; }
-    .commentlist .none { color: #7f9aa0; }
-    .infolist .k { color: #7f9aa0; white-space: nowrap; }
+    .commentlist .none { color: var(--ibh-dim); }
+    .infolist .k { color: var(--ibh-dim); white-space: nowrap; }
     .infolist .v { word-break: break-word; }
     .infolist .v.warn { color: #f2ac08; }
-    .infolist a { color: ${ACCENT}; }
+    .infolist a { color: var(--ibh-accent); }
     .tagsbox[hidden] { display: none; }
     /* Watch later: a grid of the saved posts over the modal. */
     .laterview { display: none; position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain;
@@ -5978,19 +6068,19 @@
     .m.later-mode .laterview { display: block; }
     .m.later-mode .stage, .m.later-mode .bar, .m.later-mode .side, .m.later-mode .status, .m.later-mode .sheet { display: none; }
     .laterhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-    .laterhead .lt { color: #d7dee0; font-size: 16px; font-weight: 600; }
+    .laterhead .lt { color: var(--ibh-text2); font-size: 16px; font-weight: 600; }
     .latergrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 6px; }
-    .tile { position: relative; aspect-ratio: 1 / 1; border-radius: 8px; overflow: hidden; background: #0f1417; border: 1px solid #2a3a3f; }
+    .tile { position: relative; aspect-ratio: 1 / 1; border-radius: 8px; overflow: hidden; background: var(--ibh-base); border: 1px solid var(--ibh-edge); }
     .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .tile .play { position: absolute; left: 6px; bottom: 6px; font-size: 13px; color: #fff; background: rgba(0,0,0,.6);
       border-radius: 10px; padding: 1px 7px; pointer-events: none; }
     .tile button.rm { position: absolute; top: 4px; right: 4px; width: 28px; height: 28px; font-size: 14px; }
-    .laternote { color: #4e6469; font-size: 12px; margin-top: 14px; text-align: center; }
-    .laternote a { color: ${ACCENT}; }
-    .latergrid .none { grid-column: 1 / -1; color: #7f9aa0; font-size: 14px; text-align: center; padding: 30px 10px; }
+    .laternote { color: var(--ibh-faint); font-size: 12px; margin-top: 14px; text-align: center; }
+    .laternote a { color: var(--ibh-accent); }
+    .latergrid .none { grid-column: 1 / -1; color: var(--ibh-dim); font-size: 14px; text-align: center; padding: 30px 10px; }
     .toast {
       position: absolute; left: 50%; bottom: 84px; transform: translateX(-50%);
-      padding: 8px 14px; border-radius: 18px; background: rgba(15, 20, 23, .92); color: #d7dee0;
+      padding: 8px 14px; border-radius: 18px; background: rgba(var(--ibh-base-rgb), .92); color: var(--ibh-text2);
       font-size: 13px; pointer-events: none; transition: opacity .2s;
     }
   `
@@ -7871,7 +7961,7 @@
     // over them otherwise (it did on site pages, where every video has one).
     s.bar = document.createElement('div')
     s.bar.style.cssText =
-      `position:absolute;left:0;bottom:0;height:4px;width:0;background:${ACCENT};pointer-events:none;z-index:3`
+      `position:absolute;left:0;bottom:0;height:4px;width:0;background:var(--ibh-accent);pointer-events:none;z-index:3`
     s.label = document.createElement('div')
     s.label.style.cssText =
       'position:absolute;left:4px;bottom:8px;padding:1px 6px;border-radius:3px;font:12px/1.4 ' +
@@ -8668,7 +8758,7 @@
     }
     img.dataset.ibhRaw = 'loading'
     img.dataset.ibhPreRaw = img.getAttribute('srcset') || ''   // what comes back on a second hold
-    bulkBadge(link, 'RAW…', 'rgba(15, 20, 23, .85)', 'ibh-rawbadge')
+    bulkBadge(link, 'RAW…', 'rgba(var(--ibh-base-rgb), .85)', 'ibh-rawbadge')
     if (navigator.vibrate) navigator.vibrate(15)
     // src: thumbParts found the parts in it.
     rawLoads.set(img, raceImage([fileCandidates(src, ORIGINAL_EXTS)], cached, probe => {
@@ -8688,7 +8778,7 @@
         }
         pic.set(probe.src)
         img.dataset.ibhRaw = '1'
-        bulkBadge(link, 'RAW', ACCENT_MID, 'ibh-rawbadge')
+        bulkBadge(link, 'RAW', 'var(--ibh-accent-mid)', 'ibh-rawbadge')
         info(`raw: post ${postId(link)} shows its original (${probe.src.split('/').pop()})`)
       })
     }, () => {
@@ -8800,11 +8890,11 @@
     .ibh-search select { text-overflow: ellipsis; }
     .ibh-suggest { position: absolute; z-index: 30; margin: 0 !important; padding: 4px 0 !important; list-style: none;
       max-height: 50vh; overflow-y: auto; overscroll-behavior: contain; user-select: none; -webkit-touch-callout: none;
-      background: #1f2b30 !important; border: 1px solid ${LINE} !important;
+      background: var(--ibh-menu) !important; border: 1px solid var(--ibh-line) !important;
       border-radius: 8px; box-shadow: 0 8px 18px rgba(0, 0, 0, .5); }
     .ibh-suggest[hidden] { display: none; }
     .ibh-suggest li { display: flex !important; justify-content: space-between; gap: 12px; padding: 9px 12px !important;
-      font-size: 15px; color: #e6eef0 !important; background: transparent !important; }
+      font-size: 15px; color: var(--ibh-text) !important; background: transparent !important; }
     .ibh-suggest li small { opacity: .65; font-size: 12px; color: inherit !important; }
     .ibh-suggest li span { color: inherit !important; }
     .ibh-suggest li.k-artist { color: #f2ac08 !important; }

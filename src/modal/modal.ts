@@ -1,5 +1,5 @@
 import type { VideoControls } from './player'
-import { ACCENT, ACCENT_DARK, ACCENT_MID, SITE, THUMB } from '../core/site'
+import { SITE, THUMB } from '../core/site'
 import { CFG, readJSON, writeJSON } from '../core/config'
 import { t } from '../core/i18n'
 import { copyRawLink, modalDownload, rawFileUrl } from '../post/download'
@@ -129,19 +129,19 @@ const MODAL_CSS = `
       position: absolute; left: 10px; right: 10px; bottom: 10px;
       display: flex; flex-direction: column; gap: 2px; padding: 4px 8px 4px 14px;
       border-radius: 20px; border: 1px solid rgba(255, 255, 255, .1);
-      background: rgba(12, 18, 21, .55); -webkit-backdrop-filter: blur(10px) saturate(1.2); backdrop-filter: blur(10px) saturate(1.2);
+      background: rgba(var(--ibh-base-rgb), .55); -webkit-backdrop-filter: blur(10px) saturate(1.2); backdrop-filter: blur(10px) saturate(1.2);
       box-shadow: 0 4px 18px rgba(0, 0, 0, .35); transition: opacity .25s, transform .25s;
     }
     .vctl.hide { opacity: 0; transform: translateY(16px); pointer-events: none; }
-    .vctl button { width: 34px; height: 34px; border: none; background: transparent; color: #e6eef0; padding: 0; flex: none; }
+    .vctl button { width: 34px; height: 34px; border: none; background: transparent; color: var(--ibh-text); padding: 0; flex: none; }
     .vctl button svg, .vbig svg { width: 24px; height: 24px; fill: currentColor; }
     .vrow { display: flex; align-items: center; gap: 6px; height: 34px; }
     .vgap { flex: 1; }
     .vctl .vfav.on { color: #e5534b; }
     /* ⚙'s menu, over the capsule's right end: the speed and the double tap's jump. */
     .vmenu { position: absolute; right: 10px; bottom: ${CONTROLS_BAND}px; display: grid; gap: 10px; padding: 10px 12px;
-      border-radius: 16px; border: 1px solid rgba(255, 255, 255, .1); background: rgba(12, 18, 21, .8);
-      -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); color: #e6eef0; font-size: 12px; }
+      border-radius: 16px; border: 1px solid rgba(255, 255, 255, .1); background: rgba(var(--ibh-base-rgb), .8);
+      -webkit-backdrop-filter: blur(10px); backdrop-filter: blur(10px); color: var(--ibh-text); font-size: 12px; }
     .vmenu { transition: opacity .2s, transform .2s, visibility 0s; }
     .vmenu[hidden] { display: grid !important; visibility: hidden; opacity: 0; transform: translateY(8px);
       transition: opacity .15s, transform .15s, visibility 0s .15s; }
@@ -153,27 +153,27 @@ const MODAL_CSS = `
     .vmrow .lbl { width: 100%; opacity: .75; }
     .vmrow button { min-width: 42px; height: 30px; padding: 0 8px; border-radius: 15px; border: 1px solid rgba(255, 255, 255, .18);
       background: transparent; color: inherit; font-size: 13px; }
-    .vmrow button.on { background: ${ACCENT}; color: #0f1417; border-color: ${ACCENT}; }
-    .vtime { color: #d7dee0; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .vmrow button.on { background: var(--ibh-accent); color: var(--ibh-base); border-color: var(--ibh-accent); }
+    .vtime { color: var(--ibh-text2); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
     /* Thin seek bar: played in the theme's teal (the range's own progress),
        downloaded in light grey (--buf, kept by the player), a thumb that
        grows while dragged; a tall input for the finger. */
     .vseek { flex: 1; min-width: 0; height: 24px; margin: 0; background: transparent; -moz-appearance: none; appearance: none; --buf: 0%; }
     .vseek::-moz-range-track { height: 4px; border-radius: 2px;
       background: linear-gradient(to right, rgba(255, 255, 255, .45) var(--buf), rgba(255, 255, 255, .16) var(--buf)); }
-    .vseek::-moz-range-progress { height: 4px; border-radius: 2px; background: ${ACCENT}; }
-    .vseek::-moz-range-thumb { width: 12px; height: 12px; border: none; border-radius: 50%; background: ${ACCENT}; transition: transform .15s; }
+    .vseek::-moz-range-progress { height: 4px; border-radius: 2px; background: var(--ibh-accent); }
+    .vseek::-moz-range-thumb { width: 12px; height: 12px; border: none; border-radius: 50%; background: var(--ibh-accent); transition: transform .15s; }
     .vseek:active::-moz-range-thumb { transform: scale(1.6); }
     /* The big ▶ in the middle of a paused video. */
     .vbig {
       position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 64px; height: 64px;
-      border: 1px solid rgba(255, 255, 255, .14); background: rgba(12, 18, 21, .5); color: #fff;
+      border: 1px solid rgba(255, 255, 255, .14); background: rgba(var(--ibh-base-rgb), .5); color: #fff;
       -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); box-shadow: 0 4px 18px rgba(0, 0, 0, .35);
     }
     .vbig svg { width: 34px; height: 34px; margin-left: 4px; }
     .vprev {
       position: absolute; bottom: ${CONTROLS_BAND + 6}px; width: 160px; height: 90px;
-      border: 1px solid #2a3a3f; border-radius: 6px; overflow: hidden; background: #000; pointer-events: none;
+      border: 1px solid var(--ibh-edge); border-radius: 6px; overflow: hidden; background: #000; pointer-events: none;
     }
     /* seekReel: the nearest keyframe, over the preview video until it reaches the exact frame. */
     .vprev canvas { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; transition: opacity .15s; }
@@ -196,29 +196,29 @@ const MODAL_CSS = `
     [hidden] { display: none !important; }
     .bar { position: absolute; top: 0; left: 0; right: 0; display: flex; align-items: center; gap: 8px; padding: 10px; pointer-events: none; }
     .bar > * { pointer-events: auto; }
-    .count { margin-left: auto; color: #a8b8bb; font-size: 13px; text-shadow: 0 1px 3px #000; }
-    .dlq { padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, .12); background: rgba(12, 18, 21, .7);
-      color: #e6eef0; font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    .status { position: absolute; left: 0; right: 0; top: 50%; text-align: center; color: #a8b8bb; font-size: 14px; pointer-events: none; }
+    .count { margin-left: auto; color: var(--ibh-dim2); font-size: 13px; text-shadow: 0 1px 3px #000; }
+    .dlq { padding: 4px 10px; border-radius: 12px; border: 1px solid rgba(255, 255, 255, .12); background: rgba(var(--ibh-base-rgb), .7);
+      color: var(--ibh-text); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    .status { position: absolute; left: 0; right: 0; top: 50%; text-align: center; color: var(--ibh-dim2); font-size: 14px; pointer-events: none; }
     button, a.btn {
       width: 42px; height: 42px; border-radius: 50%; display: grid; place-items: center;
-      border: 1px solid #2a3a3f; background: rgba(15, 20, 23, .85); color: ${ACCENT};
+      border: 1px solid var(--ibh-edge); background: rgba(var(--ibh-base-rgb), .85); color: var(--ibh-accent);
       font-size: 20px; line-height: 1; text-decoration: none; padding: 0;
     }
     .side { position: absolute; top: 50%; transform: translateY(-50%); font-size: 26px; padding-bottom: 3px; }
     .prev { left: 6px; } .next { right: 6px; }
-    button.on { background: ${ACCENT}; color: #0f1417; border-color: ${ACCENT}; }
+    button.on { background: var(--ibh-accent); color: var(--ibh-base); border-color: var(--ibh-accent); }
     button.up { width: auto; min-width: 42px; padding: 0 12px; border-radius: 21px; gap: 6px; display: flex; font-size: 16px; }
     .score { font-size: 13px; }
     ${LIKE_CSS}
     .badge {
       position: absolute; left: 50%; top: 64px; transform: translateX(-50%);
-      padding: 6px 14px; border-radius: 16px; background: rgba(15, 20, 23, .9); color: ${ACCENT};
+      padding: 6px 14px; border-radius: 16px; background: rgba(var(--ibh-base-rgb), .9); color: var(--ibh-accent);
       font-size: 15px; font-weight: 600; pointer-events: none;
     }
     .sheet {
       position: absolute; left: 0; right: 0; bottom: 0; max-height: 55%; overflow-y: auto; overscroll-behavior: contain;
-      background: rgba(10, 14, 16, .97); border-top: 1px solid #2a3a3f; border-radius: 14px 14px 0 0; padding: 10px 10px 18px;
+      background: rgba(var(--ibh-base-rgb), .97); border-top: 1px solid var(--ibh-edge); border-radius: 14px 14px 0 0; padding: 10px 10px 18px;
       transition: transform .25s ease-out, visibility 0s;
     }
     /* Closed, it waits below the screen (invisible, out of reach) instead of
@@ -236,36 +236,36 @@ const MODAL_CSS = `
     .taglist { display: flex; flex-wrap: wrap; gap: 6px; }
     button.tag {
       width: auto; height: auto; border-radius: 14px; padding: 6px 10px; font-size: 13px; line-height: 1.3;
-      display: inline-block; text-align: left; word-break: break-all; color: #d7dee0;
+      display: inline-block; text-align: left; word-break: break-all; color: var(--ibh-text2);
     }
     button.t-artist { color: #f2ac08; border-color: #6b4e0a; }
     button.t-character { color: #3fb950; border-color: #1f5a2a; }
     button.t-copyright { color: #c678dd; border-color: #5a3566; }
     button.t-metadata { color: #e5534b; border-color: #66282a; }
-    button.tag.copied { background: ${ACCENT}; color: #0f1417; border-color: ${ACCENT}; }
-    button.tag.held, button.pill.held { background: ${ACCENT_DARK}; border-color: ${ACCENT}; }
+    button.tag.copied { background: var(--ibh-accent); color: var(--ibh-base); border-color: var(--ibh-accent); }
+    button.tag.held, button.pill.held { background: var(--ibh-accent-dark); border-color: var(--ibh-accent); }
     button.tag { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
-    .sheet .none { color: #4e6469; font-size: 13px; }
+    .sheet .none { color: var(--ibh-faint); font-size: 13px; }
     button.quality { position: absolute; left: 12px; bottom: 16px; width: auto; height: 32px; padding: 0 12px;
       border-radius: 16px; font-size: 12px; font-weight: 700; letter-spacing: .5px; }
-    button.quality.raw { background: ${ACCENT_MID}; color: #fff; border-color: ${ACCENT_MID}; }
+    button.quality.raw { background: var(--ibh-accent-mid); color: #fff; border-color: var(--ibh-accent-mid); }
     .m.clean button.quality { opacity: 0; pointer-events: none; }
     .tabs { display: flex; gap: 6px; margin-bottom: 10px; }
     button.tab { width: auto; height: 32px; border-radius: 16px; padding: 0 16px; font-size: 13px; }
-    button.tab.on { background: ${ACCENT}; color: #0f1417; border-color: ${ACCENT}; }
-    .infolist { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 13px; color: #d7dee0; }
+    button.tab.on { background: var(--ibh-accent); color: var(--ibh-base); border-color: var(--ibh-accent); }
+    .infolist { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; font-size: 13px; color: var(--ibh-text2); }
     .infolist[hidden], .commentlist[hidden] { display: none; }
-    .commentlist { display: flex; flex-direction: column; gap: 12px; font-size: 13px; color: #d7dee0; }
-    .commentlist .h { color: #7f9aa0; font-size: 12px; margin-bottom: 3px; }
-    .commentlist .h b, .commentlist .h a.who { color: ${ACCENT}; font-weight: 600; text-decoration: none; }
+    .commentlist { display: flex; flex-direction: column; gap: 12px; font-size: 13px; color: var(--ibh-text2); }
+    .commentlist .h { color: var(--ibh-dim); font-size: 12px; margin-bottom: 3px; }
+    .commentlist .h b, .commentlist .h a.who { color: var(--ibh-accent); font-weight: 600; text-decoration: none; }
     .commentlist button.cvote { width: auto; height: 24px; padding: 0 9px; border-radius: 12px; font-size: 12px;
       display: inline-flex; vertical-align: middle; margin-left: 4px; }
     .commentlist .b { white-space: pre-wrap; word-break: break-word; line-height: 1.4; }
-    .commentlist .none { color: #7f9aa0; }
-    .infolist .k { color: #7f9aa0; white-space: nowrap; }
+    .commentlist .none { color: var(--ibh-dim); }
+    .infolist .k { color: var(--ibh-dim); white-space: nowrap; }
     .infolist .v { word-break: break-word; }
     .infolist .v.warn { color: #f2ac08; }
-    .infolist a { color: ${ACCENT}; }
+    .infolist a { color: var(--ibh-accent); }
     .tagsbox[hidden] { display: none; }
     /* Watch later: a grid of the saved posts over the modal. */
     .laterview { display: none; position: absolute; inset: 0; overflow-y: auto; overscroll-behavior: contain;
@@ -273,19 +273,19 @@ const MODAL_CSS = `
     .m.later-mode .laterview { display: block; }
     .m.later-mode .stage, .m.later-mode .bar, .m.later-mode .side, .m.later-mode .status, .m.later-mode .sheet { display: none; }
     .laterhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-    .laterhead .lt { color: #d7dee0; font-size: 16px; font-weight: 600; }
+    .laterhead .lt { color: var(--ibh-text2); font-size: 16px; font-weight: 600; }
     .latergrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr)); gap: 6px; }
-    .tile { position: relative; aspect-ratio: 1 / 1; border-radius: 8px; overflow: hidden; background: #0f1417; border: 1px solid #2a3a3f; }
+    .tile { position: relative; aspect-ratio: 1 / 1; border-radius: 8px; overflow: hidden; background: var(--ibh-base); border: 1px solid var(--ibh-edge); }
     .tile img { width: 100%; height: 100%; object-fit: cover; display: block; }
     .tile .play { position: absolute; left: 6px; bottom: 6px; font-size: 13px; color: #fff; background: rgba(0,0,0,.6);
       border-radius: 10px; padding: 1px 7px; pointer-events: none; }
     .tile button.rm { position: absolute; top: 4px; right: 4px; width: 28px; height: 28px; font-size: 14px; }
-    .laternote { color: #4e6469; font-size: 12px; margin-top: 14px; text-align: center; }
-    .laternote a { color: ${ACCENT}; }
-    .latergrid .none { grid-column: 1 / -1; color: #7f9aa0; font-size: 14px; text-align: center; padding: 30px 10px; }
+    .laternote { color: var(--ibh-faint); font-size: 12px; margin-top: 14px; text-align: center; }
+    .laternote a { color: var(--ibh-accent); }
+    .latergrid .none { grid-column: 1 / -1; color: var(--ibh-dim); font-size: 14px; text-align: center; padding: 30px 10px; }
     .toast {
       position: absolute; left: 50%; bottom: 84px; transform: translateX(-50%);
-      padding: 8px 14px; border-radius: 18px; background: rgba(15, 20, 23, .92); color: #d7dee0;
+      padding: 8px 14px; border-radius: 18px; background: rgba(var(--ibh-base-rgb), .92); color: var(--ibh-text2);
       font-size: 13px; pointer-events: none; transition: opacity .2s;
     }
   `

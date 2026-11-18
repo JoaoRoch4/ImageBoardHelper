@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      2.0.1
+// @version      2.1.0
 // @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @icon         https://raw.githubusercontent.com/JoaoRoch4/ImageBoardHelper/105fa38fc20327b5a6b067538c0cc880d2cdf196/src/logo.png

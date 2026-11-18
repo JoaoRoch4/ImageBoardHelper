@@ -1,5 +1,21 @@
 # Changelog
 
+## 2.1.0
+
+- Themes (`theme`, in the panel): the site's pages, the panel and the post
+  viewer change together, at once. `normal` is the look so far (dark
+  slate, teal and neon green); `gelbooru` puts it in gelbooru.com's blue;
+  `oled` makes every ground pure black; `gray` is neutral greys with no
+  hue; `qtmp` wears the QtMediaPlayer app's design (ash greys, white
+  text, the blue-violet only on what is selected); `site` leaves the
+  site's pages as the site draws them. Each site starts on its own look,
+  `gelbooru` on gelbooru.com and `normal` elsewhere; the old dark theme
+  switch (`siteTheme`), if it was off, becomes `site`. The tag kinds keep
+  their colours in every theme
+- A long recent search no longer stretches the search bar past the
+  screen: on rule34's home page one of 160 characters spread it to three
+  screens wide
+
 ## 2.0.1
 
 - The script has a logo: the TypeScript hexagon wearing the Gelbooru

@@ -1,4 +1,4 @@
-import { LINE, LIST, THUMB } from '../core/site'
+import { LIST, THUMB } from '../core/site'
 import { CFG } from '../core/config'
 import { SCRUB_CSS } from '../scrub/scrub'
 import { LIKE_CSS } from '../modal/modal'
@@ -16,11 +16,11 @@ const FAVSEARCH_CSS = `
     .ibh-search select { text-overflow: ellipsis; }
     .ibh-suggest { position: absolute; z-index: 30; margin: 0 !important; padding: 4px 0 !important; list-style: none;
       max-height: 50vh; overflow-y: auto; overscroll-behavior: contain; user-select: none; -webkit-touch-callout: none;
-      background: #1f2b30 !important; border: 1px solid ${LINE} !important;
+      background: var(--ibh-menu) !important; border: 1px solid var(--ibh-line) !important;
       border-radius: 8px; box-shadow: 0 8px 18px rgba(0, 0, 0, .5); }
     .ibh-suggest[hidden] { display: none; }
     .ibh-suggest li { display: flex !important; justify-content: space-between; gap: 12px; padding: 9px 12px !important;
-      font-size: 15px; color: #e6eef0 !important; background: transparent !important; }
+      font-size: 15px; color: var(--ibh-text) !important; background: transparent !important; }
     .ibh-suggest li small { opacity: .65; font-size: 12px; color: inherit !important; }
     .ibh-suggest li span { color: inherit !important; }
     .ibh-suggest li.k-artist { color: #f2ac08 !important; }

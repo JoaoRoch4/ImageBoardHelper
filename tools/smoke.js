@@ -180,6 +180,33 @@ const logLine = (page, re, timeout = 15000) => page.waitForFunction(
     check('ad boxes hidden', boxes.every(n => n === 0), SITE.adSlots.map((sel, i) => `${sel}: ${boxes[i]} visible`).join(', '))
     const linkColor = await page.evaluate(list => { const a = [...document.querySelectorAll('a')].find(x => !x.closest(list) && x.getBoundingClientRect().height > 0); return a ? getComputedStyle(a).color : null }, SITE.list)
     check('theme accent', linkColor === SITE.accent, `links ${linkColor}, expected ${SITE.accent}`)
+    // Themes: picking one repaints the page and, through the variables, the
+    // panel's shadow DOM; "site" leaves the page as the site draws it. The
+    // observer applies the theme on the next change of the page.
+    const themes = await page.evaluate(async () => {
+      const frame = () => new Promise(done => requestAnimationFrame(() => requestAnimationFrame(done)))
+      const host = [...document.querySelectorAll('*')].find(e => e.shadowRoot)
+      const inPanel = host && host.shadowRoot.querySelector('*')
+      const look = async name => {
+        window.__ibh.set('theme', name)
+        document.body.appendChild(document.createElement('i')).remove()
+        await frame()
+        return {
+          themed: document.documentElement.classList.contains('ibh-theme'),
+          page: getComputedStyle(document.body).backgroundColor,
+          panel: inPanel ? getComputedStyle(inPanel).getPropertyValue('--ibh-base').trim() : null,
+        }
+      }
+      const was = window.__ibh.cfg.theme
+      const out = { oled: await look('oled'), qtmp: await look('qtmp'), site: await look('site') }
+      await look(was)
+      return out
+    })
+    check('themes switch at once', themes.oled.themed && themes.oled.page === 'rgb(0, 0, 0)' && themes.oled.panel === '#000000' &&
+      themes.qtmp.page === 'rgb(19, 19, 19)' && themes.qtmp.panel === '#131313' &&
+      // site: the page unthemed, the panel on the site's own theme (normal and gelbooru share the slate base).
+      !themes.site.themed && themes.site.page !== 'rgb(0, 0, 0)' && themes.site.panel === '#0f1417',
+      JSON.stringify(themes))
     check('ads blocked', !unblocked.length && !/replaced/.test(ads.queue) && ads.wasm === 'compiles',
       `${adLine || 'no "ads:" log line'}; asked from other hosts: ${outside.join(', ') || 'nothing'}${outside.length ? ` (blocked: ${outside.length - unblocked.length})` : ''}; ExoClick queue ${ads.queue}; WebAssembly ${ads.wasm}`)
     // The console helpers return text (an on-phone console shows only that).

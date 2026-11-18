@@ -1,4 +1,6 @@
 import type { Lang } from './i18n'
+import type { ThemeName } from '../page/theme'
+import { PROFILE } from './site'
 
 // ═══════════════════════════════════════════════════════════
 // Persisted configuration
@@ -56,7 +58,7 @@ const DEFAULTS = {
   playerButton:   true,   // ▶ Media Player, ⬇ App and ⚡ 1080p in a video post's ☰ menu: the video played, downloaded or converted by the user's QtMediaPlayer app
   copyLinkButton: true,   // 🔗 in the post's ☰ menu: copies the link to the post's own file (raw, not the sample)
   modalOriginal:  'zoom', // images in the modal: 'zoom' shows the sample and fetches the original on zoom; 'always'
-  siteTheme:      true,   // the modal's dark theme on the site's pages
+  theme:          PROFILE.theme as ThemeName, // the site's pages, the panel and the post viewer: 'normal', 'gelbooru', 'oled', 'gray', 'qtmp' (the QtMediaPlayer app's) or 'site' (the site's own pages); the default is the site's: gelbooru on gelbooru.com
   blockAds:       true,   // only the site's own scripts and frames load: no ad networks, no popunders (needs reload)
   originalThumbs: false,  // the original where a thumbnail's box is wider than the sample (a desktop screen; needs reload)
   nativeFeed:     false,  // feed with sharp images on the site's own pages (applies at once)
@@ -64,9 +66,9 @@ const DEFAULTS = {
   feedLayout:     'masonry', // 'masonry': whole images in columns; 'grid': even square tiles
 }
 
-// The settings as stored: DEFAULTS' own shape, with the two keys whose
-// default does not show every value they take.
-export type Config = Omit<typeof DEFAULTS, 'lang' | 'feedColumns'> & { lang: Lang | null, feedColumns: number | 'auto' }
+// The settings as stored: DEFAULTS' own shape, with the keys whose default
+// does not show every value they take.
+export type Config = Omit<typeof DEFAULTS, 'lang' | 'feedColumns' | 'theme'> & { lang: Lang | null, feedColumns: number | 'auto', theme: ThemeName }
 
 // Options that only take effect when the page loads.
 export const NEEDS_RELOAD: Set<string> = new Set(['originalThumbs', 'memorySaver', 'feedNav', 'videoModal', 'videoScrub', 'blockAds', 'thumbBadges'])
@@ -75,7 +77,15 @@ export const NEEDS_RELOAD: Set<string> = new Set(['originalThumbs', 'memorySaver
 // site's localStorage (one did, on its reset) takes them along, and the
 // copy in Violentmonkey's storage brings them back (restoreCfg).
 export const CFG_FOUND = (() => { try { return localStorage.getItem(CFG_KEY) !== null } catch (e) { return true } })()
-export const CFG: Config = Object.assign({}, DEFAULTS, readJSON(CFG_KEY, {}))
+export const CFG: Config = Object.assign({}, DEFAULTS, oldTheme(readJSON(CFG_KEY, {})))
+
+// Until 2.1.0 the theme was on or off (siteTheme): off is the site's own look now.
+function oldTheme(stored: { siteTheme?: boolean, theme?: ThemeName } | null) {
+  if (!stored || typeof stored !== 'object') return {}
+  if (stored.siteTheme === false && stored.theme === undefined) stored.theme = 'site'
+  delete stored.siteTheme
+  return stored
+}
 
 /**
  * Whatever was stored under the key, unchecked (any): the caller knows its shape.

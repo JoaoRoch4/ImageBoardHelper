@@ -1,5 +1,4 @@
 import type { ReelShow } from './reel'
-import { ACCENT } from '../core/site'
 import { CFG } from '../core/config'
 import { t } from '../core/i18n'
 import { dbg, describeError, info } from '../core/log'
@@ -787,7 +786,7 @@ export function scrubUi(s: Scrub) {
   // over them otherwise (it did on site pages, where every video has one).
   s.bar = document.createElement('div')
   s.bar.style.cssText =
-    `position:absolute;left:0;bottom:0;height:4px;width:0;background:${ACCENT};pointer-events:none;z-index:3`
+    `position:absolute;left:0;bottom:0;height:4px;width:0;background:var(--ibh-accent);pointer-events:none;z-index:3`
   s.label = document.createElement('div')
   s.label.style.cssText =
     'position:absolute;left:4px;bottom:8px;padding:1px 6px;border-radius:3px;font:12px/1.4 ' +
