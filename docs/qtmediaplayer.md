@@ -92,11 +92,7 @@ Tudo na home do Termux (`/data/data/com.termux/files/home`), refeito em 2026-11-
    - **Extrair** nativo, com o 7z do Termux: `7z x -aos -o~/Qt/6.12.0/android_arm64_v8a <arquivo>.7z`. Os arquivos têm caminhos relativos (`bin/`, `lib/`).
 4. **androiddeployqt:** o Qt do Termux não traz. É compilado a partir do qtbase v6.12.0 por `~/projects/src/androiddeployqt-termux` (CMake, nativo) e instalado em `$PREFIX/lib/qt6/bin/androiddeployqt`. Recompilar quando o Qt do Termux mudar de versão, e baixar o Qt para Android da mesma versão.
 5. **Gradle:** `~/.gradle/gradle.properties` com `android.aapt2FromMavenOverride=/data/data/com.termux/files/usr/bin/aapt2`, porque o aapt2 do Maven é x86_64.
-6. **OpenSSL para o APK:** clone esparso do `KDAB/android_openssl` em `~/android_openssl` (`android_openssl.cmake`, `ssl_3/arm64-v8a/`, `ssl_3/include/`):
-   ```sh
-   git clone --depth 1 --filter=blob:none --sparse https://github.com/KDAB/android_openssl.git
-   cd android_openssl && git sparse-checkout set --no-cone "/android_openssl.cmake" "/ssl_3/arm64-v8a/" "/ssl_3/include/" "/LICENSE*" "/README*"
-   ```
+6. **OpenSSL:** não precisa mais. Desde 2026-11-14 o APK não leva o OpenSSL da KDAB (o TLS é do mbedTLS, dentro do FFmpeg e do curl, que o vcpkg compila), e o `~/android_openssl` que sobrou no Termux não é usado por nada.
 7. **Pacotes do Termux:** `gradle`, `aapt2`, `apksigner`, `d8`, `openjdk-25`, `kotlin`, `cmake`, `ninja`, `clang`, `lld`, `7zip`, Qt 6.12 (`qt6-qtbase` e os outros). O vcpkg nativo fica em `~/vcpkg`, com os triplets em `~/vcpkg-triplets`; o `~/.termux_env.sh` exporta as variáveis dele, mas o `buildApk.py` passa as suas por conta própria.
 8. **Chave de release:** `~/.android/release.keystore` e `~/.android/release.pass` no Termux, fora de qualquer repositório; cópia em `~/backup/termux-2026-10-27/.android/`. Sem ela o app nunca mais atualiza por cima: nunca trocar pela chave de debug, nunca desinstalar para contornar.
 
