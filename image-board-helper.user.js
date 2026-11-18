@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      2.1.0
+// @version      2.1.1
 // @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @icon         https://raw.githubusercontent.com/JoaoRoch4/ImageBoardHelper/105fa38fc20327b5a6b067538c0cc880d2cdf196/src/logo.png
@@ -74,7 +74,7 @@
   "use strict";
 
   // src/core/site.ts
-  const VERSION = '2.1.0'
+  const VERSION = '2.1.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // The site's thumbnail list. Gelbooru 0.2 sites (rule34, safebooru, xbooru)
@@ -148,7 +148,7 @@
     doubleTapLike:  'heart', // that double tap: 'heart' (a ❤️ grows over the thumbnail and vanishes) or 'quiet' (no animation)
     likedBadge:     true,   // rule34: ❤️ in the top right of a favorite's thumbnail (the favorites index and the posts liked here); hold it to unfavorite
     favAutoIndex:   true,   // rule34: favoriting or unfavoriting a post here also adds it to or takes it out of the favorites index
-    resBadge:       true,   // the post's resolution in the thumbnail's top left (rule34's API with your key; videos and opened posts without it)
+    resBadge:       true,   // the size of the picture on show in the thumbnail's top left (the sample's, or the raw file's after a hold); before it loads, rule34's API with your key, a video's cover, an opened post's page
     freeButton:     true,   // trash-can button next to them: Free memory & cache in one tap
     redoButton:     true,   // ↻ button beside it: free memory, then redo every thumbnail
     eyeButton:      true,   // 👁 button beside ◐: hides the other floating buttons, and brings them back
@@ -257,7 +257,7 @@
       appConverting: 'Converting in the app', appConverted: 'Converted by the app', appFits: 'Saved: it plays as it is',
       tRedoBtn: 'Redo-thumbnails shortcut button', navRedo: 'Free memory, then redo thumbnails', tDoubleTap: 'Double tap a thumbnail: favorite + upvote', tDoubleTapLike: 'Thumbnail like', likeHeart: 'With the ❤️ animation', likeQuiet: 'Quiet (no animation)',
       tLikedBadge: '❤️ on favorites’ thumbnails (hold it: unfavorite)', heartHint: 'Hold ❤️ to remove it from your favorites', unlikeFail: 'Could not unfavorite',
-      tFavAutoIndex: 'Keep the favorites index up to date when liking', tResBadge: 'Resolution on thumbnails', apiKey: 'rule34 API key', apiSec: 'rule34 API (your key)', apiWarn: '⚠️ Paste your API key below to turn these on. rule34 → My Account → Options → API Access Credentials: copy the whole &api_key=…&user_id=… line.', apiPartial: 'videos only',
+      tFavAutoIndex: 'Keep the favorites index up to date when liking', tResBadge: 'Resolution on thumbnails', apiKey: 'rule34 API key', apiSec: 'rule34 API (your key)', apiWarn: '⚠️ Paste your API key below to turn these on. rule34 → My Account → Options → API Access Credentials: copy the whole &api_key=…&user_id=… line.', apiPartial: 'once each picture loads',
       apiKeyHint: 'Paste &api_key=…&user_id=… (rule34 → My Account → Options)', apiKeySet: 'Key saved: resolutions from the API', apiKeyNone: 'No key: only videos and opened posts', apiKeyBad: 'Not a key: paste the whole &api_key=…&user_id=… line',
       tEyeBtn: '👁 button: hides the other buttons', eyeHide: 'Hide the buttons', eyeShow: 'Show the buttons',
       tFreeBtn: 'Free-memory shortcut button', navFree: 'Free memory & cache',
@@ -342,7 +342,7 @@
       appConverting: 'Convertendo no app', appConverted: 'Convertido pelo app', appFits: 'Salvo: toca como está',
       tRedoBtn: 'Botão de atalho para refazer as miniaturas', navRedo: 'Limpar a memória e refazer as miniaturas', tDoubleTap: 'Toque duplo na miniatura: favoritar + votar', tDoubleTapLike: 'Curtida na miniatura', likeHeart: 'Com a animação do ❤️', likeQuiet: 'Discreta (sem animação)',
       tLikedBadge: '❤️ nas miniaturas dos favoritos (segurar: descurtir)', heartHint: 'Segure o ❤️ para tirar dos favoritos', unlikeFail: 'Não deu para descurtir',
-      tFavAutoIndex: 'Manter o índice de favoritos em dia ao curtir', tResBadge: 'Resolução nas miniaturas', apiKey: 'Chave da API do rule34', apiSec: 'API do rule34 (sua chave)', apiWarn: '⚠️ Cole sua chave da API abaixo para ligar estas funções. rule34 → My Account → Options → API Access Credentials: copie a linha inteira &api_key=…&user_id=….', apiPartial: 'só vídeos',
+      tFavAutoIndex: 'Manter o índice de favoritos em dia ao curtir', tResBadge: 'Resolução nas miniaturas', apiKey: 'Chave da API do rule34', apiSec: 'API do rule34 (sua chave)', apiWarn: '⚠️ Cole sua chave da API abaixo para ligar estas funções. rule34 → My Account → Options → API Access Credentials: copie a linha inteira &api_key=…&user_id=….', apiPartial: 'quando cada imagem carrega',
       apiKeyHint: 'Cole &api_key=…&user_id=… (rule34 → My Account → Options)', apiKeySet: 'Chave salva: resoluções pela API', apiKeyNone: 'Sem chave: só vídeos e posts abertos', apiKeyBad: 'Não é uma chave: cole a linha &api_key=…&user_id=… inteira',
       tEyeBtn: 'Botão 👁: oculta os outros botões', eyeHide: 'Ocultar os botões', eyeShow: 'Mostrar os botões',
       tFreeBtn: 'Botão de atalho para limpar a memória', navFree: 'Limpar memória e cache',
@@ -2213,6 +2213,7 @@
     if (el.dataset.ibhRaw) {
       delete el.dataset.ibhRaw
       delete el.dataset.ibhPreRaw
+      delete el.dataset.ibhPreShown
       delete el.dataset.ibhRawMarked
       const badge = el.closest('a') && (el.closest('a')).querySelector('.ibh-rawbadge')   // the && just checked it
       if (badge) badge.remove()
@@ -2381,6 +2382,7 @@
     }
     badge.textContent = text
     badge.style.background = tone
+    return badge
   }
 
   /** @param via  for the log */
@@ -3772,14 +3774,27 @@
 
   // Zoomed into a sample: fetch the original and swap it in, the zoom kept
   // (same picture, same box, more pixels).
-  // The quality button: null hides it; 'sample', 'loading' or 'raw'.
+  // The quality button, a small RAW square as on the cards: null hides it;
+  // 'sample' leaves it unlit, 'loading' dims it, 'raw' lights it.
   function setQuality(state) {
     const btn = modal && modal.quality
     if (!btn) return
     btn.hidden = !state
-    btn.textContent = state === 'raw' ? 'RAW' : state === 'loading' ? 'RAW…' : 'SAMPLE'
+    btn.textContent = 'RAW'
     btn.classList.toggle('raw', state === 'raw')
+    btn.classList.toggle('loading', state === 'loading')
     btn.title = t(state === 'raw' ? 'qualRawTip' : 'qualSampleTip')
+  }
+
+  // The size of the picture on show, beside the quality square: it follows
+  // every load of the viewer's image (the page's copy, the sample, the raw
+  // file and back). null hides it, as for a video.
+  function setRes(img) {
+    const label = modal && modal.res
+    if (!label) return
+    const shown = !!img && !img.hidden && img.naturalWidth > 0
+    label.hidden = !shown
+    if (img && shown) label.textContent = `${img.naturalWidth}×${img.naturalHeight}`
   }
 
   function toggleQuality() {
@@ -5444,8 +5459,17 @@
     for (const link of cardsOf(id)) paintRes(link)
   }
 
+  // The size of the picture a card shows: the sample the feed swapped in, or
+  // the raw file a hold brought (0 forgets it). The badge says what is on
+  // screen, so this comes before the post's own size.
+  function setShown(link, w, h) {
+    if (w > 0 && h > 0) link.dataset.ibhShown = `${w}x${h}`
+    else delete link.dataset.ibhShown
+    paintRes(link)
+  }
+
   function paintRes(link) {
-    const size = CFG.resBadge ? loadDims().get(postId(link)) : undefined
+    const size = CFG.resBadge ? link.dataset.ibhShown || loadDims().get(postId(link)) : undefined
     let badge = link.querySelector('.ibh-res')
     if (!size) { badge?.remove(); return }
     if (!badge) {
@@ -6041,10 +6065,17 @@
     button.tag.held, button.pill.held { background: var(--ibh-accent-dark); border-color: var(--ibh-accent); }
     button.tag { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
     .sheet .none { color: var(--ibh-faint); font-size: 13px; }
-    button.quality { position: absolute; left: 12px; bottom: 16px; width: auto; height: 32px; padding: 0 12px;
-      border-radius: 16px; font-size: 12px; font-weight: 700; letter-spacing: .5px; }
+    button.quality { position: absolute; left: 12px; bottom: 16px; width: 32px; height: 32px; padding: 0;
+      border-radius: 6px; font-size: 9px; font-weight: 700; letter-spacing: 0; }
     button.quality.raw { background: var(--ibh-accent-mid); color: #fff; border-color: var(--ibh-accent-mid); }
+    button.quality.loading { opacity: .6; }
     .m.clean button.quality { opacity: 0; pointer-events: none; }
+    /* The size of the picture on show: beside the quality square, or in its
+       place on a post without a sample. */
+    .res { position: absolute; left: 12px; bottom: 23px; pointer-events: none; padding: 0 5px; border-radius: 4px;
+      font: 11px/18px ui-monospace, monospace; color: #fff; background: rgba(var(--ibh-base-rgb), .7); }
+    button.quality:not([hidden]) + .res { left: 52px; }
+    .m.clean .res { opacity: 0; }
     .tabs { display: flex; gap: 6px; margin-bottom: 10px; }
     button.tab { width: auto; height: 32px; border-radius: 16px; padding: 0 16px; font-size: 13px; }
     button.tab.on { background: var(--ibh-accent); color: var(--ibh-base); border-color: var(--ibh-accent); }
@@ -6156,6 +6187,9 @@
     // Sample or raw, for an image that has a sample: tap to switch.
     const quality = el('button', { class: 'quality' })
     quality.hidden = true
+    // The size of the picture on show (setRes), beside the quality square.
+    const res = el('span', { class: 'res' })
+    res.hidden = true
     const laterClose = el('button', { text: '✕', title: t('mClose') })
     const laterHead = el('div', { class: 'laterhead' }, [el('span', { class: 'lt' }), laterClose])
     const laterGrid = el('div', { class: 'latergrid' })
@@ -6177,7 +6211,7 @@
     badge.hidden = true
     const prev = el('button', { class: 'side prev', text: '‹', title: t('mPrev') })
     const next = el('button', { class: 'side next', text: '›', title: t('mNext') })
-    const box = el('div', { class: 'm' }, [stage, status, el('div', { class: 'bar' }, [close, menu, full, turn, fav, up, count, dlq]), prev, next, quality, sheet, laterView, toast, badge])
+    const box = el('div', { class: 'm' }, [stage, status, el('div', { class: 'bar' }, [close, menu, full, turn, fav, up, count, dlq]), prev, next, quality, res, sheet, laterView, toast, badge])
     close.addEventListener('click', () => closeModal(false))
     full.addEventListener('click', () => toggleModalFullscreen())
     menu.addEventListener('click', () => toggleMenu())
@@ -6216,6 +6250,7 @@
     chipGestures(copyBtn, () => rawHref, () => copyRawLink(), 'the post\'s file')
     laterClose.addEventListener('click', () => closeModal(false))
     quality.addEventListener('click', () => toggleQuality())
+    image.addEventListener('load', () => setRes(image))   // every swap: the page's copy, sample, raw
     fsBtn.addEventListener('click', () => toggleModalFullscreen())
     turn.addEventListener('click', () => turnScreen())
     fav.addEventListener('click', modalFavorite)
@@ -6239,7 +6274,7 @@
     installVideoGestures(layer, video)
     root.append(style, box)
     // link: null until openModal sets it (showLater opens the list without one).
-    modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, vfav: favUp, gearMenu, dlq, score, toast, badge, turn, fsBtn, menu, sheet, tagList, laterBtn, dlBtn, playerBtn, appDlBtn, appReduceBtn, quality, tabTags, tabInfo, tabComments, infoList, commentList, sheetTab: 'tags', laterView, laterHead, laterGrid, laterNote, listLinks: null, turned: null, open: false, link: null, seq: 0 }
+    modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, vfav: favUp, gearMenu, dlq, score, toast, badge, turn, fsBtn, menu, sheet, tagList, laterBtn, dlBtn, playerBtn, appDlBtn, appReduceBtn, quality, res, tabTags, tabInfo, tabComments, infoList, commentList, sheetTab: 'tags', laterView, laterHead, laterGrid, laterNote, listLinks: null, turned: null, open: false, link: null, seq: 0 }
   }
 
   let toastTimer = 0
@@ -6654,6 +6689,8 @@
       if (el.tagName === 'IMG') el.decoding = 'async'
       const pic = pictureOf(el)
       if (pic) pic.set((probe).src)   // already in cache and decoded, so this paints at once
+      const link = el.closest(SITE_LINK)
+      if (link) setShown(link, (probe).naturalWidth, (probe).naturalHeight)   // the badge: this file's size
       el.dataset.ibhThumb = from    // what freeMemory() and redoThumbs() put back
       el.dataset.ibhOrig = 'done'
       unpinHeight(el)
@@ -8456,6 +8493,7 @@
     modal.rawUrl = null       // the original once fetched, to switch back instantly
     modal.keepSample = false  // chose the sample: zooming does not fetch the original
     setQuality(null)
+    setRes(null)   // back on the next image's load; a video has none
     const v = modal.video
     v.pause()
     v.onerror = v.oncanplay = v.onloadedmetadata = null
@@ -8716,6 +8754,14 @@
   // The download in flight per image, so a second hold can call it off.
   const rawLoads = new WeakMap()
 
+  // The hold's mark: a small square in the card's top left, under the
+  // resolution. RAW on the dark tone while the file comes, on the accent once
+  // it shows; ✕ when it failed.
+  function rawBadge(link, state) {
+    const tone = state === 'raw' ? 'var(--ibh-accent-mid)' : state === 'failed' ? '#b42318' : 'rgba(var(--ibh-base-rgb), .85)'
+    bulkBadge(link, state === 'failed' ? '✕' : 'RAW', tone, 'ibh-rawbadge').dataset.state = state
+  }
+
   // A second hold undoes the first: back to what was on show (the sample, or
   // the thumbnail), or the download in flight called off.
   function undoRaw(img, link) {
@@ -8731,9 +8777,14 @@
         delete img.dataset.ibhThumb
         if (originalViewport) originalViewport.observe(img)
       }
+      // The resolution goes back to what comes back: the sample's size, or
+      // none for the thumbnail until the feed swaps the sample in again.
+      const [w, h] = (img.dataset.ibhPreShown || '').split('x').map(Number)
+      setShown(link, w || 0, h || 0)
     }
     delete img.dataset.ibhRaw
     delete img.dataset.ibhPreRaw
+    delete img.dataset.ibhPreShown
     delete img.dataset.ibhRawMarked
     const badge = link.querySelector('.ibh-rawbadge')
     if (badge) badge.remove()
@@ -8747,7 +8798,7 @@
     const parts = thumbParts(src)
     if (!parts) return
     const cached = knownOriginal(parts.hash)
-    if (cached === null) { bulkBadge(link, '✕', '#b42318', 'ibh-rawbadge'); pageToast(t('rawFailed')); return }
+    if (cached === null) { rawBadge(link, 'failed'); pageToast(t('rawFailed')); return }
     // A post without a sample already shows its original in the feed: the
     // same file again would change nothing (measured: 2 of 3 posts held).
     if (/\/images\//.test(img.getAttribute('srcset') || '')) {
@@ -8758,7 +8809,7 @@
     }
     img.dataset.ibhRaw = 'loading'
     img.dataset.ibhPreRaw = img.getAttribute('srcset') || ''   // what comes back on a second hold
-    bulkBadge(link, 'RAW…', 'rgba(var(--ibh-base-rgb), .85)', 'ibh-rawbadge')
+    rawBadge(link, 'loading')
     if (navigator.vibrate) navigator.vibrate(15)
     // src: thumbParts found the parts in it.
     rawLoads.set(img, raceImage([fileCandidates(src, ORIGINAL_EXTS)], cached, probe => {
@@ -8778,15 +8829,17 @@
         }
         pic.set(probe.src)
         img.dataset.ibhRaw = '1'
-        bulkBadge(link, 'RAW', 'var(--ibh-accent-mid)', 'ibh-rawbadge')
-        info(`raw: post ${postId(link)} shows its original (${probe.src.split('/').pop()})`)
+        img.dataset.ibhPreShown = link.dataset.ibhShown || ''   // the size a second hold brings back
+        setShown(link, probe.naturalWidth, probe.naturalHeight)   // the badge: the raw file's size
+        rawBadge(link, 'raw')
+        info(`raw: post ${postId(link)} shows its original (${probe.src.split('/').pop()}, ${probe.naturalWidth}×${probe.naturalHeight})`)
       })
     }, () => {
       rawLoads.delete(img)
       delete img.dataset.ibhRaw
       delete img.dataset.ibhPreRaw
       cacheSet('orig', parts.hash, null)
-      bulkBadge(link, '✕', '#b42318', 'ibh-rawbadge')
+      rawBadge(link, 'failed')
       pageToast(t('rawFailed'))
     }, 'high'))
   }
@@ -8916,10 +8969,16 @@
     #ibh-favmore { display: block; margin: 14px auto; padding: 9px 18px; font-size: 14px; }
     #ibh-favmore[hidden] { display: none; }
     #ibh-pager { min-height: 1px; padding: 14px 0; text-align: center; font-size: 13px; opacity: .85; }
-    .ibh-bulkbadge, .ibh-rawbadge { position: absolute; top: 6px; right: 6px; z-index: 3; min-width: 26px; height: 26px; padding: 0 6px;
+    .ibh-bulkbadge { position: absolute; top: 6px; right: 6px; z-index: 3; min-width: 26px; height: 26px; padding: 0 6px;
       border-radius: 13px; color: #fff; font: 600 15px/26px system-ui, sans-serif; text-align: center; pointer-events: none;
       box-shadow: 0 2px 8px rgba(0,0,0,.5); }
-    .ibh-rawbadge { right: auto; left: 6px; font-size: 12px; }
+    /* The raw hold's mark: a small square in the top left, under the
+       resolution when the card has one (its 14px line starts at 3px). */
+    .ibh-rawbadge { position: absolute; top: 3px; left: 3px; z-index: 4; width: 22px; height: 22px; border-radius: 3px;
+      color: #fff; font: 700 8px/22px system-ui, sans-serif; text-align: center; pointer-events: none;
+      box-shadow: 0 1px 3px rgba(0,0,0,.5); }
+    :has(> .ibh-res) > .ibh-rawbadge { top: 20px; }
+    .ibh-rawbadge[data-state="failed"] { font-size: 12px; }
     ${LIST} a img { -webkit-touch-callout: none; }
   `
 
@@ -8940,7 +8999,7 @@
     .ibh-res { position: absolute; top: 3px; left: 3px; z-index: 4; pointer-events: none; padding: 0 3px; border-radius: 3px;
       font: 10px/1.4 ui-monospace, monospace; color: #fff; background: rgba(0, 0, 0, .65); }
     [data-ibh-liked] .ibh-heavy { right: 26px !important; }
-    [data-ibh-liked] .ibh-bulkbadge, [data-ibh-liked] .ibh-rawbadge { right: 30px !important; }`
+    [data-ibh-liked] .ibh-bulkbadge { right: 30px !important; }`
 
   function injectPageCSS() {
     if (document.querySelector('style[data-ibh]')) return

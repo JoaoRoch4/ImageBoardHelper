@@ -1,5 +1,18 @@
 # Changelog
 
+## 2.1.1
+
+- The raw hold's mark is a small RAW square in the card's top left, under
+  the resolution. On a favorite it stretched into a bar across the card,
+  since the rule that moves the top-right marks away from the heart moved
+  it too, and it sat under the resolution
+- The resolution on a card is the size of the picture on show: the
+  sample once the feed swaps it in, the raw file's once a hold brings it,
+  and the sample's again when a second hold goes back
+- The post viewer does the same: its SAMPLE / RAW button is a small RAW
+  square, lit while the original shows, and beside it the size of the
+  picture on show follows every swap
+
 ## 2.1.0
 
 - Themes (`theme`, in the panel): the site's pages, the panel and the post

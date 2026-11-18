@@ -157,14 +157,27 @@ export function showImage(placeholder: string, candidates: string[] | string[][]
 
 // Zoomed into a sample: fetch the original and swap it in, the zoom kept
 // (same picture, same box, more pixels).
-// The quality button: null hides it; 'sample', 'loading' or 'raw'.
+// The quality button, a small RAW square as on the cards: null hides it;
+// 'sample' leaves it unlit, 'loading' dims it, 'raw' lights it.
 export function setQuality(state: 'sample' | 'loading' | 'raw' | null) {
   const btn = modal && modal.quality
   if (!btn) return
   btn.hidden = !state
-  btn.textContent = state === 'raw' ? 'RAW' : state === 'loading' ? 'RAW…' : 'SAMPLE'
+  btn.textContent = 'RAW'
   btn.classList.toggle('raw', state === 'raw')
+  btn.classList.toggle('loading', state === 'loading')
   btn.title = t(state === 'raw' ? 'qualRawTip' : 'qualSampleTip')
+}
+
+// The size of the picture on show, beside the quality square: it follows
+// every load of the viewer's image (the page's copy, the sample, the raw
+// file and back). null hides it, as for a video.
+export function setRes(img: HTMLImageElement | null) {
+  const label = modal && modal.res
+  if (!label) return
+  const shown = !!img && !img.hidden && img.naturalWidth > 0
+  label.hidden = !shown
+  if (img && shown) label.textContent = `${img.naturalWidth}×${img.naturalHeight}`
 }
 
 export function toggleQuality() {

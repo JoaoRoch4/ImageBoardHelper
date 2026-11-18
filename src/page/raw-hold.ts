@@ -6,6 +6,7 @@ import { cacheSet } from '../urls/url-cache'
 import { isGifCard, isVideoCard, rebuildGif } from '../thumbs/covers'
 import { ORIGINAL_EXTS, originalViewport, pictureOf } from '../thumbs/feed'
 import { watchDistance } from '../thumbs/memory'
+import { setShown } from '../thumbs/marks'
 import { SITE_LINK, asElement, modal } from '../modal/modal'
 import { bulkBadge, bulkMode, pageToast } from './bulk'
 import { knownOriginal, postId, raceImage } from '../modal/media'
@@ -90,6 +91,14 @@ export function onRawContextMenu(ev: MouseEvent) {
 // The download in flight per image, so a second hold can call it off.
 const rawLoads: WeakMap<HTMLImageElement, () => void> = new WeakMap()
 
+// The hold's mark: a small square in the card's top left, under the
+// resolution. RAW on the dark tone while the file comes, on the accent once
+// it shows; ✕ when it failed.
+function rawBadge(link: HTMLElement, state: 'loading' | 'raw' | 'failed') {
+  const tone = state === 'raw' ? 'var(--ibh-accent-mid)' : state === 'failed' ? '#b42318' : 'rgba(var(--ibh-base-rgb), .85)'
+  bulkBadge(link, state === 'failed' ? '✕' : 'RAW', tone, 'ibh-rawbadge').dataset.state = state
+}
+
 // A second hold undoes the first: back to what was on show (the sample, or
 // the thumbnail), or the download in flight called off.
 function undoRaw(img: HTMLImageElement, link: HTMLAnchorElement) {
@@ -105,9 +114,14 @@ function undoRaw(img: HTMLImageElement, link: HTMLAnchorElement) {
       delete img.dataset.ibhThumb
       if (originalViewport) originalViewport.observe(img)
     }
+    // The resolution goes back to what comes back: the sample's size, or
+    // none for the thumbnail until the feed swaps the sample in again.
+    const [w, h] = (img.dataset.ibhPreShown || '').split('x').map(Number)
+    setShown(link, w || 0, h || 0)
   }
   delete img.dataset.ibhRaw
   delete img.dataset.ibhPreRaw
+  delete img.dataset.ibhPreShown
   delete img.dataset.ibhRawMarked
   const badge = link.querySelector('.ibh-rawbadge')
   if (badge) badge.remove()
@@ -121,7 +135,7 @@ function loadRaw(img: HTMLImageElement, link: HTMLAnchorElement) {
   const parts = thumbParts(src)
   if (!parts) return
   const cached = knownOriginal(parts.hash)
-  if (cached === null) { bulkBadge(link, '✕', '#b42318', 'ibh-rawbadge'); pageToast(t('rawFailed')); return }
+  if (cached === null) { rawBadge(link, 'failed'); pageToast(t('rawFailed')); return }
   // A post without a sample already shows its original in the feed: the
   // same file again would change nothing (measured: 2 of 3 posts held).
   if (/\/images\//.test(img.getAttribute('srcset') || '')) {
@@ -132,7 +146,7 @@ function loadRaw(img: HTMLImageElement, link: HTMLAnchorElement) {
   }
   img.dataset.ibhRaw = 'loading'
   img.dataset.ibhPreRaw = img.getAttribute('srcset') || ''   // what comes back on a second hold
-  bulkBadge(link, 'RAW…', 'rgba(var(--ibh-base-rgb), .85)', 'ibh-rawbadge')
+  rawBadge(link, 'loading')
   if (navigator.vibrate) navigator.vibrate(15)
   // src: thumbParts found the parts in it.
   rawLoads.set(img, raceImage([fileCandidates(src as string, ORIGINAL_EXTS)], cached, probe => {
@@ -152,15 +166,17 @@ function loadRaw(img: HTMLImageElement, link: HTMLAnchorElement) {
       }
       pic.set(probe.src)
       img.dataset.ibhRaw = '1'
-      bulkBadge(link, 'RAW', 'var(--ibh-accent-mid)', 'ibh-rawbadge')
-      info(`raw: post ${postId(link)} shows its original (${probe.src.split('/').pop()})`)
+      img.dataset.ibhPreShown = link.dataset.ibhShown || ''   // the size a second hold brings back
+      setShown(link, probe.naturalWidth, probe.naturalHeight)   // the badge: the raw file's size
+      rawBadge(link, 'raw')
+      info(`raw: post ${postId(link)} shows its original (${probe.src.split('/').pop()}, ${probe.naturalWidth}×${probe.naturalHeight})`)
     })
   }, () => {
     rawLoads.delete(img)
     delete img.dataset.ibhRaw
     delete img.dataset.ibhPreRaw
     cacheSet('orig', parts.hash, null)
-    bulkBadge(link, '✕', '#b42318', 'ibh-rawbadge')
+    rawBadge(link, 'failed')
     pageToast(t('rawFailed'))
   }, 'high'))
 }

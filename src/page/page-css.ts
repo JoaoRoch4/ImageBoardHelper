@@ -42,10 +42,16 @@ const FAVSEARCH_CSS = `
     #ibh-favmore { display: block; margin: 14px auto; padding: 9px 18px; font-size: 14px; }
     #ibh-favmore[hidden] { display: none; }
     #ibh-pager { min-height: 1px; padding: 14px 0; text-align: center; font-size: 13px; opacity: .85; }
-    .ibh-bulkbadge, .ibh-rawbadge { position: absolute; top: 6px; right: 6px; z-index: 3; min-width: 26px; height: 26px; padding: 0 6px;
+    .ibh-bulkbadge { position: absolute; top: 6px; right: 6px; z-index: 3; min-width: 26px; height: 26px; padding: 0 6px;
       border-radius: 13px; color: #fff; font: 600 15px/26px system-ui, sans-serif; text-align: center; pointer-events: none;
       box-shadow: 0 2px 8px rgba(0,0,0,.5); }
-    .ibh-rawbadge { right: auto; left: 6px; font-size: 12px; }
+    /* The raw hold's mark: a small square in the top left, under the
+       resolution when the card has one (its 14px line starts at 3px). */
+    .ibh-rawbadge { position: absolute; top: 3px; left: 3px; z-index: 4; width: 22px; height: 22px; border-radius: 3px;
+      color: #fff; font: 700 8px/22px system-ui, sans-serif; text-align: center; pointer-events: none;
+      box-shadow: 0 1px 3px rgba(0,0,0,.5); }
+    :has(> .ibh-res) > .ibh-rawbadge { top: 20px; }
+    .ibh-rawbadge[data-state="failed"] { font-size: 12px; }
     ${LIST} a img { -webkit-touch-callout: none; }
   `
 
@@ -66,7 +72,7 @@ const CARD_MARKS_CSS = `
     .ibh-res { position: absolute; top: 3px; left: 3px; z-index: 4; pointer-events: none; padding: 0 3px; border-radius: 3px;
       font: 10px/1.4 ui-monospace, monospace; color: #fff; background: rgba(0, 0, 0, .65); }
     [data-ibh-liked] .ibh-heavy { right: 26px !important; }
-    [data-ibh-liked] .ibh-bulkbadge, [data-ibh-liked] .ibh-rawbadge { right: 30px !important; }`
+    [data-ibh-liked] .ibh-bulkbadge { right: 30px !important; }`
 
 export function injectPageCSS() {
   if (document.querySelector('style[data-ibh]')) return

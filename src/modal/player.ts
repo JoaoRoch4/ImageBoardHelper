@@ -11,7 +11,7 @@ import { flash, modal } from './modal'
 import { setCfg } from '../storage/storage'
 import { centerDoubleTap } from '../post/votes'
 import { resetZoom } from './gestures'
-import { setQuality } from './media'
+import { setQuality, setRes } from './media'
 import { el } from '../panel/panel'
 
 // On the modal video: drag sideways to move the video (holdRub: a rub, see
@@ -391,6 +391,7 @@ export function resetMedia() {
   modal.rawUrl = null       // the original once fetched, to switch back instantly
   modal.keepSample = false  // chose the sample: zooming does not fetch the original
   setQuality(null)
+  setRes(null)   // back on the next image's load; a video has none
   const v = modal.video
   v.pause()
   v.onerror = v.oncanplay = v.onloadedmetadata = null

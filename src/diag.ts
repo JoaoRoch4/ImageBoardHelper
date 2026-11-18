@@ -59,6 +59,7 @@ export function resetUpgrade(el: HTMLImageElement) {
   if (el.dataset.ibhRaw) {
     delete el.dataset.ibhRaw
     delete el.dataset.ibhPreRaw
+    delete el.dataset.ibhPreShown
     delete el.dataset.ibhRawMarked
     const badge = el.closest('a') && (el.closest('a') as HTMLAnchorElement).querySelector('.ibh-rawbadge')   // the && just checked it
     if (badge) badge.remove()

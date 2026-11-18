@@ -6,8 +6,9 @@ import { fileCandidates, imageBase, thumbParts } from '../urls/hosts'
 import { cacheGet, cacheSet, urlPending, urlPrefetch, urlReading } from '../urls/url-cache'
 import { IMAGE_MAX_INFLIGHT, giveImageSlot, imagesInflight, imgPicture, isGifCard, isVideoCard, setImagesInflight } from './covers'
 import { unpinHeight, watchDistance } from './memory'
-import { modal } from '../modal/modal'
+import { SITE_LINK, modal } from '../modal/modal'
 import { raceImage } from '../modal/media'
+import { setShown } from './marks'
 import { suspended } from '../modal/open'
 
 // ═══════════════════════════════════════════════════════════
@@ -196,6 +197,8 @@ function probeOriginal(el: HTMLImageElement, from: string, stages: string[][], d
     if (el.tagName === 'IMG') el.decoding = 'async'
     const pic = pictureOf(el)
     if (pic) pic.set((probe as HTMLImageElement).src)   // already in cache and decoded, so this paints at once
+    const link = el.closest(SITE_LINK) as HTMLElement | null
+    if (link) setShown(link, (probe as HTMLImageElement).naturalWidth, (probe as HTMLImageElement).naturalHeight)   // the badge: this file's size
     el.dataset.ibhThumb = from    // what freeMemory() and redoThumbs() put back
     el.dataset.ibhOrig = 'done'
     unpinHeight(el)

@@ -203,8 +203,17 @@ export function setDims(id: string, w: number, h: number) {
   for (const link of cardsOf(id)) paintRes(link)
 }
 
+// The size of the picture a card shows: the sample the feed swapped in, or
+// the raw file a hold brought (0 forgets it). The badge says what is on
+// screen, so this comes before the post's own size.
+export function setShown(link: HTMLElement, w: number, h: number) {
+  if (w > 0 && h > 0) link.dataset.ibhShown = `${w}x${h}`
+  else delete link.dataset.ibhShown
+  paintRes(link)
+}
+
 function paintRes(link: HTMLElement) {
-  const size = CFG.resBadge ? loadDims().get(postId(link)) : undefined
+  const size = CFG.resBadge ? link.dataset.ibhShown || loadDims().get(postId(link)) : undefined
   let badge = link.querySelector('.ibh-res') as HTMLElement | null
   if (!size) { badge?.remove(); return }
   if (!badge) {

@@ -41,7 +41,7 @@ export function pageToast(text: string) {
 /**
  * @param tone    its background
  */
-export function bulkBadge(link: HTMLElement, text: string, tone: string, cls: string = 'ibh-bulkbadge') {
+export function bulkBadge(link: HTMLElement, text: string, tone: string, cls: string = 'ibh-bulkbadge'): HTMLSpanElement {
   let badge = link.querySelector(`.${cls}`) as HTMLSpanElement | null   // made below
   if (!badge) {
     badge = document.createElement('span')
@@ -52,6 +52,7 @@ export function bulkBadge(link: HTMLElement, text: string, tone: string, cls: st
   }
   badge.textContent = text
   badge.style.background = tone
+  return badge
 }
 
 /** @param via  for the log */

@@ -41,7 +41,7 @@ const DEFAULTS = {
   doubleTapLike:  'heart', // that double tap: 'heart' (a ❤️ grows over the thumbnail and vanishes) or 'quiet' (no animation)
   likedBadge:     true,   // rule34: ❤️ in the top right of a favorite's thumbnail (the favorites index and the posts liked here); hold it to unfavorite
   favAutoIndex:   true,   // rule34: favoriting or unfavoriting a post here also adds it to or takes it out of the favorites index
-  resBadge:       true,   // the post's resolution in the thumbnail's top left (rule34's API with your key; videos and opened posts without it)
+  resBadge:       true,   // the size of the picture on show in the thumbnail's top left (the sample's, or the raw file's after a hold); before it loads, rule34's API with your key, a video's cover, an opened post's page
   freeButton:     true,   // trash-can button next to them: Free memory & cache in one tap
   redoButton:     true,   // ↻ button beside it: free memory, then redo every thumbnail
   eyeButton:      true,   // 👁 button beside ◐: hides the other floating buttons, and brings them back

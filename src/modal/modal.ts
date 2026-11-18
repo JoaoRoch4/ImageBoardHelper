@@ -9,7 +9,7 @@ import { chipGestures, closeMenu, showTab, toggleInfo, toggleMenu } from './tags
 import { modalFavorite, modalUpvote } from '../post/votes'
 import { installImageHold, installImageZoom, installModalSwipe, zoom } from './gestures'
 import { PLAYER_ICON, installGearMenu, installVideoControls, installVideoGestures, setFsIcon, setIcon, toggleModalFullscreen, turnScreen } from './player'
-import { onImageContent, toggleQuality } from './media'
+import { onImageContent, setRes, toggleQuality } from './media'
 import { closeModal, stepModal } from './open'
 import { el, panelHost } from '../panel/panel'
 
@@ -58,6 +58,7 @@ export type Modal = {
   appDlBtn: HTMLButtonElement,
   appReduceBtn: HTMLButtonElement,
   quality: HTMLButtonElement,
+  res: HTMLElement,
   tabTags: HTMLButtonElement,
   tabInfo: HTMLButtonElement,
   tabComments: HTMLButtonElement,
@@ -246,10 +247,17 @@ const MODAL_CSS = `
     button.tag.held, button.pill.held { background: var(--ibh-accent-dark); border-color: var(--ibh-accent); }
     button.tag { user-select: none; -webkit-user-select: none; -webkit-touch-callout: none; }
     .sheet .none { color: var(--ibh-faint); font-size: 13px; }
-    button.quality { position: absolute; left: 12px; bottom: 16px; width: auto; height: 32px; padding: 0 12px;
-      border-radius: 16px; font-size: 12px; font-weight: 700; letter-spacing: .5px; }
+    button.quality { position: absolute; left: 12px; bottom: 16px; width: 32px; height: 32px; padding: 0;
+      border-radius: 6px; font-size: 9px; font-weight: 700; letter-spacing: 0; }
     button.quality.raw { background: var(--ibh-accent-mid); color: #fff; border-color: var(--ibh-accent-mid); }
+    button.quality.loading { opacity: .6; }
     .m.clean button.quality { opacity: 0; pointer-events: none; }
+    /* The size of the picture on show: beside the quality square, or in its
+       place on a post without a sample. */
+    .res { position: absolute; left: 12px; bottom: 23px; pointer-events: none; padding: 0 5px; border-radius: 4px;
+      font: 11px/18px ui-monospace, monospace; color: #fff; background: rgba(var(--ibh-base-rgb), .7); }
+    button.quality:not([hidden]) + .res { left: 52px; }
+    .m.clean .res { opacity: 0; }
     .tabs { display: flex; gap: 6px; margin-bottom: 10px; }
     button.tab { width: auto; height: 32px; border-radius: 16px; padding: 0 16px; font-size: 13px; }
     button.tab.on { background: var(--ibh-accent); color: var(--ibh-base); border-color: var(--ibh-accent); }
@@ -361,6 +369,9 @@ export function buildModal() {
   // Sample or raw, for an image that has a sample: tap to switch.
   const quality = el('button', { class: 'quality' })
   quality.hidden = true
+  // The size of the picture on show (setRes), beside the quality square.
+  const res = el('span', { class: 'res' })
+  res.hidden = true
   const laterClose = el('button', { text: '✕', title: t('mClose') })
   const laterHead = el('div', { class: 'laterhead' }, [el('span', { class: 'lt' }), laterClose])
   const laterGrid = el('div', { class: 'latergrid' })
@@ -382,7 +393,7 @@ export function buildModal() {
   badge.hidden = true
   const prev = el('button', { class: 'side prev', text: '‹', title: t('mPrev') })
   const next = el('button', { class: 'side next', text: '›', title: t('mNext') })
-  const box = el('div', { class: 'm' }, [stage, status, el('div', { class: 'bar' }, [close, menu, full, turn, fav, up, count, dlq]), prev, next, quality, sheet, laterView, toast, badge])
+  const box = el('div', { class: 'm' }, [stage, status, el('div', { class: 'bar' }, [close, menu, full, turn, fav, up, count, dlq]), prev, next, quality, res, sheet, laterView, toast, badge])
   close.addEventListener('click', () => closeModal(false))
   full.addEventListener('click', () => toggleModalFullscreen())
   menu.addEventListener('click', () => toggleMenu())
@@ -421,6 +432,7 @@ export function buildModal() {
   chipGestures(copyBtn, () => rawHref, () => copyRawLink(), 'the post\'s file')
   laterClose.addEventListener('click', () => closeModal(false))
   quality.addEventListener('click', () => toggleQuality())
+  image.addEventListener('load', () => setRes(image))   // every swap: the page's copy, sample, raw
   fsBtn.addEventListener('click', () => toggleModalFullscreen())
   turn.addEventListener('click', () => turnScreen())
   fav.addEventListener('click', modalFavorite)
@@ -444,7 +456,7 @@ export function buildModal() {
   installVideoGestures(layer, video)
   root.append(style, box)
   // link: null until openModal sets it (showLater opens the list without one).
-  modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, vfav: favUp, gearMenu, dlq, score, toast, badge, turn, fsBtn, menu, sheet, tagList, laterBtn, dlBtn, playerBtn, appDlBtn, appReduceBtn, quality, tabTags, tabInfo, tabComments, infoList, commentList, sheetTab: 'tags', laterView, laterHead, laterGrid, laterNote, listLinks: null, turned: null, open: false, link: null as any, seq: 0 }
+  modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, vfav: favUp, gearMenu, dlq, score, toast, badge, turn, fsBtn, menu, sheet, tagList, laterBtn, dlBtn, playerBtn, appDlBtn, appReduceBtn, quality, res, tabTags, tabInfo, tabComments, infoList, commentList, sheetTab: 'tags', laterView, laterHead, laterGrid, laterNote, listLinks: null, turned: null, open: false, link: null as any, seq: 0 }
 }
 
 let toastTimer = 0
