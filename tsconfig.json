@@ -8,13 +8,11 @@
     "module": "esnext",
     "moduleResolution": "bundler",
     "moduleDetection": "force",           // every file is a module, even one without import or export
-    "allowJs": true,
-    "checkJs": true,
     "noEmit": true,
     "strict": true,
     "verbatimModuleSyntax": true,         // a type-only import says `import type`, as esbuild needs to drop it
     "noUnusedLocals": true,               // ESLint's no-unused-vars for the .ts modules, which it does not read
     "types": []
   },
-  "include": ["src/**/*.js", "src/**/*.ts", "types/userscript.d.ts", "types/qtmediaplayer.d.ts"]
+  "include": ["src/**/*.ts", "types/userscript.d.ts", "types/qtmediaplayer.d.ts"]
 }

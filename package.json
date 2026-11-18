@@ -4,9 +4,9 @@
   "description": "Development tools and the build: src/ is joined by esbuild into image-board-helper.user.js (npm run build)",
   "scripts": {
     "build": "node tools/build.mts",
-    "check": "node tools/build.mts --check && node tools/check-i18n.js && eslint && tsc -p . && tsc -p tools && npm run -s test:tools",
+    "check": "node tools/build.mts --check && node tools/check-i18n.js && eslint && node node_modules/typescript-native/bin/tsc -p . && node node_modules/typescript-native/bin/tsc -p tools && npm run -s test:tools",
     "lint": "eslint",
-    "typecheck": "tsc -p . && tsc -p tools",
+    "typecheck": "node node_modules/typescript-native/bin/tsc -p . && node node_modules/typescript-native/bin/tsc -p tools",
     "smoke": "npm run -s build && node tools/smoke.js",
     "test:gif": "npm run -s build && node tools/gif-test.js",
     "test:fav": "npm run -s build && node tools/fav-test.js",
@@ -22,6 +22,8 @@
     "espree": "^11.2.0",
     "globals": "^17.13.0",
     "playwright": "^1.63.0",
-    "typescript": "^7.0.2"
+    "typescript": "~6.0.3",
+    "typescript-eslint": "^8.73.0",
+    "typescript-native": "npm:typescript@^7.0.2"
   }
 }
