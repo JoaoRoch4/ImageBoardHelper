@@ -1,6 +1,9 @@
 # Changelog
 
-## 1.21.0
+## 2.0.0
+
+A new major version for a new shape of the code, with nothing taken away:
+first published for a few minutes as 1.21.0, the same script.
 
 - The same features as 1.20.0, now built from source: the script's code
   lives in TypeScript modules in `src/`, joined by esbuild into the one
