@@ -6,13 +6,15 @@ A new major version for a new shape of the code, with nothing taken away:
 first published for a few minutes as 1.21.0, the same script.
 
 - The same features as 1.20.0, now built from source: the script's code
-  lives in TypeScript modules in `src/`, joined by esbuild into the one
-  `image-board-helper.user.js` you install, not minified, with names and
-  layout kept. `npm run build` makes it and `npm run check` fails when the
+  lives in TypeScript modules in `src/`, joined into the one
+  `image-board-helper.user.js` you install with their types erased and
+  nothing else changed, so the file reads as `src/` does, comments
+  included. `npm run build` makes it and `npm run check` fails when the
   committed file is not what `src/` builds (see Building in the README)
-- The build checks the two ways joining modules could change what the
-  script does: a name esbuild renamed to one that is not in `src/`, and a
-  value read while loading before its module ran
+- The build proves what joining could break: erasing the types leaves the
+  code's tokens and comments as they were, no two modules share a
+  top-level name, no module reaches a global another one declares, and no
+  value is read while loading before its module ran
 - ESLint reads the TypeScript through typescript-eslint
 
 ## 1.20.0

@@ -141,7 +141,7 @@ Settings live in `localStorage` (`IBH_CFG`), with a copy in Violentmonkey's stor
 
 ## Building
 
-`image-board-helper.user.js`, the file you install, is generated: its source is the TypeScript modules in `src/`, joined by [esbuild](https://esbuild.github.io/) into one script, not minified. After changing `src/`, run `npm install` once, then `npm run build`, and commit both. `npm run check` fails when the committed file is not what `src/` builds.
+`image-board-helper.user.js`, the file you install, is generated: its source is the TypeScript modules in `src/`, joined into one script with their types erased: the code and its comments read as in `src/`, nothing minified. After changing `src/`, run `npm install` once, then `npm run build`, and commit both. `npm run check` fails when the committed file is not what `src/` builds.
 
 ---
 

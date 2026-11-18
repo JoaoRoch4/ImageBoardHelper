@@ -1,24 +1,27 @@
 #!/usr/bin/env node
-// Builds image-board-helper.user.js from src/ (npm run build): esbuild joins
-// the modules into one IIFE, not minified, the metadata block of
-// src/header.txt on top. The generated file stays committed, since the
-// deploy installs it by its commit-pinned raw link.
+// Builds image-board-helper.user.js from src/ (npm run build): each module
+// with its types erased, joined into one IIFE in the order ES modules run,
+// under the metadata block of src/header.txt. Nothing else is rewritten:
+// comments, names, quotes and layout are the source's, so the generated
+// file reads like src/. It stays committed, since the deploy installs it by
+// its commit-pinned raw link.
 //
 //   node tools/build.mts            writes image-board-helper.user.js
 //   node tools/build.mts --check    fails when the committed file is not what src/ builds
 //
-// Two checks run on every build, because the bundle hides what they catch:
-// - no identifier renamed: esbuild renames a top-level name that two modules
-//   share (foo -> foo2), and tools and readers find functions by name;
-// - load order: a bundle turns every top-level const/let into a var, so a
-//   value read while the modules load, before its own module ran, is
-//   undefined instead of a ReferenceError ("${ACCENT}" would print
-//   "undefined" in a CSS string, silently).
+// Joining modules into one script is only safe because every build checks:
+// - types erased in place: Node's stripTypeScriptTypes blanks them with
+//   spaces and the blanks go; the result must keep the blanked text's
+//   tokens and comments, so no code changed and none got glued together;
+// - one scope for all: no two modules declare the same top-level name, and
+//   no module uses a global (open, name, …) that another module declares;
+// - load order: what a statement reads while the script loads has to be set
+//   by an earlier one (a top-level const read too early would throw).
 
 import fs from 'node:fs'
 import path from 'node:path'
+import { stripTypeScriptTypes } from 'node:module'
 import { fileURLToPath } from 'node:url'
-import * as esbuild from 'esbuild'
 import * as espree from 'espree'
 import * as eslintScope from 'eslint-scope'
 import type * as ESTree from 'estree'
@@ -26,47 +29,6 @@ import type * as ESTree from 'estree'
 const REPO = path.join(path.dirname(fileURLToPath(import.meta.url)), '..')
 const SRC = path.join(REPO, 'src')
 const OUT = path.join(REPO, 'image-board-helper.user.js')
-const HELPERS = /^__[a-zA-Z]+$/   // esbuild's own runtime (keepNames: __name, __defProp)
-
-/** The userscript as src/ builds it. */
-export async function build(): Promise<string> {
-  const entry = ['main.ts', 'main.js'].map(f => path.join(SRC, f)).find(f => fs.existsSync(f))
-  if (!entry) throw new Error('no src/main.ts')
-  const result = await esbuild.build({
-    entryPoints: [entry],
-    absWorkingDir: REPO,       // the bundle names each module by its path from here: // src/core/config.ts
-    bundle: true,
-    write: false,
-    metafile: true,
-    format: 'iife',
-    platform: 'browser',
-    target: 'es2020',
-    charset: 'utf8',           // emojis stay emojis, not \u escapes
-    minify: false,
-    keepNames: true,
-    treeShaking: false,        // nothing that looks unused is dropped: the source decides
-    legalComments: 'inline',
-    logLevel: 'silent',
-  })
-  for (const w of result.warnings) console.warn(`build warning: ${w.text}${w.location ? ` (${w.location.file}:${w.location.line})` : ''}`)
-  const out = result.outputFiles[0]
-  if (!out) throw new Error('esbuild wrote nothing')
-  // ESM is strict, and esbuild says so with a directive above the IIFE. The
-  // script's own "use strict" goes inside it, as it always was: Violentmonkey
-  // wraps the file in its own function, and a directive only counts as the
-  // first statement of one.
-  let code = out.text.replace(/^"use strict";\n/, '')
-  const open = '(() => {\n'
-  if (!code.startsWith(open) || !code.endsWith('})();\n')) throw new Error('unexpected bundle shape: not one IIFE')
-  code = `${open}  "use strict";\n${code.slice(open.length)}`
-
-  const inputs = Object.keys(result.metafile.inputs)
-  checkNames(code, inputs)
-  checkLoadOrder(code)
-  const header = fs.readFileSync(path.join(SRC, 'header.txt'), 'utf8').trimEnd()
-  checkVersion(header, code)
-  return `${header}\n\n${code}`
-}
 
 type Variable = eslintScope.Variable
 type Node = ESTree.Node
@@ -77,43 +39,203 @@ function parse(code: string, sourceType: 'script' | 'module') {
   return { ast, scopes }
 }
 
-// Every name declared anywhere in the code (variables, functions, parameters,
-// catch bindings), leaving out import bindings and esbuild's own helpers
-// (__name and what its arrow declares).
-function declaredNames(code: string, sourceType: 'script' | 'module'): Set<string> {
-  const { scopes } = parse(code, sourceType)
-  const helpers: [number, number][] = []
-  for (const scope of scopes.scopes) {
-    for (const v of scope.variables) {
-      for (const d of v.defs) if (HELPERS.test(v.name) && d.node.range) helpers.push(d.node.range)
-    }
-  }
-  const inHelper = (n: Node) => !!n.range && helpers.some(([a, b]) => n.range![0] >= a && n.range![1] <= b)
-  const names = new Set<string>()
-  for (const scope of scopes.scopes) {
-    for (const v of scope.variables) {
-      if (v.defs.length && v.defs.every(d => d.type !== 'ImportBinding' && !inHelper(d.name))) names.add(v.name)
-    }
-  }
-  return names
+const span = (n: Node): [number, number] => {
+  if (!n.range) throw new Error('a node without its range')
+  return n.range
 }
 
-// The bundle declares exactly the names the modules declare: one more is a
-// rename (or code esbuild made up), one fewer is code that was dropped.
-export function checkNames(bundle: string, inputs: string[]) {
-  const source = new Set<string>()
-  for (const file of inputs) {
-    const text = fs.readFileSync(path.resolve(REPO, file), 'utf8')
-    const js = esbuild.transformSync(text, { loader: file.endsWith('.ts') ? 'ts' : 'js', format: 'esm', target: 'es2020' }).code
-    for (const n of declaredNames(js, 'module')) source.add(n)
+// What the parser reads: each token, and each comment unless left out,
+// without their positions.
+function shape(code: string, sourceType: 'script' | 'module', comments = true): string[] {
+  const tokens = espree.tokenize(code, { ecmaVersion: 2022, sourceType, comment: true })
+  const words = tokens.map(t => `${t.type} ${String(t.value)}`)
+  return comments ? [...words, ...(tokens.comments || []).map(c => `${c.type} ${c.value}`)] : [...words, `${(tokens.comments || []).length} comments`]
+}
+
+function sameShape(before: string, after: string, sourceType: 'script' | 'module', what: string, comments = true) {
+  const a = shape(before, sourceType, comments)
+  const b = shape(after, sourceType, comments)
+  const i = a.findIndex((t, k) => t !== b[k])
+  if (i >= 0 || a.length !== b.length) {
+    const at = i >= 0 ? i : Math.min(a.length, b.length)
+    throw new Error(`${what} changed the code: "${a[at] ?? '(end)'}" became "${b[at] ?? '(end)'}"`)
   }
-  const built = declaredNames(bundle, 'script')
-  const renamed = [...built].filter(n => !source.has(n) && !HELPERS.test(n))
-  const dropped = [...source].filter(n => !built.has(n))
-  if (renamed.length || dropped.length) {
-    throw new Error(`the bundle's names differ from src/: ${renamed.length ? `renamed or new: ${renamed.join(', ')}` : ''}` +
-      `${dropped.length ? ` dropped: ${dropped.join(', ')}` : ''}. Two modules may declare the same top-level name; rename one in src/.`)
+}
+
+// Node's stripTypeScriptTypes is experimental in Node 24 and says so on
+// stderr at its first call; the build's own output stays clean.
+function quietly<T>(run: () => T): T {
+  const emit = process.emitWarning
+  process.emitWarning = () => {}
+  try { return run() } finally { process.emitWarning = emit }
+}
+
+// One line with its types blanked (`blanked`, from `ts`): each run of erased
+// text goes, and a blank left before `)`, `,`, `;`, `]`, `}` or a space goes
+// with it; at the start of a line the indentation stays.
+function squeeze(ts: string, blanked: string): string {
+  let out = ''
+  let i = 0
+  while (i < blanked.length) {
+    if (ts[i] === blanked[i]) { out += blanked[i]; i++; continue }
+    let end = i   // the run: erased characters and the blanks between them
+    for (let k = i; k < blanked.length && (ts[k] !== blanked[k] || blanked[k] === ' ' || blanked[k] === '\t'); k++) {
+      if (ts[k] !== blanked[k]) end = k + 1
+    }
+    if (!out.trim()) {
+      while (blanked[end] === ' ' || blanked[end] === '\t') end++
+    } else if (/[ \t]$/.test(out) && (end >= blanked.length || /[\s),;\]}]/.test(blanked[end] as string))) {
+      out = out.replace(/[ \t]+$/, '')
+    }
+    i = end
   }
+  return out.replace(/[ \t]+$/, '')
+}
+
+// TypeScript to JavaScript, with the types erased where they stand: Node
+// blanks them with spaces, keeping every other character in place, and the
+// blanks go (squeeze). A line that held only types goes whole, and so does
+// a blank line it leaves doubled. The comments and the layout are the
+// source's, and the result must parse to the very tokens and comments of
+// the blanked text.
+export function eraseTypes(ts: string, label: string): string {
+  const blanked = quietly(() => stripTypeScriptTypes(ts, { mode: 'strip' }))
+  const tsLines = ts.split('\n')
+  const jsLines = blanked.split('\n')
+  if (blanked.length !== ts.length || tsLines.length !== jsLines.length) throw new Error(`${label}: erasing the types moved code`)
+  const out: string[] = []
+  let gap = false   // lines of types only left out since the last line kept
+  tsLines.forEach((t, n) => {
+    const j = jsLines[n] as string
+    if (t !== j && !j.trim()) { gap = true; return }
+    const line = t === j ? j : squeeze(t, j)
+    if (gap && !line.trim() && !(out[out.length - 1] ?? '').trim()) { gap = false; return }
+    gap = false
+    out.push(line)
+  })
+  const js = out.join('\n')
+  sameShape(blanked, js, 'module', `${label}: erasing the types`)
+  return js
+}
+
+type Module = { file: string, label: string, code: string, ast: ESTree.Program, scope: eslintScope.Scope }
+
+function load(file: string, label: string): Module {
+  const text = fs.readFileSync(file, 'utf8')
+  const code = file.endsWith('.ts') ? eraseTypes(text, label) : text
+  const { ast, scopes } = parse(code, 'module')
+  const scope = scopes.globalScope?.childScopes[0]
+  if (!scope || scope.type !== 'module') throw new Error(`${label}: no module scope`)
+  return { file, label, code, ast, scope }
+}
+
+// The file an import names: as written, or with .ts or .js added.
+function resolve(from: Module, spec: string): string {
+  if (!spec.startsWith('.')) throw new Error(`${from.label} imports ${spec}: only modules of src/ can be joined`)
+  const base = path.resolve(path.dirname(from.file), spec)
+  const file = [base, `${base}.ts`, `${base}.js`].find(f => fs.existsSync(f) && fs.statSync(f).isFile())
+  if (!file) throw new Error(`${from.label} imports ${spec}, which does not exist`)
+  return file
+}
+
+// The modules in the order ES modules run them: depth first from the entry,
+// each one after the modules it imports, in the order it imports them.
+function modules(srcDir: string, entry: string): Module[] {
+  const order: Module[] = []
+  const seen = new Set<string>()
+  const visit = (file: string) => {
+    if (seen.has(file)) return
+    seen.add(file)
+    const m = load(file, `src/${path.relative(srcDir, file).split(path.sep).join('/')}`)
+    for (const s of m.ast.body) if (s.type === 'ImportDeclaration') visit(resolve(m, String(s.source.value)))
+    order.push(m)
+  }
+  visit(path.join(srcDir, entry))
+  return order
+}
+
+// A module's code in the script: no imports (every name is in scope) and
+// no `export` before its declarations.
+function body(m: Module): string {
+  const cuts: [number, number][] = []
+  for (const s of m.ast.body) {
+    if (s.type === 'ImportDeclaration') {
+      let [a, b] = span(s)
+      const lineStart = m.code.lastIndexOf('\n', a - 1) + 1
+      const lineEnd = m.code.indexOf('\n', b)
+      if (!m.code.slice(lineStart, a).trim() && !m.code.slice(b, lineEnd < 0 ? undefined : lineEnd).trim()) {
+        a = lineStart
+        b = lineEnd < 0 ? m.code.length : lineEnd + 1
+      }
+      cuts.push([a, b])
+    } else if (s.type === 'ExportNamedDeclaration') {
+      if (!s.declaration || s.source) throw new Error(`${m.label}: export the declaration itself, not a list`)
+      cuts.push([span(s)[0], span(s.declaration)[0]])
+    } else if (s.type === 'ExportDefaultDeclaration' || s.type === 'ExportAllDeclaration') {
+      throw new Error(`${m.label}: export default and export * cannot be joined; export named declarations`)
+    }
+  }
+  let code = m.code
+  for (const [a, b] of cuts.reverse()) code = code.slice(0, a) + code.slice(b)
+  return code.replace(/^(?:[ \t]*\n)+/, '').replace(/\s*$/, '\n')
+}
+
+// One scope holds every module's top-level names once they are joined: two
+// modules declaring one name would clash, and a module reaching a global
+// (open, name, …) would get another module's variable of that name instead.
+function checkScope(mods: Module[]) {
+  const owner = new Map<string, string>()
+  const problems: string[] = []
+  for (const m of mods) {
+    for (const v of m.scope.variables) {
+      if (v.defs.some(d => d.type === 'ImportBinding')) continue
+      const other = owner.get(v.name)
+      if (other) problems.push(`${v.name} is declared at the top of both ${other} and ${m.label}: rename one`)
+      else owner.set(v.name, m.label)
+    }
+  }
+  for (const m of mods) {
+    for (const r of m.scope.through) {
+      const other = owner.get(r.identifier.name)
+      if (other && other !== m.label) {
+        problems.push(`${m.label} (line ${r.identifier.loc?.start.line}) uses the global ${r.identifier.name}, which ${other} declares: import it, or rename one`)
+      }
+    }
+  }
+  if (problems.length) throw new Error(`names:\n  ${problems.join('\n  ')}`)
+}
+
+// Two spaces before each line of the IIFE's body, except where a line
+// starts inside a template string, whose text would change.
+function indent(code: string): string {
+  const tokens = espree.tokenize(code, { ecmaVersion: 2022, sourceType: 'script', range: true })
+  const texts = tokens.filter(t => t.type === 'Template' && t.range).map(t => t.range as [number, number])
+  let pos = 0
+  const lines = code.split('\n').map(line => {
+    const start = pos
+    pos += line.length + 1
+    return line && !texts.some(([a, b]) => a < start && start < b) ? `  ${line}` : line
+  })
+  return lines.join('\n')
+}
+
+/** The modules of `srcDir` joined into one IIFE, from `entry`. */
+export function bundle(srcDir: string, entry = 'main.ts'): { code: string, modules: string[] } {
+  const mods = modules(srcDir, entry)
+  checkScope(mods)
+  const inner = `"use strict";\n\n${mods.map(m => `// ${m.label}\n${body(m)}`).join('\n')}`
+  const indented = indent(inner)
+  sameShape(inner, indented, 'script', 'indenting', false)
+  return { code: `(() => {\n${indented}})();\n`, modules: mods.map(m => m.label) }
+}
+
+/** The userscript as src/ builds it. */
+export function build(): string {
+  const { code } = bundle(SRC)
+  checkLoadOrder(code)
+  const header = fs.readFileSync(path.join(SRC, 'header.txt'), 'utf8').trimEnd()
+  checkVersion(header, code)
+  return `${header}\n\n${code}`
 }
 
 // Methods that call their callback before they return (an array's, Array.from,
@@ -154,16 +276,14 @@ export function checkLoadOrder(bundle: string) {
       for (const d of stmt.declarations) {
         for (const v of scopes.getDeclaredVariables(d)) {
           setAt.set(v, i)
-          // const f = () => …, or keepNames' __name(() => …, "f"): callable like a function.
-          let init = d.init
-          if (init?.type === 'CallExpression' && init.callee.type === 'Identifier' && init.callee.name === '__name') init = init.arguments[0] as ESTree.Expression
-          if (isFunction(init)) functions.set(v, init)
+          // const f = () => …: callable like a function.
+          if (isFunction(d.init)) functions.set(v, d.init)
         }
       }
     }
   })
 
-  // The module each statement came from, by esbuild's "// src/…" comments.
+  // The module each statement came from, by the "// src/…" line above it.
   const marks = (ast.comments || []).filter(c => c.type === 'Line' && /^ src\//.test(c.value))
   const moduleOf = (node: Node) => {
     let name = '?'
@@ -234,14 +354,14 @@ export function checkLoadOrder(bundle: string) {
 // The version lives in two places, @version and VERSION: they move together.
 function checkVersion(header: string, bundle: string) {
   const meta = (header.match(/^\/\/ @version\s+(\S+)/m) || [])[1]
-  const code = (bundle.match(/\bvar VERSION = "([^"]+)"/) || [])[1]
+  const code = (bundle.match(/\b(?:const|let|var) VERSION = (['"])([^'"]+)\1/) || [])[2]
   if (!meta || meta !== code) throw new Error(`@version (${meta}) and VERSION (${code}) differ`)
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === path.resolve(process.argv[1])) {
   const check = process.argv.includes('--check')
   try {
-    const code = await build()
+    const code = build()
     if (check) {
       const committed = fs.existsSync(OUT) ? fs.readFileSync(OUT, 'utf8') : ''
       if (committed !== code) {

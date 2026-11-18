@@ -17,16 +17,17 @@ jobs:
     name: Build, type-check, lint, tool tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24   # runs tools/*.mts as they are (type stripping)
           cache: npm
       - run: npm ci
-      # esbuild joins src/ into the userscript, with the build's own checks
-      # (no renamed name, no value read before its module loads), and the
-      # committed file must be what src/ builds.
-      - name: Build (esbuild) and compare with the committed userscript
+      # The build erases the types and joins src/ into the userscript, with
+      # its own checks (the code unchanged, one scope for all the modules,
+      # no value read before its module loads), and the committed file must
+      # be what src/ builds.
+      - name: Build and compare with the committed userscript
         run: node tools/build.mts --check
       - name: Type-check src/ and tools/ (TypeScript 7)
         run: npm run -s typecheck
@@ -38,7 +39,7 @@ jobs:
         run: npm run -s test:tools
       - name: Keep the built userscript
         run: node tools/build.mts
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: image-board-helper.user.js
           path: image-board-helper.user.js
@@ -53,8 +54,8 @@ jobs:
         # smoke loads safebooru.org live; the others fake the network.
         test: [smoke, 'test:gif', 'test:fav', 'test:url']
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: npm

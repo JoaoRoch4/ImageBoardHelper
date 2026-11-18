@@ -7,7 +7,8 @@ const unused = ['warn', { args: 'none', caughtErrors: 'none' }]
 
 module.exports = [
   // The userscript is generated from src/ (npm run build): its source is what gets linted.
-  { ignores: ['node_modules/', 'image-board-helper.user.js'] },
+  // .claude/ holds Claude Code's worktrees, whole copies of the repository.
+  { ignores: ['node_modules/', 'image-board-helper.user.js', '.claude/'] },
   js.configs.recommended,
   // The userscript's source, src/: TypeScript, read through typescript-eslint
   // (on TypeScript 6, the package "typescript": it needs TypeScript's JavaScript

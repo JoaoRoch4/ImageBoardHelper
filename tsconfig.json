@@ -1,7 +1,7 @@
 {
   // Type check of the userscript's source, src/ (npm run typecheck). Nothing
-  // is emitted: esbuild builds the userscript (npm run build), and both read
-  // the same modules.
+  // is emitted: the build erases the types itself (npm run build), and both
+  // read the same modules.
   "compilerOptions": {
     "target": "ES2020",
     "lib": ["ES2020", "DOM", "DOM.Iterable"],
@@ -10,7 +10,7 @@
     "moduleDetection": "force",           // every file is a module, even one without import or export
     "noEmit": true,
     "strict": true,
-    "verbatimModuleSyntax": true,         // a type-only import says `import type`, as esbuild needs to drop it
+    "verbatimModuleSyntax": true,         // a type-only import says `import type`, so erasing it is safe
     "noUnusedLocals": true,               // ESLint's no-unused-vars for the .ts modules, which it does not read
     "types": []
   },

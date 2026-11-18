@@ -141,7 +141,7 @@ As configurações ficam no `localStorage` (`IBH_CFG`), com uma cópia no armaze
 
 ## Build
 
-O `image-board-helper.user.js`, o arquivo que se instala, é gerado: o código-fonte são os módulos TypeScript em `src/`, juntados pelo [esbuild](https://esbuild.github.io/) num script só, sem minificar. Depois de mudar `src/`, rode `npm install` uma vez e `npm run build`, e faça commit dos dois. O `npm run check` falha quando o arquivo commitado não é o que `src/` gera.
+O `image-board-helper.user.js`, o arquivo que se instala, é gerado: o código-fonte são os módulos TypeScript em `src/`, juntados num script só com os tipos apagados: o código e os comentários ficam como em `src/`, nada minificado. Depois de mudar `src/`, rode `npm install` uma vez e `npm run build`, e faça commit dos dois. O `npm run check` falha quando o arquivo commitado não é o que `src/` gera.
 
 ---
 

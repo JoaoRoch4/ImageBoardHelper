@@ -25,7 +25,8 @@
 // ==/UserScript==
 
 // Generated from src/ by `npm run build` (tools/build.mts): edit src/, not
-// this file. esbuild joins the modules, not minified; their comments stay in src/.
+// this file. Each module is here as written, its comments included, with the
+// TypeScript types erased.
 
 /*
  * Image Board Helper: a standalone layer over the pages of Gelbooru 0.2

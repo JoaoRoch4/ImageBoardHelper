@@ -1,7 +1,7 @@
 {
   "name": "image-board-helper",
   "private": true,
-  "description": "Development tools and the build: src/ is joined by esbuild into image-board-helper.user.js (npm run build)",
+  "description": "Development tools and the build: src/ is joined, its types erased, into image-board-helper.user.js (npm run build)",
   "scripts": {
     "build": "node tools/build.mts",
     "check": "node tools/build.mts --check && node tools/check-i18n.js && eslint && node node_modules/typescript-native/bin/tsc -p . && node node_modules/typescript-native/bin/tsc -p tools && npm run -s test:tools",
