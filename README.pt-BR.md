@@ -2,6 +2,8 @@
 
 **Português** · [English](README.md)
 
+[![Tests](https://github.com/JoaoRoch4/ImageBoardHelper/actions/workflows/tests.yml/badge.svg)](https://github.com/JoaoRoch4/ImageBoardHelper/actions/workflows/tests.yml)
+
 Userscript para celular nos boorus Gelbooru — rule34.xxx, gelbooru.com, safebooru e xbooru: visualizador de post dentro da página, feed nítido com colunas, capa real de vídeo e prévia de cenas, GIF animado na listagem, barras de busca com buscas salvas, busca nos seus favoritos, autopager, Ver depois e downloads, tudo de olho na memória do celular.
 
 Funciona nas páginas do próprio site e só chama os endpoints do próprio site. Até a 0.64 era um complemento do [Yande.re Masonry](https://github.com/asadahimeka/yandere-masonry); essa versão continua na branch [`masonry-companion`](https://github.com/JoaoRoch4/ImageBoardHelper/tree/masonry-companion).

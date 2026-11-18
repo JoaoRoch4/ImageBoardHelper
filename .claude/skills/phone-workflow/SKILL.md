@@ -32,9 +32,9 @@ Comece pelo `status`; ele lê tudo sem mudar nada.
 
 ## Publicar uma mudança
 
-As regras do projeto (CLAUDE.md) vêm primeiro: versão nos dois lugares, entrada no CHANGELOG, os dois READMEs, `npm run check`. Depois:
+As regras do projeto (CLAUDE.md) vêm primeiro. O código muda em `src/`, nunca no `image-board-helper.user.js`, que é gerado. A versão fica em dois lugares, `src/header.txt` e `src/core/site.ts`. Depois vêm a entrada no CHANGELOG, os dois READMEs, `npm run build` e `npm run check`. Depois:
 
-1. Commit e push: o link raw é fixado no commit, então o commit precisa estar no GitHub.
+1. Commit de `src/` junto com o arquivo gerado, e push: o link raw é fixado no commit, então o commit precisa estar no GitHub. O push no `main` também roda o workflow Tests do GitHub Actions (`gh run list -w Tests`).
 2. `deploy`. Ele roda o `check`, salva o log de toda aba do site, copia o arquivo para `/sdcard/Download`, abre no Firefox Beta o link raw fixado no commit e acompanha o Violentmonkey, depois recarrega as abas escondidas do site. O relatório dele lista as linhas principais dos logs salvos: leia, é a última chance.
 3. O Violentmonkey atualiza em silêncio, exceto quando os grants ou o `@resource` mudam: aí ele espera um toque. Diga ao usuário para tocar; `confirm: true` só toca por ele quando ele pediu.
 4. `tabs` para ver a versão nova; a aba visível atualiza quando o usuário a recarrega.
@@ -94,5 +94,5 @@ Leia antes de chutar: a página do celular muitas vezes difere da que um navegad
 
 ## Verificações
 
-- `check`: `npm run check` (sintaxe, paridade do I18N, ESLint, TypeScript); uns 20 segundos. O `deploy` o roda.
+- `check`: `npm run check` confere se o arquivo gerado é o que `src/` gera, a paridade do I18N, o ESLint, os tipos (TS 7) e os testes das ferramentas. Leva uns 3 minutos no aparelho. Dois testes de tempo, um do `phone-server` e um do `video-reducer`, às vezes falham quando o aparelho está carregado: rode de novo antes de investigar. O `deploy` roda o `check`; com `skip_check`, só depois de um `check` limpo na mesma árvore.
 - `smoke`: o teste do Playwright num Firefox headless no safebooru (o rule34 responde navegadores headless com CAPTCHA). Cerca de um minuto e pesado na memória: o Shizuku caiu e o Firefox descarregou as abas uma vez enquanto ele rodava, então não enquanto o usuário estiver no meio de alguma coisa.

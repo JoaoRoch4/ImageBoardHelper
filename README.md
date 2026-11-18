@@ -2,6 +2,8 @@
 
 [Português](README.pt-BR.md) · **English**
 
+[![Tests](https://github.com/JoaoRoch4/ImageBoardHelper/actions/workflows/tests.yml/badge.svg)](https://github.com/JoaoRoch4/ImageBoardHelper/actions/workflows/tests.yml)
+
 A userscript for phones on Gelbooru boards — rule34.xxx, gelbooru.com, safebooru and xbooru: an in-page post viewer, a sharp feed with columns, real video covers and scene previews, inline GIFs, search bars with saved searches, a search across your favorites, an autopager, Watch later and downloads, all with an eye on the phone's memory.
 
 It works on the site's own pages and calls only the site's own endpoints. Up to 0.64 it was a companion to [Yande.re Masonry](https://github.com/asadahimeka/yandere-masonry); that version lives on in the [`masonry-companion`](https://github.com/JoaoRoch4/ImageBoardHelper/tree/masonry-companion) branch.
