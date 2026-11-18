@@ -1,4 +1,4 @@
-/** @import { VideoControls } from './player' */
+import type { VideoControls } from './player'
 import { ACCENT, ACCENT_DARK, ACCENT_MID, SITE, THUMB } from '../core/site'
 import { CFG, readJSON, writeJSON } from '../core/config'
 import { t } from '../core/i18n'
@@ -26,73 +26,69 @@ export const SITE_LINK = `${THUMB} a`
 export const SWIPE_MIN = 60        // px sideways to change post
 export const CONTROLS_BAND = 100   // bottom strip of the video: the player's own controls (the two-row capsule and its margin)
 
-/**
- * The post viewer: its elements (buildModal) and the post on show.
- * @typedef {object} Modal
- * @property {HTMLDivElement} host
- * @property {ShadowRoot} root
- * @property {HTMLDivElement} box
- * @property {HTMLDivElement} stage
- * @property {HTMLDivElement} vwrap
- * @property {HTMLVideoElement} video
- * @property {HTMLImageElement} image
- * @property {VideoControls} controls
- * @property {HTMLAnchorElement} post
- * @property {HTMLSpanElement} count
- * @property {HTMLDivElement} status
- * @property {HTMLButtonElement} fav
- * @property {HTMLButtonElement} up
- * @property {HTMLButtonElement} vfav
- * @property {HTMLDivElement} gearMenu
- * @property {HTMLSpanElement} dlq
- * @property {HTMLSpanElement} score
- * @property {HTMLDivElement} toast
- * @property {HTMLDivElement} badge
- * @property {HTMLButtonElement} turn
- * @property {HTMLButtonElement} fsBtn
- * @property {HTMLButtonElement} menu
- * @property {HTMLDivElement} sheet
- * @property {HTMLDivElement} tagList
- * @property {HTMLButtonElement} laterBtn
- * @property {HTMLButtonElement} dlBtn
- * @property {HTMLButtonElement} playerBtn
- * @property {HTMLButtonElement} appDlBtn
- * @property {HTMLButtonElement} appReduceBtn
- * @property {HTMLButtonElement} quality
- * @property {HTMLButtonElement} tabTags
- * @property {HTMLButtonElement} tabInfo
- * @property {HTMLButtonElement} tabComments
- * @property {HTMLDivElement} infoList
- * @property {HTMLDivElement} commentList
- * @property {string} sheetTab          'tags', 'info' or 'comments'
- * @property {HTMLDivElement} laterView
- * @property {HTMLDivElement} laterHead
- * @property {HTMLDivElement} laterGrid
- * @property {HTMLDivElement} laterNote
- * @property {HTMLAnchorElement[] | null} listLinks   the Watch later list being stepped through, instead of the page's
- * @property {string | null} turned    the orientation turnScreen locked
- * @property {boolean} open
- * @property {HTMLAnchorElement} link  the post on show; typed non-null, but null until a post opens
- *   (the Watch later list opens the modal without one, and what runs there checks it)
- * @property {number} seq              bumped by every new post: loads of an older one drop their result
- * @property {number} [dir]            the direction of travel, for the preload
- * @property {IntersectionObserver | null} [laterIO]
- * @property {string | null} [fileUrl]     the post's own file, once it loaded
- * @property {(() => void) | null} [cancelLoad]
- * @property {boolean} [isSample]
- * @property {boolean} [origPending]
- * @property {string | null} [sampleUrl]
- * @property {string | null} [rawUrl]
- * @property {boolean} [keepSample]
- * @property {ScrollRestoration} [scrollMode]   the page's own, while the modal holds it
- */
+// The post viewer: its elements (buildModal) and the post on show.
+export type Modal = {
+  host: HTMLDivElement,
+  root: ShadowRoot,
+  box: HTMLDivElement,
+  stage: HTMLDivElement,
+  vwrap: HTMLDivElement,
+  video: HTMLVideoElement,
+  image: HTMLImageElement,
+  controls: VideoControls,
+  post: HTMLAnchorElement,
+  count: HTMLSpanElement,
+  status: HTMLDivElement,
+  fav: HTMLButtonElement,
+  up: HTMLButtonElement,
+  vfav: HTMLButtonElement,
+  gearMenu: HTMLDivElement,
+  dlq: HTMLSpanElement,
+  score: HTMLSpanElement,
+  toast: HTMLDivElement,
+  badge: HTMLDivElement,
+  turn: HTMLButtonElement,
+  fsBtn: HTMLButtonElement,
+  menu: HTMLButtonElement,
+  sheet: HTMLDivElement,
+  tagList: HTMLDivElement,
+  laterBtn: HTMLButtonElement,
+  dlBtn: HTMLButtonElement,
+  playerBtn: HTMLButtonElement,
+  appDlBtn: HTMLButtonElement,
+  appReduceBtn: HTMLButtonElement,
+  quality: HTMLButtonElement,
+  tabTags: HTMLButtonElement,
+  tabInfo: HTMLButtonElement,
+  tabComments: HTMLButtonElement,
+  infoList: HTMLDivElement,
+  commentList: HTMLDivElement,
+  sheetTab: string,   // 'tags', 'info' or 'comments'
+  laterView: HTMLDivElement,
+  laterHead: HTMLDivElement,
+  laterGrid: HTMLDivElement,
+  laterNote: HTMLDivElement,
+  listLinks: HTMLAnchorElement[] | null,   // the Watch later list being stepped through, instead of the page's
+  turned: string | null,   // the orientation turnScreen locked
+  open: boolean,
+  link: HTMLAnchorElement,   // the post on show; typed non-null, but null until a post opens (the Watch later list opens the modal without one, and what runs there checks it)
+  seq: number,   // bumped by every new post: loads of an older one drop their result
+  dir?: number,   // the direction of travel, for the preload
+  laterIO?: IntersectionObserver | null,
+  fileUrl?: string | null,   // the post's own file, once it loaded
+  cancelLoad?: (() => void) | null,
+  isSample?: boolean,
+  origPending?: boolean,
+  sampleUrl?: string | null,
+  rawUrl?: string | null,
+  keepSample?: boolean,
+  scrollMode?: ScrollRestoration,   // the page's own, while the modal holds it
+}
 // null until the first open builds it (buildModal); what can run before
 // then checks it (modal && …), and nothing sets it back.
-/** @type {Modal} */
-export let modal = /** @type {any} */ (null)
+export let modal: Modal = null as any
 
-/** @returns {HTMLAnchorElement[]} */
-export const siteLinks = () => /** @type {HTMLAnchorElement[]} */ ([...document.querySelectorAll(SITE_LINK)])   // SITE_LINK ends in a
+export const siteLinks = (): HTMLAnchorElement[] => ([...document.querySelectorAll(SITE_LINK)] as HTMLAnchorElement[])   // SITE_LINK ends in a
 
 // A like's ❤️ (popHeart): over the post or the thumbnail, it grows, shrinks
 // back, grows a little again and shrinks away to nothing, Instagram style.
@@ -418,8 +414,7 @@ export function buildModal() {
   // 🔗: a tap copies the file's link, a hold opens the file in a new tab.
   // The link is asked for as the finger lands, so it is there by the time
   // the hold ends (the tab must open within that gesture).
-  /** @type {string | null | undefined} */
-  let rawHref = null
+  let rawHref: string | null | undefined = null
   const askRaw = () => { rawHref = null; rawFileUrl().then(u => { rawHref = u }, () => {}) }
   copyBtn.addEventListener('touchstart', askRaw, { passive: true })
   copyBtn.addEventListener('pointerdown', ev => { if (ev.pointerType === 'mouse') askRaw() })
@@ -449,12 +444,11 @@ export function buildModal() {
   installVideoGestures(layer, video)
   root.append(style, box)
   // link: null until openModal sets it (showLater opens the list without one).
-  modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, vfav: favUp, gearMenu, dlq, score, toast, badge, turn, fsBtn, menu, sheet, tagList, laterBtn, dlBtn, playerBtn, appDlBtn, appReduceBtn, quality, tabTags, tabInfo, tabComments, infoList, commentList, sheetTab: 'tags', laterView, laterHead, laterGrid, laterNote, listLinks: null, turned: null, open: false, link: /** @type {any} */ (null), seq: 0 }
+  modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, vfav: favUp, gearMenu, dlq, score, toast, badge, turn, fsBtn, menu, sheet, tagList, laterBtn, dlBtn, playerBtn, appDlBtn, appReduceBtn, quality, tabTags, tabInfo, tabComments, infoList, commentList, sheetTab: 'tags', laterView, laterHead, laterGrid, laterNote, listLinks: null, turned: null, open: false, link: null as any, seq: 0 }
 }
 
 let toastTimer = 0
-/** @param {string} text */
-export function flash(text) {
+export function flash(text: string) {
   modal.toast.textContent = text
   modal.toast.style.opacity = '1'
   clearTimeout(toastTimer)
@@ -468,12 +462,10 @@ export function flash(text) {
 // from the site's own vote links are remembered here, per site.
 const MARKS_KEY = `IBH_MARKS_${SITE}`   // { f: [favorite ids], v: [upvoted ids] }
 const MARKS_MAX = 5000                   // per kind; the oldest go first
-/** @typedef {{ f: Set<string>, v: Set<string>, c: Set<string> }} Marks  ids: f favorites, v upvoted posts, c upvoted comments */
-/** @type {Marks | null} */
-let marks = null
+export type Marks = { f: Set<string>, v: Set<string>, c: Set<string> }   // ids: f favorites, v upvoted posts, c upvoted comments
+let marks: Marks | null = null
 
-/** @returns {Marks} */
-function loadMarks() {
+function loadMarks(): Marks {
   if (!marks) {
     const m = readJSON(MARKS_KEY, {})
     marks = { f: new Set(m.f || []), v: new Set(m.v || []), c: new Set(m.c || []) }   // c: upvoted comments
@@ -481,45 +473,33 @@ function loadMarks() {
   return marks
 }
 
-/**
- * @param {keyof Marks} kind
- * @param {string} id
- * @param {boolean} on
- */
-export function setMark(kind, id, on) {
+export function setMark(kind: keyof Marks, id: string, on: boolean) {
   const set = loadMarks()[kind]
   if (on === set.has(id)) return
   if (on) set.add(id)
   else set.delete(id)
-  while (set.size > MARKS_MAX) set.delete(/** @type {string} */ (set.values().next().value))   // not empty
+  while (set.size > MARKS_MAX) set.delete(set.values().next().value as string)   // not empty
   // loadMarks() above filled marks.
-  writeJSON(MARKS_KEY, { f: [.../** @type {Marks} */ (marks).f], v: [.../** @type {Marks} */ (marks).v], c: [.../** @type {Marks} */ (marks).c] })
+  writeJSON(MARKS_KEY, { f: [...(marks as Marks).f], v: [...(marks as Marks).v], c: [...(marks as Marks).c] })
 }
 
-/** @param {keyof Marks} kind @param {string} id */
-export const hasMark = (kind, id) => loadMarks()[kind].has(id)
+export const hasMark = (kind: keyof Marks, id: string) => loadMarks()[kind].has(id)
 
-/** @param {string} name */
-export function readCookie(name) {
+export function readCookie(name: string) {
   const m = document.cookie.match(new RegExp(`(?:^|; )${name}=([^;]*)`))
   return m ? m[1] : null
 }
 
 /**
  * Touches inside the panel are not page gestures.
- * @param {Event} ev
  */
-export function insidePanel(ev) {
+export function insidePanel(ev: Event) {
   const path = typeof ev.composedPath === 'function' ? ev.composedPath() : []
   return panelHost ? path.includes(panelHost) : false
 }
 
 // An event's target as an element (one with closest()), or null: a text
 // node, the document, the window, or no target outside a dispatch.
-/**
- * @param {EventTarget | null} target
- * @returns {Element | null}
- */
-export function asElement(target) {
-  return target && /** @type {Partial<Element>} */ (target).closest ? /** @type {Element} */ (target) : null
+export function asElement(target: EventTarget | null): Element | null {
+  return target && (target as Partial<Element>).closest ? (target as Element) : null
 }

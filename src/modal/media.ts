@@ -1,5 +1,5 @@
 // What the modal shows: the video, the image and its original, a GIF.
-/** @import { Picture } from '../thumbs/covers' */
+import type { Picture } from '../thumbs/covers'
 import { CFG } from '../core/config'
 import { t } from '../core/i18n'
 import { dbg, info, warn } from '../core/log'
@@ -15,12 +15,10 @@ import { fitFullscreenOrientation } from './player'
 import { preloadAhead } from './open'
 
 /**
- * @param {string[]} candidates
- * @param {string | undefined} hash
- * @param {() => void} [onMissing]   no host has a video file
- * @param {() => void} [onFound]     its metadata arrived
+ * @param onMissing   no host has a video file
+ * @param onFound     its metadata arrived
  */
-export function showVideo(candidates, hash, onMissing, onFound) {
+export function showVideo(candidates: string[], hash: string | undefined, onMissing?: () => void, onFound?: () => void) {
   const vcached = cacheGet('video', hash)
   const urls = cachedFirst(candidates, vcached)
   const seq = modal.seq
@@ -85,23 +83,15 @@ export function showVideo(candidates, hash, onMissing, onFound) {
 // priority: 'high' for what is on screen now (the modal), the browser's
 // default otherwise.
 /**
- * @param {string[][]} stages
- * @param {string | null | undefined} cached   cacheGet's: tried first when it is a URL
- * @param {(probe: HTMLImageElement) => void} onWin
- * @param {() => void} onFail
- * @param {'high' | 'low' | 'auto'} [priority]
- * @returns {() => void}   calls the race off
+ * @param cached   cacheGet's: tried first when it is a URL
+ * @returns calls the race off
  */
-export function raceImage(stages, cached, onWin, onFail, priority) {
+export function raceImage(stages: string[][], cached: string | null | undefined, onWin: (probe: HTMLImageElement) => void, onFail: () => void, priority?: 'high' | 'low' | 'auto'): () => void {
   let done = false
-  /** @type {HTMLImageElement[]} */
-  const probes = []
-  /** @param {HTMLImageElement | null} keep */
-  const drop = keep => probes.forEach(pr => { if (pr !== keep) { pr.onload = pr.onerror = null; pr.removeAttribute('src') } })
-  /** @param {HTMLImageElement} pr */
-  const win = pr => { if (done) return; done = true; drop(pr); onWin(pr) }
-  /** @param {string} url @param {() => void} onError */
-  const probe = (url, onError) => {
+  const probes: HTMLImageElement[] = []
+  const drop = (keep: HTMLImageElement | null) => probes.forEach(pr => { if (pr !== keep) { pr.onload = pr.onerror = null; pr.removeAttribute('src') } })
+  const win = (pr: HTMLImageElement) => { if (done) return; done = true; drop(pr); onWin(pr) }
+  const probe = (url: string, onError: () => void) => {
     const pr = new Image()
     pr.decoding = 'async'
     if (priority) pr.fetchPriority = priority
@@ -110,8 +100,7 @@ export function raceImage(stages, cached, onWin, onFail, priority) {
     pr.onerror = onError
     pr.src = url
   }
-  /** @param {number} i */
-  const runStage = i => {
+  const runStage = (i: number) => {
     if (done) return
     const list = (stages[i] || []).filter(url => url !== cached)
     if (i >= stages.length) { done = true; onFail(); return }
@@ -126,26 +115,18 @@ export function raceImage(stages, cached, onWin, onFail, priority) {
 
 // What the page already found for a post: its 'sample' winner is the
 // original itself when the post has no sample (an /images/ URL).
-/** @param {string} hash */
-export function knownOriginal(hash) {
+export function knownOriginal(hash: string) {
   const orig = cacheGet('orig', hash)
   if (orig !== undefined) return orig
   const page = cacheGet('sample', hash)
   return typeof page === 'string' && page.includes('/images/') ? page : undefined
 }
 
-/** @param {string | null | undefined} url */
-const isSampleUrl = url => /\/samples\//.test(url || '')
+const isSampleUrl = (url: string | null | undefined) => /\/samples\//.test(url || '')
 
 // candidates: a list of URLs, or stages of them (see raceImage).
-/**
- * @param {string} placeholder
- * @param {string[] | string[][]} candidates
- * @param {'gif' | 'orig' | 'sample'} kind
- * @param {string} hash
- */
-export function showImage(placeholder, candidates, kind, hash) {
-  const stages = /** @type {string[][]} */ (Array.isArray(candidates[0]) ? candidates : [candidates])
+export function showImage(placeholder: string, candidates: string[] | string[][], kind: 'gif' | 'orig' | 'sample', hash: string) {
+  const stages = (Array.isArray(candidates[0]) ? candidates : [candidates]) as string[][]
   const icached = kind === 'orig' ? knownOriginal(hash) : cacheGet(kind, hash)
   const seq = modal.seq
   modal.video.hidden = true
@@ -177,8 +158,7 @@ export function showImage(placeholder, candidates, kind, hash) {
 // Zoomed into a sample: fetch the original and swap it in, the zoom kept
 // (same picture, same box, more pixels).
 // The quality button: null hides it; 'sample', 'loading' or 'raw'.
-/** @param {'sample' | 'loading' | 'raw' | null} state */
-export function setQuality(state) {
+export function setQuality(state: 'sample' | 'loading' | 'raw' | null) {
   const btn = modal && modal.quality
   if (!btn) return
   btn.hidden = !state
@@ -241,8 +221,7 @@ export function loadModalOriginal() {
 
 // Whether a tap falls on the picture itself, not on the bars object-fit
 // leaves around it inside the <img> box.
-/** @param {MouseEvent} ev */
-export function onImageContent(ev) {
+export function onImageContent(ev: MouseEvent) {
   const img = modal.image
   if (!img.naturalWidth) return true
   const r = img.getBoundingClientRect()
@@ -273,11 +252,9 @@ export function fitImage() {
 
 // The modal's GIF can break the same way; the page is already unloaded, so
 // just decode it again, twice at most.
-/** @param {HTMLImageElement} img @param {string} url @param {number} seq */
-function watchModalGif(img, url, seq) {
+function watchModalGif(img: HTMLImageElement, url: string, seq: number) {
   let tries = 0
-  /** @param {Event} ev */
-  const check = ev => {
+  const check = (ev: Event) => {
     if (modal.seq !== seq) { img.removeEventListener('error', check); img.removeEventListener('load', check); return }
     if (ev.type !== 'error' && img.naturalWidth > 0) return
     if (tries >= GIF_RETRIES) { warn('modal: gif still broken after rebuilding'); return }
@@ -293,8 +270,7 @@ function watchModalGif(img, url, seq) {
 // Some videos carry no video tag and no .webm-thumb, so they look like images.
 // While the image shows, check quietly whether the post has an .mp4; if it
 // does, turn the modal into the video. No delay on the tap itself.
-/** @param {string} src @param {HTMLAnchorElement} link */
-export function sniffVideo(src, link) {
+export function sniffVideo(src: string, link: HTMLAnchorElement) {
   const seq = modal.seq
   const hash = (thumbParts(src) || {}).hash
   const known = cacheGet('video', hash)
@@ -329,13 +305,11 @@ export function sniffVideo(src, link) {
 
 // A card without a link (scanCards falls back to the <img>'s parent) has
 // no href: '?' as for a link without an id, not a throw.
-/** @param {Element} link */
-export const postId = link => (String(/** @type {HTMLAnchorElement} */ (link).href || '').match(/id=(\d+)/) || [])[1] || '?'
+export const postId = (link: Element) => (String((link as HTMLAnchorElement).href || '').match(/id=(\d+)/) || [])[1] || '?'
 
 // Only the "animated" tag, nothing else to go by: no gif, no video/mp4/webm,
 // no .webm-thumb mark from the site. Those may be either kind.
-/** @param {HTMLAnchorElement} link */
-export function ambiguousAnimated(link) {
+export function ambiguousAnimated(link: HTMLAnchorElement) {
   if (link.querySelector('img.webm-thumb')) return false
   const tags = nativeTags(link)
   return /\sanimated\s/i.test(tags) && !NATIVE_REAL_VIDEO.test(tags) && !NATIVE_GIF.test(tags)
@@ -346,13 +320,9 @@ export function ambiguousAnimated(link) {
 // .gif that loads means it is a GIF. Waiting for every video host to say
 // "missing" first cost about 3 s per GIF.
 /**
- * @param {HTMLAnchorElement} link
- * @param {HTMLImageElement} thumb
- * @param {Picture} pic
- * @param {string} hash
- * @param {() => void} asGif   shows it as a GIF once no video host has it
+ * @param asGif   shows it as a GIF once no video host has it
  */
-export function raceVideoAndGif(link, thumb, pic, hash, asGif) {
+export function raceVideoAndGif(link: HTMLAnchorElement, thumb: HTMLImageElement, pic: Picture, hash: string, asGif: () => void) {
   const seq = modal.seq
   let settled = false
   const probe = new Image()

@@ -79,8 +79,8 @@ export function ensureFeedNav() {
   // The paginator comes after the post list in the page, so its state is
   // refreshed as the page fills in rather than fixed when the buttons appear.
   if (pages) {
-    const prev = /** @type {HTMLButtonElement} */ (pages.querySelector('.pp'))   // buildPageNav's buttons
-    const next = /** @type {HTMLButtonElement} */ (pages.querySelector('.np'))
+    const prev = pages.querySelector('.pp') as HTMLButtonElement   // buildPageNav's buttons
+    const next = pages.querySelector('.np') as HTMLButtonElement
     prev.disabled = !pageTarget(-1)
     next.disabled = !pageTarget(1)
   }
@@ -92,8 +92,8 @@ export const wantsFeedButtons = () => CFG.feedNav && CFG.nativeFeed && !!documen
 // next post, e.g. to skip a long comic without scrolling through it.
 const FEED_POST = THUMB
 
-/** @param {number} dir   1 the next post, -1 the previous */
-function jumpPost(dir) {
+/** @param dir   1 the next post, -1 the previous */
+function jumpPost(dir: number) {
   const posts = [...document.querySelectorAll(FEED_POST)]
   if (!posts.length) return
   // By position on screen, not page order: in columns the order runs down
@@ -116,12 +116,7 @@ function jumpPost(dir) {
 // Favorites put the address in an onclick (href is just "#"). Without a
 // usable link, step pid by the number of posts on this page.
 // Of this page, or of a page the autopager fetched (root, at base).
-/**
- * @param {number} dir
- * @param {ParentNode} [root]
- * @param {string} [base]
- */
-export function pageTarget(dir, root = document, base = location.href) {
+export function pageTarget(dir: number, root: ParentNode = document, base: string = location.href) {
   const box = root.querySelector('#paginator, .pagination')
   if (box) {
     const want = dir > 0 ? /^(>|›|next)$/i : /^(<|‹|back|prev(ious)?)$/i
@@ -142,8 +137,7 @@ export function pageTarget(dir, root = document, base = location.href) {
   return url.href
 }
 
-/** @param {number} dir */
-function goPage(dir) {
+function goPage(dir: number) {
   const target = pageTarget(dir)
   if (!target) return
   info(`feed: ${dir > 0 ? 'next' : 'previous'} page`)
@@ -202,8 +196,7 @@ const EYE_OFF_ICON = 'M12 7c2.76 0 5 2.24 5 5 0 .65-.13 1.26-.36 1.83l2.92 2.92c
 
 // 👁: hides every other floating button (◐ and the panel too) for a page
 // with nothing over it, and brings them back. Remembered across pages.
-/** @param {boolean} hidden */
-function setButtonsHidden(hidden) {
+function setButtonsHidden(hidden: boolean) {
   if (hidden) {
     if (bulkMode) setBulkMode(false)   // its ♥ goes away: no tap may favorite unseen
     if (panelOpen) togglePanel(false)
@@ -220,17 +213,17 @@ function applyButtonsHidden() {
   const hidden = !!CFG.buttonsHidden
   if (eye.dataset.hidden === String(hidden)) return
   eye.dataset.hidden = String(hidden)
-  ;/** @type {HTMLDivElement} */ (panelHost).classList.toggle('ibh-clean', hidden)   // the eye is in its shadow
+  ;(panelHost as HTMLDivElement).classList.toggle('ibh-clean', hidden)   // the eye is in its shadow
   eye.title = t(hidden ? 'eyeShow' : 'eyeHide')
-  const icon = /** @type {SVGPathElement} */ (eye.querySelector('path'))   // iconButton's
+  const icon = eye.querySelector('path') as SVGPathElement   // iconButton's
   icon.setAttribute('d', hidden ? EYE_OFF_ICON : EYE_ICON)
 }
 
 // Material Design's "watch later" icon (a clock), as path data.
 const CLOCK_ICON = 'M12 2C6.5 2 2 6.5 2 12s4.5 10 10 10 10-4.5 10-10S17.5 2 12 2zm4.2 14.2L11 13V7h1.5v5.2l4.5 2.7-.8 1.3z'
 
-/** @param {string} cls @param {string} title @param {string} d   the icon's path data */
-function iconButton(cls, title, d) {
+/** @param d   the icon's path data */
+function iconButton(cls: string, title: string, d: string) {
   const btn = el('button', { class: cls, title })
   const ns = 'http://www.w3.org/2000/svg'
   const svg = document.createElementNS(ns, 'svg')
@@ -245,8 +238,7 @@ function iconButton(cls, title, d) {
 // The list opens in the post modal, which exists on the site's own pages.
 const wantsLaterButton = () => !!CFG.laterButton && !!CFG.videoModal && !!document.querySelector(SITE_LINK)
 
-/** @param {boolean} feed @param {boolean} free @param {boolean} redo */
-function buildFeedNav(feed, free, redo) {
+function buildFeedNav(feed: boolean, free: boolean, redo: boolean) {
   const rows = []
   if (feed) {
     const top = el('button', { text: '⤒', title: t('navTop') })

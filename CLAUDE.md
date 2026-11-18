@@ -121,10 +121,10 @@ O usuário quer trazer vários recursos do app para o script no futuro (2026-11-
 - `scrub/scrub.js` — **C.** prévia de cenas: arraste na miniatura (ou segurar, `scrubMode`): `seekFraction`, `previewLoad`, `previewStop`, `borrowDecoder`, `onScrubDown/Move/Up`; o slideshow por seek (`seekShow`, dois vídeos em revezamento, `tickSlide`), `holdVideoShow`, `playShow`; o segurar que toca e continua de onde parou (`holdResume`: `resumePoint`, `keepResume`, `forgetResume`), os chips do cartão (`holdChip`, `soundChip`, `lingerChips`, `removeChips`, `coverBack`, `flipSound`), deslizar para mover o vídeo (`holdRub`: `makeRub`, `rubMove`, também usados pelo player); `logSlideStats`, `installVideoScrub`
 - `scrub/reel.ts` — a fita de keyframes do segurar (`slideReel`): `buildReel` lê o `moov` e os keyframes com Range pelo `GM_xmlhttpRequest`; `showReelWasm` decodifica cada keyframe e desenha num canvas; sem ele, `showReelVideo` toca o MP4 montado por `reelBlob`; se a fita falha, `reelFailed` cai no slideshow por seek
 - `scrub/h264.ts` — o decodificador em WebAssembly: `h264Decoder`, `decodeKeyframe`, `dropH264`
-- `modal/modal.js` — **E.** o modal de post: `MODAL_CSS`, `LIKE_CSS`, `buildModal`, `flash`, as marcas de ♥/▲, `readCookie`, `insidePanel`
-- `modal/open.js` — `openModal`, `closeModal`, `stepModal`, `suspendPage`, `resumePage`, próximo post pronto (`preloadAhead`), `installVideoModal`
-- `modal/media.js` — `showVideo`, `showImage`, `raceImage`, `loadModalOriginal`, `sniffVideo`, `raceVideoAndGif`
-- `modal/player.js` — gestos e controles do vídeo (`installVideoGestures`, `installVideoControls`, `installGearMenu`), a prévia na barra (`seekReel`, `drawKeyframe`), o arraste lateral que move o vídeo (`playerRub`, com o `makeRub` do scrub), tela cheia
+- `modal/modal.ts` — **E.** o modal de post: `MODAL_CSS`, `LIKE_CSS`, `buildModal`, `flash`, as marcas de ♥/▲, `readCookie`, `insidePanel`
+- `modal/open.ts` — `openModal`, `closeModal`, `stepModal`, `suspendPage`, `resumePage`, próximo post pronto (`preloadAhead`), `installVideoModal`
+- `modal/media.ts` — `showVideo`, `showImage`, `raceImage`, `loadModalOriginal`, `sniffVideo`, `raceVideoAndGif`
+- `modal/player.ts` — gestos e controles do vídeo (`installVideoGestures`, `installVideoControls`, `installGearMenu`), a prévia na barra (`seekReel`, `drawKeyframe`), o arraste lateral que move o vídeo (`playerRub`, com o `makeRub` do scrub), tela cheia
 - `modal/gestures.ts` — `installModalSwipe`, `installImageHold`, `installImageZoom`
 - `modal/tags.ts` — menu de tags e abas Info/Comentários (`renderTags`, `renderInfo`, `renderComments`, `voteComment`), `chipGestures`, `copyText`, `applyMarks`
 - `post/post.js` — `userId`, `onOwnFavorites`, `postInfo`, `readComments`, `readPostPage`, `lookUpFavorite`
@@ -142,9 +142,9 @@ O usuário quer trazer vários recursos do app para o script no futuro (2026-11-
 - `page/double-tap.ts` — toque duplo favorita (`onDoubleTapClick`)
 - `page/feed-css.ts`, `page/theme.ts`, `page/page-css.js` — `feedCss`/`applyFeed`, `THEME_CSS`/`applySiteTheme`, `injectPageCSS`
 - `page/ads.ts` — `blockAds`: `AD_POLICY`, `applyAdBlock`, `installAdBlock`
-- `diag.js` — diagnóstico: `probeVideoUrls`, `logSnapshot`, `freeMemory`, `redoThumbs`, `tabChannel`
+- `diag.ts` — diagnóstico: `probeVideoUrls`, `logSnapshot`, `freeMemory`, `redoThumbs`, `tabChannel`
 - `panel/panel.js` — painel em Shadow DOM, `el`, `renderStatus`, `copyLog`, `mountPanel`, `rebuildPanel`
-- `panel/nav.js` — botões flutuantes (`ensureFeedNav`, `buildFeedNav`, `jumpPost`, `pageTarget`)
+- `panel/nav.ts` — botões flutuantes (`ensureFeedNav`, `buildFeedNav`, `jumpPost`, `pageTarget`)
 - `main.js` — o arranque: o que rodava entre as seções (o `pagehide`, o `urlDb()`, o `tabChannel`, o `pointerdown` do painel) e depois o `MutationObserver`, os listeners, `boot` e `__ibh` (na `unsafeWindow`)
 
 ---

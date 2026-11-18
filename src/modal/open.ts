@@ -18,8 +18,7 @@ import { onFullscreenChange, onOrientationChange, resetMedia } from './player'
 import { ambiguousAnimated, fitImage, knownOriginal, postId, raceImage, raceVideoAndGif, showImage, showVideo, sniffVideo } from './media'
 import { resetUpgrade } from '../diag'
 
-/** @param {HTMLAnchorElement} link */
-export function openModal(link) {
+export function openModal(link: HTMLAnchorElement) {
   const thumb = link.querySelector('img')
   const pic = thumb && cardPicture(link)
   if (!pic || !thumbParts(pic.src)) { location.href = link.href; return }   // nothing derivable: go to the post
@@ -43,7 +42,7 @@ export function openModal(link) {
   modal.status.hidden = false
 
   let kind = thumbKind(thumb)
-  const hash = /** @type {{ hash: string }} */ (thumbParts(pic.src)).hash   // checked on the way in
+  const hash = (thumbParts(pic.src) as { hash: string }).hash   // checked on the way in
   const placeholder = ready || thumb.currentSrc || pic.src
   const asGif = () => {
     link.dataset.ibhKind = 'gif'   // the page's cover/GIF code agrees from now on
@@ -95,8 +94,8 @@ export function openShell() {
 // The posts the modal steps through: the page's, or the Watch later list's.
 const modalLinks = () => (modal && modal.listLinks) || siteLinks()
 
-/** @param {boolean} fromBack   the back button closed it: its history entry is gone already */
-export function closeModal(fromBack) {
+/** @param fromBack   the back button closed it: its history entry is gone already */
+export function closeModal(fromBack: boolean) {
   if (!modal || !modal.open) return
   if (modal.root.fullscreenElement && document.exitFullscreen) document.exitFullscreen().catch(() => {})
   modal.open = false
@@ -135,8 +134,7 @@ export function closeModal(fromBack) {
 // memory to the modal: covers closed, GIFs stilled, upgraded images back to
 // the thumbnail (heights held so the layout does not move), pending
 // upgrades dropped. resumePage() brings back what is on screen on close.
-/** @type {HTMLElement[]} */
-export const suspended = []
+export const suspended: HTMLElement[] = []
 
 function suspendPage() {
   const n = { covers: 0, gifs: 0, images: 0 }
@@ -165,8 +163,8 @@ function resumePage() {
   })
 }
 
-/** @param {number} dir   1 the next post, -1 the previous */
-export function stepModal(dir) {
+/** @param dir   1 the next post, -1 the previous */
+export function stepModal(dir: number) {
   const list = modalLinks()
   const target = list[list.indexOf(modal.link) + dir]
   if (!target) return
@@ -189,12 +187,10 @@ const AHEAD_FALLBACK_MS = 4000
 // The post ahead: an image's winning probe (img, decoded once decoded), or
 // a video's metadata probe; release gives the download slot back, cancel
 // calls the race off.
-/** @typedef {{ link: HTMLAnchorElement, img?: HTMLImageElement, decoded?: boolean, video?: HTMLVideoElement, release?: () => void, cancel?: () => void }} Ahead */
-/** @type {Ahead | null} */
-let ahead = null
+export type Ahead = { link: HTMLAnchorElement, img?: HTMLImageElement, decoded?: boolean, video?: HTMLVideoElement, release?: () => void, cancel?: () => void }
+let ahead: Ahead | null = null
 
-/** @param {number} seq */
-export function preloadAhead(seq) {
+export function preloadAhead(seq: number) {
   if (!CFG.modalPreload || !modal.open || modal.seq !== seq) return
   const list = modalLinks()
   const link = list[list.indexOf(modal.link) + (modal.dir || 1)]
@@ -204,8 +200,7 @@ export function preloadAhead(seq) {
   const pic = thumb && cardPicture(link)
   const parts = pic && thumbParts(pic.src)
   if (!parts) return
-  /** @type {Ahead} */
-  const a = ahead = { link }
+  const a: Ahead = ahead = { link }
   if (!onOwnFavorites()) lookUpFavorite(postId(link))   // its heart is right on the swipe
   let kind = thumbKind(thumb)
   if (kind === 'video' && cacheGet('video', parts.hash) === null) kind = 'gif'
@@ -214,13 +209,7 @@ export function preloadAhead(seq) {
   dbg(`modal: preloading ${kind} post ${postId(link)}`)
 }
 
-/**
- * @param {Ahead} a
- * @param {string} src
- * @param {string} hash
- * @param {'gif' | 'orig' | 'sample'} kind
- */
-function aheadImage(a, src, hash, kind) {
+function aheadImage(a: Ahead, src: string, hash: string, kind: 'gif' | 'orig' | 'sample') {
   const sampleFirst = kind === 'orig' && CFG.modalOriginal !== 'always'
   if (sampleFirst) kind = 'sample'
   const cached = kind === 'orig' ? knownOriginal(hash) : cacheGet(kind, hash)
@@ -234,20 +223,19 @@ function aheadImage(a, src, hash, kind) {
     a.release = () => { if (held) { held = false; giveImageSlot() } }
     // release: set just above.
     a.cancel = raceImage(stages, cached, img => {
-      /** @type {() => void} */ (a.release)()
+      (a.release as () => void)()
       a.img = img
       cacheSet(kind, hash, img.src, cached)
       const decoded = typeof img.decode === 'function' ? img.decode().catch(() => {}) : Promise.resolve()
       decoded.then(() => { if (ahead === a) a.decoded = true })
     }, () => {
-      /** @type {() => void} */ (a.release)()
+      (a.release as () => void)()
       cacheSet(kind, hash, null)
     })
   })
 }
 
-/** @param {Ahead} a @param {string} src @param {string} hash */
-function aheadVideo(a, src, hash) {
+function aheadVideo(a: Ahead, src: string, hash: string) {
   const cached = cacheGet('video', hash)
   const urls = cachedFirst(fileCandidates(src, ['mp4', 'webm']), cached)
   if (!urls.length) return
@@ -269,9 +257,8 @@ function aheadVideo(a, src, hash) {
 
 // The preloaded image for this post, if it is downloaded and decoded.
 // img: set before decoded.
-/** @param {HTMLAnchorElement} link */
-function aheadReady(link) {
-  return ahead && ahead.link === link && ahead.decoded && /** @type {HTMLImageElement} */ (ahead.img).naturalWidth ? /** @type {HTMLImageElement} */ (ahead.img).src : null
+function aheadReady(link: HTMLAnchorElement) {
+  return ahead && ahead.link === link && ahead.decoded && (ahead.img as HTMLImageElement).naturalWidth ? (ahead.img as HTMLImageElement).src : null
 }
 
 export function dropAhead() {
@@ -286,11 +273,10 @@ export function dropAhead() {
 
 // Capture on window: runs before the link's own onclick (favorites navigate
 // from an inline handler).
-/** @param {MouseEvent} ev */
-function onSiteLinkClick(ev) {
+function onSiteLinkClick(ev: MouseEvent) {
   if (ev.defaultPrevented || ev.button !== 0) return
   // SITE_LINK ends in a: the link.
-  const link = /** @type {HTMLAnchorElement | null | undefined} */ (asElement(ev.target)?.closest(SITE_LINK))
+  const link = asElement(ev.target)?.closest(SITE_LINK) as HTMLAnchorElement | null | undefined
   if (!link) return
   ev.preventDefault()
   ev.stopPropagation()

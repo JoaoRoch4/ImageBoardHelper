@@ -2154,7 +2154,7 @@
   }
   __name(reelFailed, "reelFailed");
 
-  // src/modal/open.js
+  // src/modal/open.ts
   function openModal(link) {
     const thumb = link.querySelector("img");
     const pic = thumb && cardPicture(link);
@@ -2179,10 +2179,7 @@
     modal.status.textContent = t("mLoading");
     modal.status.hidden = false;
     let kind = thumbKind(thumb);
-    const hash = (
-      /** @type {{ hash: string }} */
-      thumbParts(pic.src).hash
-    );
+    const hash = thumbParts(pic.src).hash;
     const placeholder = ready || thumb.currentSrc || pic.src;
     const asGif = /* @__PURE__ */ __name(() => {
       link.dataset.ibhKind = "gif";
@@ -2389,11 +2386,7 @@
   }
   __name(aheadVideo, "aheadVideo");
   function aheadReady(link) {
-    return ahead && ahead.link === link && ahead.decoded && /** @type {HTMLImageElement} */
-    ahead.img.naturalWidth ? (
-      /** @type {HTMLImageElement} */
-      ahead.img.src
-    ) : null;
+    return ahead && ahead.link === link && ahead.decoded && ahead.img.naturalWidth ? ahead.img.src : null;
   }
   __name(aheadReady, "aheadReady");
   function dropAhead() {
@@ -2415,10 +2408,7 @@
   __name(dropAhead, "dropAhead");
   function onSiteLinkClick(ev) {
     if (ev.defaultPrevented || ev.button !== 0) return;
-    const link = (
-      /** @type {HTMLAnchorElement | null | undefined} */
-      asElement(ev.target)?.closest(SITE_LINK)
-    );
+    const link = asElement(ev.target)?.closest(SITE_LINK);
     if (!link) return;
     ev.preventDefault();
     ev.stopPropagation();
@@ -2444,7 +2434,7 @@
   }
   __name(installVideoModal, "installVideoModal");
 
-  // src/diag.js
+  // src/diag.ts
   function probeVideoUrls() {
     const cards = siteLinks().filter(isVideoCard);
     const card = cards.find((c) => c.dataset.ibhSeen) || cards[0];
@@ -2488,8 +2478,7 @@
       delete el2.dataset.ibhRaw;
       delete el2.dataset.ibhPreRaw;
       delete el2.dataset.ibhRawMarked;
-      const badge = el2.closest("a") && /** @type {HTMLAnchorElement} */
-      el2.closest("a").querySelector(".ibh-rawbadge");
+      const badge = el2.closest("a") && el2.closest("a").querySelector(".ibh-rawbadge");
       if (badge) badge.remove();
     }
   }
@@ -2671,7 +2660,7 @@
   }
   __name(onBulkClick, "onBulkClick");
 
-  // src/panel/nav.js
+  // src/panel/nav.ts
   function ensureFeedNav() {
     if (!shadow) return;
     const feed = wantsFeedButtons();
@@ -2753,14 +2742,8 @@
       shadow.appendChild(pages);
     }
     if (pages) {
-      const prev = (
-        /** @type {HTMLButtonElement} */
-        pages.querySelector(".pp")
-      );
-      const next = (
-        /** @type {HTMLButtonElement} */
-        pages.querySelector(".np")
-      );
+      const prev = pages.querySelector(".pp");
+      const next = pages.querySelector(".np");
       prev.disabled = !pageTarget(-1);
       next.disabled = !pageTarget(1);
     }
@@ -2877,10 +2860,7 @@
     eye.dataset.hidden = String(hidden);
     panelHost.classList.toggle("ibh-clean", hidden);
     eye.title = t(hidden ? "eyeShow" : "eyeHide");
-    const icon = (
-      /** @type {SVGPathElement} */
-      eye.querySelector("path")
-    );
+    const icon = eye.querySelector("path");
     icon.setAttribute("d", hidden ? EYE_OFF_ICON : EYE_ICON);
   }
   __name(applyButtonsHidden, "applyButtonsHidden");
@@ -3767,7 +3747,7 @@ host: ${STATE.imageBase}
   }
   __name(installImageZoom, "installImageZoom");
 
-  // src/modal/media.js
+  // src/modal/media.ts
   function showVideo(candidates, hash, onMissing, onFound) {
     const vcached = cacheGet("video", hash);
     const urls = cachedFirst(candidates, vcached);
@@ -3883,10 +3863,7 @@ host: ${STATE.imageBase}
   __name(knownOriginal, "knownOriginal");
   var isSampleUrl = /* @__PURE__ */ __name((url) => /\/samples\//.test(url || ""), "isSampleUrl");
   function showImage(placeholder, candidates, kind, hash) {
-    const stages = (
-      /** @type {string[][]} */
-      Array.isArray(candidates[0]) ? candidates : [candidates]
-    );
+    const stages = Array.isArray(candidates[0]) ? candidates : [candidates];
     const icached = kind === "orig" ? knownOriginal(hash) : cacheGet(kind, hash);
     const seq = modal.seq;
     modal.video.hidden = true;
@@ -4071,10 +4048,7 @@ host: ${STATE.imageBase}
     v.src = urls[i++];
   }
   __name(sniffVideo, "sniffVideo");
-  var postId = /* @__PURE__ */ __name((link) => (String(
-    /** @type {HTMLAnchorElement} */
-    link.href || ""
-  ).match(/id=(\d+)/) || [])[1] || "?", "postId");
+  var postId = /* @__PURE__ */ __name((link) => (String(link.href || "").match(/id=(\d+)/) || [])[1] || "?", "postId");
   function ambiguousAnimated(link) {
     if (link.querySelector("img.webm-thumb")) return false;
     const tags = nativeTags(link);
@@ -5972,18 +5946,12 @@ host: ${STATE.imageBase}
   }
   __name(modalDownload, "modalDownload");
 
-  // src/modal/modal.js
+  // src/modal/modal.ts
   var SITE_LINK = `${THUMB} a`;
   var SWIPE_MIN = 60;
   var CONTROLS_BAND = 100;
-  var modal = (
-    /** @type {any} */
-    null
-  );
-  var siteLinks = /* @__PURE__ */ __name(() => (
-    /** @type {HTMLAnchorElement[]} */
-    [...document.querySelectorAll(SITE_LINK)]
-  ), "siteLinks");
+  var modal = null;
+  var siteLinks = /* @__PURE__ */ __name(() => [...document.querySelectorAll(SITE_LINK)], "siteLinks");
   var LIKE_CSS = `
     .ibh-likeheart {
       position: absolute; left: 50%; top: 50%; z-index: 6; line-height: 1;
@@ -6337,10 +6305,7 @@ host: ${STATE.imageBase}
     installImageHold(stage, image, box);
     installVideoGestures(layer, video);
     root.append(style, box);
-    modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, vfav: favUp, gearMenu, dlq, score, toast, badge, turn, fsBtn, menu, sheet, tagList, laterBtn, dlBtn, playerBtn, appDlBtn, appReduceBtn, quality, tabTags, tabInfo, tabComments, infoList, commentList, sheetTab: "tags", laterView, laterHead, laterGrid, laterNote, listLinks: null, turned: null, open: false, link: (
-      /** @type {any} */
-      null
-    ), seq: 0 };
+    modal = { host, root, box, stage, vwrap, video, image, controls, post, count, status, fav, up, vfav: favUp, gearMenu, dlq, score, toast, badge, turn, fsBtn, menu, sheet, tagList, laterBtn, dlBtn, playerBtn, appDlBtn, appReduceBtn, quality, tabTags, tabInfo, tabComments, infoList, commentList, sheetTab: "tags", laterView, laterHead, laterGrid, laterNote, listLinks: null, turned: null, open: false, link: null, seq: 0 };
   }
   __name(buildModal, "buildModal");
   var toastTimer = 0;
@@ -6369,14 +6334,8 @@ host: ${STATE.imageBase}
     if (on === set.has(id)) return;
     if (on) set.add(id);
     else set.delete(id);
-    while (set.size > MARKS_MAX) set.delete(
-      /** @type {string} */
-      set.values().next().value
-    );
-    writeJSON(MARKS_KEY, { f: [.../** @type {Marks} */
-    marks.f], v: [.../** @type {Marks} */
-    marks.v], c: [.../** @type {Marks} */
-    marks.c] });
+    while (set.size > MARKS_MAX) set.delete(set.values().next().value);
+    writeJSON(MARKS_KEY, { f: [...marks.f], v: [...marks.v], c: [...marks.c] });
   }
   __name(setMark, "setMark");
   var hasMark = /* @__PURE__ */ __name((kind, id) => loadMarks()[kind].has(id), "hasMark");
@@ -6391,11 +6350,7 @@ host: ${STATE.imageBase}
   }
   __name(insidePanel, "insidePanel");
   function asElement(target) {
-    return target && /** @type {Partial<Element>} */
-    target.closest ? (
-      /** @type {Element} */
-      target
-    ) : null;
+    return target && target.closest ? target : null;
   }
   __name(asElement, "asElement");
 
@@ -8029,7 +7984,7 @@ host: ${STATE.imageBase}
   }
   __name(installVideoScrub, "installVideoScrub");
 
-  // src/modal/player.js
+  // src/modal/player.ts
   var HOLD_FAST_MS = 600;
   var FLICK_MS = 300;
   var HOLD_RATE = 2;
@@ -8281,17 +8236,8 @@ host: ${STATE.imageBase}
       let img = r.frames.get(i);
       if (!img) {
         try {
-          openStream(
-            /** @type {H264} */
-            r.x,
-            r.reel
-          );
-          img = decodeKeyframe(
-            /** @type {H264} */
-            r.x,
-            r.reel.frames[i],
-            Math.round(PREV_W * (window.devicePixelRatio || 1))
-          );
+          openStream(r.x, r.reel);
+          img = decodeKeyframe(r.x, r.reel.frames[i], Math.round(PREV_W * (window.devicePixelRatio || 1)));
         } catch (e) {
           r.failed = true;
           dbg(`seek preview: keyframe not decoded (${describeError(e)}), the <video> preview alone`);
@@ -8318,8 +8264,7 @@ host: ${STATE.imageBase}
           if (reel !== mine) return;
           if (!built.avcC) throw new Error("not H.264");
           mine.x = x;
-          mine.reel = /** @type {H264Reel} */
-          built;
+          mine.reel = built;
           info(`seek preview: wasm reel of ${built.scenes.length} scenes in ${built.ms} ms${built.kept ? " (kept from before)" : ""}`);
           if (dragging) drawKeyframe(mine.f);
         }).catch((e) => {

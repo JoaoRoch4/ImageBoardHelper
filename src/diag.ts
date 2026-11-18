@@ -36,8 +36,7 @@ export function probeVideoUrls() {
     const v = document.createElement('video')
     v.preload = 'metadata'
     v.muted = true
-    /** @param {boolean} ok */
-    const done = ok => {
+    const done = (ok: boolean) => {
       v.src = ''
       log(ok ? 'info' : 'warn', `${ok ? 'OK  ' : 'FAIL'} ${url}`)
     }
@@ -49,9 +48,8 @@ export function probeVideoUrls() {
 
 /**
  * Put an upgraded element back to its thumbnail and clear its upgrade state.
- * @param {HTMLImageElement} el
  */
-export function resetUpgrade(el) {
+export function resetUpgrade(el: HTMLImageElement) {
   if (el.dataset.ibhOrig === 'done' && el.dataset.ibhThumb) {
     const pic = pictureOf(el)
     if (pic) pic.set(el.dataset.ibhThumb)
@@ -62,7 +60,7 @@ export function resetUpgrade(el) {
     delete el.dataset.ibhRaw
     delete el.dataset.ibhPreRaw
     delete el.dataset.ibhRawMarked
-    const badge = el.closest('a') && /** @type {HTMLAnchorElement} */ (el.closest('a')).querySelector('.ibh-rawbadge')   // the && just checked it
+    const badge = el.closest('a') && (el.closest('a') as HTMLAnchorElement).querySelector('.ibh-rawbadge')   // the && just checked it
     if (badge) badge.remove()
   }
 }
@@ -84,11 +82,7 @@ export const tabChannel = 'BroadcastChannel' in window ? new BroadcastChannel('i
  * site), 'tab' (asked by another tab), 'redo' (this tab only, before Redo
  * thumbnails, which restarts the cards itself).
  */
-/**
- * @param {'button' | 'tab' | 'redo'} [reason]
- * @returns {Promise<{ covers: number, gifs: number, images: number, caches: number }>}
- */
-export async function freeMemory(reason = 'button') {
+export async function freeMemory(reason: 'button' | 'tab' | 'redo' = 'button'): Promise<{ covers: number, gifs: number, images: number, caches: number }> {
   // The button frees every tab of this site running the script, not only this one.
   if (reason === 'button' && tabChannel) tabChannel.postMessage({ type: 'free-memory' })
   for (const r of reels.values()) if (r.url) URL.revokeObjectURL(r.url)   // kept keyframe reels

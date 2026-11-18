@@ -1,6 +1,6 @@
-/** @import { Rub } from '../scrub/scrub' */
-/** @import { H264Reel } from '../scrub/reel' */
-/** @import { H264 } from '../scrub/h264' */
+import type { Rub } from '../scrub/scrub'
+import type { H264Reel } from '../scrub/reel'
+import type { H264 } from '../scrub/h264'
 import { CFG } from '../core/config'
 import { LANG, t } from '../core/i18n'
 import { dbg, describeError, info } from '../core/log'
@@ -27,8 +27,7 @@ const HOLD_RATE = 2
 export const videoPress = { held: false }
 
 let badgeTimer = 0
-/** @param {string} text @param {boolean} [sticky] */
-function showBadge(text, sticky) {
+function showBadge(text: string, sticky?: boolean) {
   modal.badge.textContent = text
   modal.badge.hidden = false
   clearTimeout(badgeTimer)
@@ -39,13 +38,7 @@ function showBadge(text, sticky) {
 // started. A hold's 2× gives way to it, the time shows in the badge with
 // the seek bar up, and a resting or lifted finger plays on only when the
 // video was playing.
-/**
- * @param {HTMLVideoElement} video
- * @param {{ x: number, rate: number }} press
- * @param {HTMLElement} layer
- * @returns {Rub}
- */
-function playerRub(video, press, layer) {
+function playerRub(video: HTMLVideoElement, press: { x: number, rate: number }, layer: HTMLElement): Rub {
   let playing = false
   const box = modal.box
   return makeRub(video, press.x, () => layer.getBoundingClientRect().width, {
@@ -67,14 +60,10 @@ function playerRub(video, press, layer) {
   })
 }
 
-/** @param {HTMLElement} layer @param {HTMLVideoElement} video */
-export function installVideoGestures(layer, video) {
-  /** @type {{ id: number, x: number, y: number, t: number, fx: number, rate: number, timer: number, rub?: Rub, drag?: boolean } | null} */
-  let press = null
-  /** @type {{ t: number, side: number, timer: number } | null} */
-  let tap = null   // a first tap waiting to see whether a second one follows
-  /** @param {PointerEvent} ev */
-  const viewerX = ev => {
+export function installVideoGestures(layer: HTMLElement, video: HTMLVideoElement) {
+  let press: { id: number, x: number, y: number, t: number, fx: number, rate: number, timer: number, rub?: Rub, drag?: boolean } | null = null
+  let tap: { t: number, side: number, timer: number } | null = null   // a first tap waiting to see whether a second one follows
+  const viewerX = (ev: PointerEvent) => {
     const r = layer.getBoundingClientRect()
     return Math.min(1, Math.max(0, (ev.clientX - r.left) / r.width))
   }
@@ -180,8 +169,7 @@ export function installVideoGestures(layer, video) {
   })
 }
 
-/** @param {number} sec */
-export const mmss = sec => Number.isFinite(sec) ? `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}` : '0:00'
+export const mmss = (sec: number) => Number.isFinite(sec) ? `${Math.floor(sec / 60)}:${String(Math.floor(sec % 60)).padStart(2, '0')}` : '0:00'
 
 const CONTROLS_HIDE_MS = 2000
 
@@ -193,33 +181,19 @@ const SEEK_STEPS = Array.from({ length: 40 }, (_, i) => i / 40)
 export const PLAY_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2]
 export const SEEK_JUMPS = [5, 10, 15, 30]
 
-/** @param {HTMLVideoElement} video */
-export function applyPlayRate(video) {
+export function applyPlayRate(video: HTMLVideoElement) {
   const rate = Number(CFG.playRate) || 1
   video.defaultPlaybackRate = rate   // load() puts the speed back to this, so the next video keeps it
   video.playbackRate = rate
 }
 
-/**
- * @param {HTMLElement} gear
- * @param {HTMLElement} menu
- * @param {HTMLVideoElement} video
- * @param {HTMLElement} vwrap
- * @param {() => void} poke
- */
-export function installGearMenu(gear, menu, video, vwrap, poke) {
-  /** @type {Array<{ button: HTMLButtonElement, key: 'playRate' | 'seekStep', value: number }>} */
-  const chips = []
+export function installGearMenu(gear: HTMLElement, menu: HTMLElement, video: HTMLVideoElement, vwrap: HTMLElement, poke: () => void) {
+  const chips: Array<{ button: HTMLButtonElement, key: 'playRate' | 'seekStep', value: number }> = []
   const mark = () => chips.forEach(c => c.button.classList.toggle('on', Number(CFG[c.key]) === c.value))
   /**
-   * @param {string} label
-   * @param {'playRate' | 'seekStep'} key
-   * @param {string} attr       the data- attribute that holds the value
-   * @param {number[]} values
-   * @param {(value: number) => string} text
-   * @param {() => void} apply
+   * @param attr       the data- attribute that holds the value
    */
-  const row = (label, key, attr, values, text, apply) => el('div', { class: 'vmrow' }, [el('span', { class: 'lbl', text: label }),
+  const row = (label: string, key: 'playRate' | 'seekStep', attr: string, values: number[], text: (value: number) => string, apply: () => void) => el('div', { class: 'vmrow' }, [el('span', { class: 'lbl', text: label }),
     ...values.map(value => {
       const button = el('button', { type: 'button', text: text(value), [`data-${attr}`]: String(value) })
       button.addEventListener('click', () => {
@@ -250,25 +224,15 @@ export function installGearMenu(gear, menu, video, vwrap, poke) {
 // Returns { shown(), poke(), dropReel() }: the bar fades after 2 s without
 // interaction while playing, and stays up while paused or while the seek
 // bar is dragged.
-/** @typedef {ReturnType<typeof installVideoControls>} VideoControls */
+export type VideoControls = ReturnType<typeof installVideoControls>
 /**
- * @param {HTMLVideoElement} video
- * @param {HTMLElement} ctl
- * @param {HTMLElement} playBtn
- * @param {HTMLElement[]} times    where it plays, and how long it is
- * @param {HTMLInputElement} seek
- * @param {HTMLElement} muteBtn
- * @param {HTMLElement} prevBox
- * @param {HTMLElement} vwrap
- * @param {{ playPause: HTMLElement, gearMenu: HTMLElement }} parts
+ * @param times    where it plays, and how long it is
  */
-export function installVideoControls(video, ctl, playBtn, times, seek, muteBtn, prevBox, vwrap, { playPause, gearMenu }) {
+export function installVideoControls(video: HTMLVideoElement, ctl: HTMLElement, playBtn: HTMLElement, times: HTMLElement[], seek: HTMLInputElement, muteBtn: HTMLElement, prevBox: HTMLElement, vwrap: HTMLElement, { playPause, gearMenu }: { playPause: HTMLElement, gearMenu: HTMLElement }) {
   let dragging = false
   let hideTimer = 0
-  /** @type {boolean | null} */
-  let muted = null   // the icons on show, so timeupdate does not rebuild them
-  /** @type {boolean | null} */
-  let paused = null
+  let muted: boolean | null = null   // the icons on show, so timeupdate does not rebuild them
+  let paused: boolean | null = null
   const poke = () => {
     ctl.classList.remove('hide')
     clearTimeout(hideTimer)
@@ -311,12 +275,10 @@ export function installVideoControls(video, ctl, playBtn, times, seek, muteBtn, 
   const PREV_W = 160
   // The keyframes of the video on show: x the decoder, frames those decoded
   // (by scene), f where the finger is, failed once either fails.
-  /** @typedef {{ src: string, reel: H264Reel | null, x: H264 | null, frames: Map<number, ImageData>, canvas: HTMLCanvasElement | null, f: number, failed: boolean }} SeekReel */
-  /** @type {SeekReel | null} */
-  let reel = null   // { src, reel, x, frames, canvas, f, failed } for the video on show
+  type SeekReel = { src: string, reel: H264Reel | null, x: H264 | null, frames: Map<number, ImageData>, canvas: HTMLCanvasElement | null, f: number, failed: boolean }
+  let reel: SeekReel | null = null   // { src, reel, x, frames, canvas, f, failed } for the video on show
   let target = 0    // the time the finger asks for, in seconds
-  /** @param {number} f */
-  const drawKeyframe = f => {
+  const drawKeyframe = (f: number) => {
     const r = reel
     if (!r || !r.reel || r.failed) return
     const scenes = r.reel.scenes
@@ -326,8 +288,8 @@ export function installVideoControls(video, ctl, playBtn, times, seek, muteBtn, 
     if (!img) {
       try {
         // x comes with reel.
-        openStream(/** @type {H264} */ (r.x), r.reel)
-        img = decodeKeyframe(/** @type {H264} */ (r.x), r.reel.frames[i], Math.round(PREV_W * (window.devicePixelRatio || 1)))
+        openStream(r.x as H264, r.reel)
+        img = decodeKeyframe(r.x as H264, r.reel.frames[i], Math.round(PREV_W * (window.devicePixelRatio || 1)))
       } catch (e) {
         r.failed = true
         dbg(`seek preview: keyframe not decoded (${describeError(e)}), the <video> preview alone`)
@@ -338,22 +300,20 @@ export function installVideoControls(video, ctl, playBtn, times, seek, muteBtn, 
     if (!r.canvas) r.canvas = document.createElement('canvas')
     if (!r.canvas.isConnected) prevBox.insertBefore(r.canvas, prevBox.lastChild)   // over the preview video, under the time
     if (r.canvas.width !== img.width || r.canvas.height !== img.height) { r.canvas.width = img.width; r.canvas.height = img.height }
-    /** @type {CanvasRenderingContext2D} */ (r.canvas.getContext('2d')).putImageData(img, 0, 0)   // a canvas of our own: it has one
+    (r.canvas.getContext('2d') as CanvasRenderingContext2D).putImageData(img, 0, 0)   // a canvas of our own: it has one
   }
-  /** @param {number} f */
-  const reelPreview = f => {
+  const reelPreview = (f: number) => {
     if (!CFG.seekReel || !CFG.wasmDecode || h264Broken || typeof GM_xmlhttpRequest !== 'function') return
     const src = video.currentSrc
     if (!/\.mp4(?:[?#]|$)/i.test(src)) return   // WebM and the rest: the preview video alone
     if (!reel || reel.src !== src) {
-      /** @type {SeekReel} */
-      const mine = { src, reel: null, x: null, frames: new Map(), canvas: null, f, failed: false }
+      const mine: SeekReel = { src, reel: null, x: null, frames: new Map(), canvas: null, f, failed: false }
       reel = mine
       Promise.all([h264Decoder(), reelFor([src], SEEK_STEPS, new Set(), null)]).then(([x, built]) => {
         if (reel !== mine) return
         if (!built.avcC) throw new Error('not H.264')
         mine.x = x
-        mine.reel = /** @type {H264Reel} */ (built)   // it has an avcC
+        mine.reel = built as H264Reel   // it has an avcC
         info(`seek preview: wasm reel of ${built.scenes.length} scenes in ${built.ms} ms${built.kept ? ' (kept from before)' : ''}`)
         if (dragging) drawKeyframe(mine.f)   // where the finger is by now
       }).catch(e => {
@@ -388,7 +348,7 @@ export function installVideoControls(video, ctl, playBtn, times, seek, muteBtn, 
     prevBox.classList.remove('exact')
     reelPreview(f)
     if (previewEl && previewEl.isConnected) seekFraction(previewEl, f)
-    ;/** @type {ChildNode} */ (prevBox.lastChild).textContent = mmss(target)   // the time label, last of the box
+    ;(prevBox.lastChild as ChildNode).textContent = mmss(target)   // the time label, last of the box
     times[0].textContent = mmss(target)
     poke()
   })
@@ -416,8 +376,7 @@ export function installVideoControls(video, ctl, playBtn, times, seek, muteBtn, 
 
 // In fullscreen the bar and side buttons hide; a single tap on an image
 // toggles them. Video keeps its own controls visible either way.
-/** @param {boolean} clean */
-export function setCleanUi(clean) {
+export function setCleanUi(clean: boolean) {
   modal.box.classList.toggle('clean', clean)
 }
 
@@ -498,8 +457,7 @@ export const PLAYER_ICON = {
 }
 
 // A 24x24 icon from path data, as the button's only content.
-/** @param {Element} btn @param {string} d */
-export function setIcon(btn, d) {
+export function setIcon(btn: Element, d: string) {
   const ns = 'http://www.w3.org/2000/svg'
   const svg = document.createElementNS(ns, 'svg')
   svg.setAttribute('viewBox', '0 0 24 24')
@@ -509,8 +467,7 @@ export function setIcon(btn, d) {
   btn.replaceChildren(svg)
 }
 
-/** @param {HTMLElement} btn @param {boolean} full */
-export function setFsIcon(btn, full) {
+export function setFsIcon(btn: HTMLElement, full: boolean) {
   setIcon(btn, full ? FS_ICON.exit : FS_ICON.enter)
   btn.title = t(full ? 'mFullExit' : 'mFull')
 }
