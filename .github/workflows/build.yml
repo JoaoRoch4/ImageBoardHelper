@@ -1,0 +1,34 @@
+# The build alone, in about a minute: src/ joined into the userscript with
+# the build's own checks (the code unchanged by erasing the types, one scope
+# for all the modules, no value read before its module loads), compared with
+# the committed file, and kept as an artifact to download. No type-check,
+# lint or tests: that is the Tests workflow. On every push, any branch, and
+# by hand (Actions → Build → Run workflow).
+name: Build
+
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build the userscript
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24   # runs tools/build.mts as it is (type stripping)
+          cache: npm
+      - run: npm ci
+      - name: Build
+        run: npm run -s build
+      - name: The committed userscript is what src/ builds
+        run: git diff --exit-code --stat -- image-board-helper.user.js
+      - uses: actions/upload-artifact@v7
+        with:
+          name: image-board-helper.user.js
+          path: image-board-helper.user.js
