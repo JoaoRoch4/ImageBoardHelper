@@ -58,8 +58,7 @@ function feedCss() {
         max-width: none !important; max-height: none !important; }` + common
 }
 
-/** @type {string | null} */
-let feedCssShown = null
+let feedCssShown: string | null = null
 
 // Keeps the feed's <style> in step with the options, putting it back if it
 // goes missing. Unchanged CSS is not rewritten (this runs on every DOM

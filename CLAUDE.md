@@ -104,7 +104,7 @@ O usuário quer trazer vários recursos do app para o script no futuro (2026-11-
 
 - `header.txt` — o bloco `// ==UserScript==` (com o `@version`), o aviso de arquivo gerado e o comentário de abertura: o topo do arquivo gerado.
 - `core/site.js` — `VERSION`, `SITE`, `SITE_PROFILES`/`PROFILE` (lista, card, cores, sugestões) e os seletores `LIST`, `THUMB`, `ITEM`
-- `core/config.js` — configuração persistida (`IBH_CFG`, `DEFAULTS`, `NEEDS_RELOAD`, `CFG`, `readJSON`/`writeJSON`); o `setCfg` fica em `storage/storage.js`, junto do `backupCfg` que ele chama
+- `core/config.js` — configuração persistida (`IBH_CFG`, `DEFAULTS`, `NEEDS_RELOAD`, `CFG`, `readJSON`/`writeJSON`); o `setCfg` fica em `storage/storage.ts`, junto do `backupCfg` que ele chama
 - `core/strings.js` — as duas tabelas de `I18N` (não importa nada: o `check-i18n` o carrega)
 - `core/i18n.ts` — `resolveLang`, `LANG`, `t`
 - `core/log.ts` — buffer de 250, níveis, espelho no console sob `debug`
@@ -113,13 +113,13 @@ O usuário quer trazer vários recursos do app para o script no futuro (2026-11-
 - `urls/url-cache.ts` — cache de endereços: `cacheGet`, `cacheSet`, `cachedFirst`, `flushUrlCache`, `clearUrlCache`; o lado IndexedDB (`urlDb`, `urlPrefetch`, `urlPending`, `readUrls`, `flushUrlIndex`, `syncUrlIndex`, `sweepUrlIndex`, `clearUrlIndex`)
 - `video/limits.ts` — `pastDecoder`, a mesma regra do `vreduce::fits` do app (não importa nada: o MCP o carrega)
 - `video/mp4.ts` — o leitor de MP4: `mp4Boxes`, `mp4Child`, `mp4VideoTrack`, `avcConfig` (não importa nada: o `wasm-test` e o MCP o carregam)
-- `thumbs/badges.js` — ⚠️ e duração no cartão (`markPastDecoder`, `markDuration`, `cardBadge`)
+- `thumbs/badges.ts` — ⚠️ e duração no cartão (`markPastDecoder`, `markDuration`, `cardBadge`)
 - `thumbs/marks.js` — as marcas do cartão (1.20.0): ❤️ num favorito (`likedBadge`; segurar desfavorita, `onHeartTouchStart`) e a resolução (`resBadge`: `setDims`, `paintRes`, `pumpDims`), `paintCardMarks`/`repaintCards`; a API do rule34 com a chave do usuário (`apiKey`, `parseApiKey`, a porta única `r34Api`) e a seção dela no painel (`apiSection`)
 - `thumbs/covers.js` — **A.** capa de vídeo e GIF: `mountCover`, `unmountCover`, `COVER_MAX_LIVE` e a fila, `playGif`, `stopGif`, as vagas de download (`takeImageSlot`), `IntersectionObserver`, `scanCards`
-- `thumbs/feed.js` — **B.** miniatura nítida e feed: `upgradeToOriginal`, `upgradePlan`, `sampleCandidates`, `probeOriginal`, `scanThumbs`
-- `thumbs/memory.js` — **D.** gerenciamento de memória: `farViewport`, `releaseFar`, `pinHeight`, `onNodesRemoved`, `releaseAll`, varredura a cada 15 s
+- `thumbs/feed.ts` — **B.** miniatura nítida e feed: `upgradeToOriginal`, `upgradePlan`, `sampleCandidates`, `probeOriginal`, `scanThumbs`
+- `thumbs/memory.ts` — **D.** gerenciamento de memória: `farViewport`, `releaseFar`, `pinHeight`, `onNodesRemoved`, `releaseAll`, varredura a cada 15 s
 - `scrub/scrub.js` — **C.** prévia de cenas: arraste na miniatura (ou segurar, `scrubMode`): `seekFraction`, `previewLoad`, `previewStop`, `borrowDecoder`, `onScrubDown/Move/Up`; o slideshow por seek (`seekShow`, dois vídeos em revezamento, `tickSlide`), `holdVideoShow`, `playShow`; o segurar que toca e continua de onde parou (`holdResume`: `resumePoint`, `keepResume`, `forgetResume`), os chips do cartão (`holdChip`, `soundChip`, `lingerChips`, `removeChips`, `coverBack`, `flipSound`), deslizar para mover o vídeo (`holdRub`: `makeRub`, `rubMove`, também usados pelo player); `logSlideStats`, `installVideoScrub`
-- `scrub/reel.js` — a fita de keyframes do segurar (`slideReel`): `buildReel` lê o `moov` e os keyframes com Range pelo `GM_xmlhttpRequest`; `showReelWasm` decodifica cada keyframe e desenha num canvas; sem ele, `showReelVideo` toca o MP4 montado por `reelBlob`; se a fita falha, `reelFailed` cai no slideshow por seek
+- `scrub/reel.ts` — a fita de keyframes do segurar (`slideReel`): `buildReel` lê o `moov` e os keyframes com Range pelo `GM_xmlhttpRequest`; `showReelWasm` decodifica cada keyframe e desenha num canvas; sem ele, `showReelVideo` toca o MP4 montado por `reelBlob`; se a fita falha, `reelFailed` cai no slideshow por seek
 - `scrub/h264.ts` — o decodificador em WebAssembly: `h264Decoder`, `decodeKeyframe`, `dropH264`
 - `modal/modal.js` — **E.** o modal de post: `MODAL_CSS`, `LIKE_CSS`, `buildModal`, `flash`, as marcas de ♥/▲, `readCookie`, `insidePanel`
 - `modal/open.js` — `openModal`, `closeModal`, `stepModal`, `suspendPage`, `resumePage`, próximo post pronto (`preloadAhead`), `installVideoModal`
@@ -131,16 +131,16 @@ O usuário quer trazer vários recursos do app para o script no futuro (2026-11-
 - `post/votes.js` — `favoritePost`, `upvotePost`, `modalFavorite`, `modalUpvote`; o curtir com toque duplo no meio (`modalLike`, `popHeart`, `centerDoubleTap`)
 - `post/download.js` — Baixar: `saveFile`, `modalDownload`, `rawFileUrl`, `copyRawLink`
 - `post/app.js` — o app QtMediaPlayer: `sendToApp`, `APP`, o servidor (`appCall`, `appDownload`, `followAppDownload`)
-- `storage/storage.js` — `setCfg` e as cópias (`backupCfg`, `restoreCfg`), IndexedDB `idbGet/idbSet`, `storeGet/storeSet`, `storeReady`/`moveIn`, `GM_STORE`, `STORE_KEYS`
+- `storage/storage.ts` — `setCfg` e as cópias (`backupCfg`, `restoreCfg`), IndexedDB `idbGet/idbSet`, `storeGet/storeSet`, `storeReady`/`moveIn`, `GM_STORE`, `STORE_KEYS`
 - `lists/later.js` — Ver depois (`showLater`, `toggleLaterHere`)
 - `lists/favorites.js` — busca nos favoritos (`searchFavs`, `updateFavIndex`, `ensureFavSearch`, `orInput`)
 - `lists/autopager.js` — autopager (`ensureFavPager`, `favPagerNext`), `sharpenTile`
 - `search/suggest.js` — sugestões de tags (`attachSuggest`), `orTags`, `orGroups`, `minScoreInput`, `kindSelect`
 - `search/site-search.js` — buscas salvas (`savedControls`), barra de busca do site (`ensureSiteSearch`, `homeSearchForm`)
 - `page/bulk.js` — favoritar em massa (`setBulkMode`, `bulkFavorite`, `onBulkClick`), `pageToast`
-- `page/raw-hold.js` — segurar para o raw (`holdRaw`) e para refazer um GIF (`onRawTouchStart`, `loadRaw`, `undoRaw`)
-- `page/double-tap.js` — toque duplo favorita (`onDoubleTapClick`)
-- `page/feed-css.js`, `page/theme.ts`, `page/page-css.js` — `feedCss`/`applyFeed`, `THEME_CSS`/`applySiteTheme`, `injectPageCSS`
+- `page/raw-hold.ts` — segurar para o raw (`holdRaw`) e para refazer um GIF (`onRawTouchStart`, `loadRaw`, `undoRaw`)
+- `page/double-tap.ts` — toque duplo favorita (`onDoubleTapClick`)
+- `page/feed-css.ts`, `page/theme.ts`, `page/page-css.js` — `feedCss`/`applyFeed`, `THEME_CSS`/`applySiteTheme`, `injectPageCSS`
 - `page/ads.ts` — `blockAds`: `AD_POLICY`, `applyAdBlock`, `installAdBlock`
 - `diag.js` — diagnóstico: `probeVideoUrls`, `logSnapshot`, `freeMemory`, `redoThumbs`, `tabChannel`
 - `panel/panel.js` — painel em Shadow DOM, `el`, `renderStatus`, `copyLog`, `mountPanel`, `rebuildPanel`

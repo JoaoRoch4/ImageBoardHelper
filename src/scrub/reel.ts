@@ -1,5 +1,5 @@
-/** @import { Scrub } from './scrub' */
-/** @import { H264 } from './h264' */
+import type { Scrub } from './scrub'
+import type { H264 } from './h264'
 import { CFG } from '../core/config'
 import { describeError } from '../core/log'
 import { fileCandidates, thumbParts } from '../urls/hosts'
@@ -26,40 +26,33 @@ const REEL_HEAD = 256 * 1024    // first read: ftyp and, in most files made for 
 const REEL_MAX_MOOV = 8e6       // a bigger index is not worth reading for a preview
 const REEL_MAX_BYTES = 12e6     // keyframes past this are thinned out (4K frames run to MBs)
 const REEL_KEEP = 4             // reels kept for another hold on the same video
-/** @type {Map<string, Reel>} */
-export const reels = new Map()         // URL and scene count -> reel, oldest first
+export const reels: Map<string, Reel> = new Map()         // URL and scene count -> reel, oldest first
 
-/**
- * A video's keyframes, one per scene.
- * @typedef {object} Reel
- * @property {Array<Uint8Array<ArrayBuffer>>} frames   each keyframe, an AVCC sample
- * @property {{ stsd: Uint8Array, width: number, height: number }} track   what reelBlob needs of the source's track
- * @property {Uint8Array | null} avcC  the H.264 decoder configuration; null for another codec
- * @property {string | null} url       the <video> reel's blob, made when first played (reelUrl)
- * @property {Array<{ t: number, f: number }>} scenes   each keyframe's time (s) and place in the video (0-1)
- * @property {number} bytes            read for it
- * @property {number} ms               spent reading it
- * @property {number} width
- * @property {number} height
- * @property {number} duration         s
- * @property {number} fps              frames a second, from the index (0 unknown)
- * @property {boolean} [kept]          kept from an earlier hold
- */
-/** @typedef {Reel & { avcC: Uint8Array }} H264Reel  a reel the WebAssembly decoder can open */
-/** @typedef {{ abort(): void }} Abortable  a request in flight (GM_xmlhttpRequest's) */
+// A video's keyframes, one per scene.
+export type Reel = {
+  frames: Array<Uint8Array<ArrayBuffer>>,   // each keyframe, an AVCC sample
+  track: { stsd: Uint8Array, width: number, height: number },   // what reelBlob needs of the source's track
+  avcC: Uint8Array | null,   // the H.264 decoder configuration; null for another codec
+  url: string | null,   // the <video> reel's blob, made when first played (reelUrl)
+  scenes: Array<{ t: number, f: number }>,   // each keyframe's time (s) and place in the video (0-1)
+  bytes: number,   // read for it
+  ms: number,   // spent reading it
+  width: number,
+  height: number,
+  duration: number,   // s
+  fps: number,   // frames a second, from the index (0 unknown)
+  kept?: boolean,   // kept from an earlier hold
+}
+export type H264Reel = Reel & { avcC: Uint8Array }   // a reel the WebAssembly decoder can open
+export type Abortable = { abort(): void }   // a request in flight (GM_xmlhttpRequest's)
 
 // A Range read; `total` is the file size from Content-Range.
 /**
- * @param {string} url
- * @param {number} start
- * @param {number} end
- * @param {Set<Abortable>} [reqs]  where the request goes, to abort it
- * @returns {Promise<{ buf: Uint8Array<ArrayBuffer>, total: number | null }>}
+ * @param reqs  where the request goes, to abort it
  */
-function rangeRead(url, start, end, reqs) {
+function rangeRead(url: string, start: number, end: number, reqs?: Set<Abortable>): Promise<{ buf: Uint8Array<ArrayBuffer>, total: number | null }> {
   return new Promise((resolve, reject) => {
-    /** @type {Abortable | null} */
-    let req = null
+    let req: Abortable | null = null
     req = GM_xmlhttpRequest({
       method: 'GET',
       url,
@@ -85,23 +78,16 @@ function rangeRead(url, start, end, reqs) {
 
 // A minimal MP4 around the keyframes: one video track, each sample a
 // second long and a keyframe, the source's sample description as it is.
-/**
- * @param {Reel['track']} track
- * @param {Reel['frames']} frames
- */
-function reelBlob(track, frames) {
+function reelBlob(track: Reel['track'], frames: Reel['frames']) {
   const n = frames.length
-  /** @param {string} str */
-  const ascii = str => Uint8Array.from(str, c => c.charCodeAt(0))
-  /** @param {...number} v */
-  const words = (...v) => {
+  const ascii = (str: string) => Uint8Array.from(str, c => c.charCodeAt(0))
+  const words = (...v: number[]) => {
     const out = new Uint8Array(v.length * 4)
     const dv = new DataView(out.buffer)
     v.forEach((x, i) => dv.setUint32(i * 4, x >>> 0))
     return out
   }
-  /** @param {string} type @param {...Uint8Array} parts */
-  const box = (type, ...parts) => {
+  const box = (type: string, ...parts: Uint8Array[]) => {
     const out = new Uint8Array(8 + parts.reduce((sum, part) => sum + part.length, 0))
     new DataView(out.buffer).setUint32(0, out.length)
     out.set(ascii(type), 4)
@@ -112,8 +98,7 @@ function reelBlob(track, frames) {
   const matrix = [0x10000, 0, 0, 0, 0x10000, 0, 0, 0, 0x40000000]
   const ms = n * 1000
   const ftyp = box('ftyp', ascii('isom'), words(0x200), ascii('isomiso2avc1mp41'))
-  /** @param {number[]} offsets */
-  const moovWith = offsets => box('moov',
+  const moovWith = (offsets: number[]) => box('moov',
     box('mvhd', words(0, 0, 0, 1000, ms, 0x10000, 0x1000000, 0, 0, ...matrix, 0, 0, 0, 0, 0, 0, 2)),
     box('trak',
       box('tkhd', words(3, 0, 0, 1, 0, ms, 0, 0, 0, 0, ...matrix, track.width * 0x10000, track.height * 0x10000)),
@@ -136,19 +121,12 @@ function reelBlob(track, frames) {
 }
 
 // Reads the index and the keyframes for these scene fractions.
-/**
- * @param {string} url
- * @param {number[]} steps
- * @param {Set<Abortable>} reqs
- * @returns {Promise<Reel>}
- */
-async function buildReel(url, steps, reqs) {
+async function buildReel(url: string, steps: number[], reqs: Set<Abortable>): Promise<Reel> {
   const t0 = performance.now()
   const head = await rangeRead(url, 0, REEL_HEAD - 1, reqs)
   const total = head.total || head.buf.length
   // The top-level boxes up to the moov: in the head, or after the media data.
-  /** @param {number} p */
-  const boxAt = async p => {
+  const boxAt = async (p: number) => {
     let b = head.buf
     let o = p
     if (p + 16 > b.length) { b = (await rangeRead(url, p, Math.min(total, p + 16) - 1, reqs)).buf; o = 0 }
@@ -159,8 +137,7 @@ async function buildReel(url, steps, reqs) {
     return { type: String.fromCharCode(b[o + 4], b[o + 5], b[o + 6], b[o + 7]), size }
   }
   let p = 0
-  /** @type {{ at: number, size: number } | null} */
-  let moov = null
+  let moov: { at: number, size: number } | null = null
   for (let i = 0; p < total && i < 32 && !moov; i++) {
     const box = await boxAt(p)
     if (box.size < 8) break
@@ -180,8 +157,7 @@ async function buildReel(url, steps, reqs) {
   } else mb = (await rangeRead(url, moov.at, moov.at + moov.size - 1, reqs)).buf
   const track = mp4VideoTrack(mb, { body: new DataView(mb.buffer, mb.byteOffset).getUint32(0) === 1 ? 16 : 8, end: mb.length })
   if (!track) throw new Error('no video track')
-  /** @type {number[]} */
-  let keys = []
+  let keys: number[] = []
   for (const f of steps) {
     const k = track.keyAtOrBefore(track.sampleAt(Math.floor(f * track.duration)))
     if (!keys.includes(k)) keys.push(k)
@@ -199,11 +175,11 @@ async function buildReel(url, steps, reqs) {
   let places = keys.map(k => track.place(k))
   if (places.some(pl => !pl)) throw new Error('a keyframe outside the chunk table')
   // Heavy frames (4K): every other one until they fit. None is null past the check above.
-  while (keys.length > 2 && places.reduce((sum, pl) => sum + /** @type {[number, number]} */ (pl)[1], 0) > REEL_MAX_BYTES) {
+  while (keys.length > 2 && places.reduce((sum, pl) => sum + (pl as [number, number])[1], 0) > REEL_MAX_BYTES) {
     keys = keys.filter((k, i) => i % 2 === 0)
     places = places.filter((pl, i) => i % 2 === 0)
   }
-  const frames = await Promise.all(/** @type {Array<[number, number]>} */ (places).map(([off, size]) => rangeRead(url, off, off + size - 1, reqs).then(r => r.buf)))
+  const frames = await Promise.all((places as Array<[number, number]>).map(([off, size]) => rangeRead(url, off, off + size - 1, reqs).then(r => r.buf)))
   const secs = track.duration / track.timescale
   return {
     frames,
@@ -225,13 +201,9 @@ async function buildReel(url, steps, reqs) {
 
 // A reel for one of these URLs (the first the host has), kept for the next hold.
 /**
- * @param {string[]} urls
- * @param {number[]} steps
- * @param {Set<Abortable>} reqs
- * @param {string | null | undefined} hash  the file's, to cache the host that has it
- * @returns {Promise<Reel>}
+ * @param hash  the file's, to cache the host that has it
  */
-export async function reelFor(urls, steps, reqs, hash) {
+export async function reelFor(urls: string[], steps: number[], reqs: Set<Abortable>, hash: string | null | undefined): Promise<Reel> {
   for (const url of urls) {
     const key = `${url}|${steps.length}`
     const kept = reels.get(key)
@@ -251,7 +223,7 @@ export async function reelFor(urls, steps, reqs, hash) {
       }
       return reel
     } catch (e) {
-      if (!/** @type {{ status?: number }} */ (e).status || urls.indexOf(url) === urls.length - 1) throw e   // HTTP error: try the next host
+      if (!(e as { status?: number }).status || urls.indexOf(url) === urls.length - 1) throw e   // HTTP error: try the next host
     }
   }
   throw new Error('no host has the file')
@@ -259,10 +231,9 @@ export async function reelFor(urls, steps, reqs, hash) {
 
 // The reel slideshow's own parts: requests in flight, the scene timer, and
 // what shows the reel (a <video> or a canvas, in a holder over the card).
-/** @typedef {{ reqs: Set<Abortable>, timer: number, video: HTMLVideoElement | null, holder: HTMLElement | null, borrowed: boolean, info?: Reel }} ReelShow */
+export type ReelShow = { reqs: Set<Abortable>, timer: number, video: HTMLVideoElement | null, holder: HTMLElement | null, borrowed: boolean, info?: Reel }
 
-/** @param {Scrub} s */
-export function startReelShow(s) {
+export function startReelShow(s: Scrub) {
   if (typeof GM_xmlhttpRequest !== 'function') return false
   const pic = cardPicture(s.card)
   if (!pic) return false
@@ -286,25 +257,22 @@ export function startReelShow(s) {
   return true
 }
 
-/** @param {Reel} reel */
-const reelUrl = reel => reel.url || (reel.url = URL.createObjectURL(reelBlob(reel.track, reel.frames)))
+const reelUrl = (reel: Reel) => reel.url || (reel.url = URL.createObjectURL(reelBlob(reel.track, reel.frames)))
 
 // One keyframe per scene, looping, over the thumbnail (and its cover):
 // decoded in WebAssembly when it can, else played from a small MP4.
-/** @param {Scrub} s @param {Reel} reel */
-function showReel(s, reel) {
-  /** @type {ReelShow} */ (s.reel).info = reel   // set by startReelShow, cleared only once this hold is over
+function showReel(s: Scrub, reel: Reel) {
+  (s.reel as ReelShow).info = reel   // set by startReelShow, cleared only once this hold is over
   markDuration(s.card, reel.duration)
   if (pastDecoder(reel.width, reel.height, reel.fps)) markPastDecoder(s.card, `${reel.width}x${reel.height} at ${Math.round(reel.fps)} fps`)
   s.stats.detail = `${reel.width}x${reel.height}, ${mmss(reel.duration)}, ${reel.scenes.length} keyframes, ` +
     `${Math.round(reel.bytes / 1024)} KB, ${reel.kept ? 'kept from before' : `read in ${reel.ms} ms`}`
-  if (CFG.wasmDecode && reel.avcC && !h264Broken) showReelWasm(s, /** @type {H264Reel} */ (reel)).catch(e => { if (scrub === s) wasmFailed(s, reel, e) })
+  if (CFG.wasmDecode && reel.avcC && !h264Broken) showReelWasm(s, reel as H264Reel).catch(e => { if (scrub === s) wasmFailed(s, reel, e) })
   else showReelVideo(s, reel)
 }
 
-/** @param {Scrub} s @param {Reel} reel */
-function showReelVideo(s, reel) {
-  const r = /** @type {ReelShow} */ (s.reel)
+function showReelVideo(s: Scrub, reel: Reel) {
+  const r = s.reel as ReelShow
   borrowDecoder(s.card)
   r.borrowed = true
   r.holder = document.createElement('div')
@@ -335,10 +303,8 @@ function showReelVideo(s, reel) {
 
 // The decoder has one stream open at a time: the hold slideshow's reel or
 // the seek bar's. Opened again only when it changes.
-/** @type {H264Reel | null} */
-let h264Stream = null
-/** @param {H264} x @param {H264Reel} reel */
-export function openStream(x, reel) {
+let h264Stream: H264Reel | null = null
+export function openStream(x: H264, reel: H264Reel) {
   if (h264Stream === reel) return
   h264Stream = null
   const cfg = x.buf_alloc(reel.avcC.length)
@@ -349,18 +315,15 @@ export function openStream(x, reel) {
   h264Stream = reel
 }
 
-/** @param {Scrub} s @param {H264Reel} reel */
-async function showReelWasm(s, reel) {
+async function showReelWasm(s: Scrub, reel: H264Reel) {
   const x = await h264Decoder()
   if (scrub !== s) return
   openStream(x, reel)
   s.stats.method = 'wasm reel'
-  const r = /** @type {ReelShow} */ (s.reel)   // the scrub is still on: endReel has not run
+  const r = s.reel as ReelShow   // the scrub is still on: endReel has not run
   const maxW = Math.round(s.card.getBoundingClientRect().width * (window.devicePixelRatio || 1))
-  /** @type {number[]} */
-  const times = []
-  /** @param {number} i */
-  const decode = i => {
+  const times: number[] = []
+  const decode = (i: number) => {
     const t0 = performance.now()
     const img = decodeKeyframe(x, reel.frames[i], maxW)
     times.push(performance.now() - t0)
@@ -374,7 +337,7 @@ async function showReelWasm(s, reel) {
   cv.style.cssText = 'width:100%;height:100%;object-fit:cover;border-radius:4px;background:#000'
   r.holder.appendChild(cv)
   placeOverPicture(s.card, r.holder)
-  const ctx = /** @type {CanvasRenderingContext2D} */ (cv.getContext('2d'))   // a new canvas always has one
+  const ctx = cv.getContext('2d') as CanvasRenderingContext2D   // a new canvas always has one
   let i = 0
   // Show this scene, then decode the next while it stays on screen.
   const show = () => {
@@ -394,12 +357,7 @@ async function showReelWasm(s, reel) {
 }
 
 // The WebAssembly path failed on this video: the same reel in a <video>.
-/**
- * @param {Scrub} s
- * @param {Reel} reel
- * @param {unknown} e
- */
-function wasmFailed(s, reel, e) {
+function wasmFailed(s: Scrub, reel: Reel, e: unknown) {
   const r = s.reel
   if (!r) return
   s.stats.wasm = `not decoded: ${describeError(e)}`
@@ -409,8 +367,7 @@ function wasmFailed(s, reel, e) {
   showReelVideo(s, reel)
 }
 
-/** @param {Scrub} s */
-export function endReel(s) {
+export function endReel(s: Scrub) {
   const r = s.reel
   if (!r) return
   s.reel = null
@@ -424,14 +381,10 @@ export function endReel(s) {
 // Anything off (WebM behind an .mp4 name, an odd file, a host failing):
 // the slideshow seeks the file as before, or plays it when it is a short clip.
 // e.sparse: too few keyframes in a clip of e.duration seconds.
-/**
- * @param {Scrub} s
- * @param {Error & { sparse?: boolean, duration?: number }} e
- */
-function reelFailed(s, e) {
+function reelFailed(s: Scrub, e: Error & { sparse?: boolean, duration?: number }) {
   s.stats.reelError = e.message
   endReel(s)
   if (!scrubSource(s)) { endScrub(); return }
-  if (e.sparse && /** @type {number} */ (e.duration) <= PLAY_MAX_S) playShow(s)   // buildReel sets both
+  if (e.sparse && (e.duration as number) <= PLAY_MAX_S) playShow(s)   // buildReel sets both
   else chooseShow(s)
 }

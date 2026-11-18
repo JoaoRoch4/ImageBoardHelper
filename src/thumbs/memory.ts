@@ -1,4 +1,4 @@
-/** @import { AnyNode } from './covers' */
+import type { AnyNode } from './covers'
 import { CFG } from '../core/config'
 import { dbg, info } from '../core/log'
 import { coverQueue, freeOffscreen, isGifCard, isVideoCard, markedCards, markedImages, mountCover, nextGif, playGif, setLiveCovers, stopGif, unmountCover } from './covers'
@@ -21,27 +21,24 @@ const FAR_MARGIN = '200% 0px'
 
 export const farViewport = 'IntersectionObserver' in window
   ? new IntersectionObserver(entries => {
-      for (const e of entries) if (!e.isIntersecting) releaseFar(/** @type {HTMLImageElement} */ (e.target))   // watchDistance's images
+      for (const e of entries) if (!e.isIntersecting) releaseFar(e.target as HTMLImageElement)   // watchDistance's images
     }, { rootMargin: FAR_MARGIN })
   : null
 
-/** @param {Element} el */
-export function watchDistance(el) {
+export function watchDistance(el: Element) {
   if (CFG.memorySaver && farViewport) farViewport.observe(el)
 }
 
 // Going back to the thumbnail must not change the height of something above
 // the viewport, or the page jumps. Hold the current height until the better
 // file is back (inline !important beats the feed's height:auto !important).
-/** @param {HTMLElement} el */
-export function pinHeight(el) {
+export function pinHeight(el: HTMLElement) {
   if (el.tagName !== 'IMG' || !el.clientHeight) return
   el.style.setProperty('height', `${el.clientHeight}px`, 'important')
   el.dataset.ibhPinned = '1'
 }
 
-/** @param {HTMLElement} el */
-export function unpinHeight(el) {
+export function unpinHeight(el: HTMLElement) {
   if (!el.dataset.ibhPinned) return
   el.style.removeProperty('height')
   delete el.dataset.ibhPinned
@@ -50,12 +47,11 @@ export function unpinHeight(el) {
 let releasedCount = 0
 
 // Called by farViewport itself.
-/** @param {HTMLImageElement} el */
-function releaseFar(el) {
-  if (el.dataset.ibhOrig !== 'done') { /** @type {IntersectionObserver} */ (farViewport).unobserve(el); return }
+function releaseFar(el: HTMLImageElement) {
+  if (el.dataset.ibhOrig !== 'done') { (farViewport as IntersectionObserver).unobserve(el); return }
   pinHeight(el)
   resetUpgrade(el)
-  ;/** @type {IntersectionObserver} */ (farViewport).unobserve(el)
+  ;(farViewport as IntersectionObserver).unobserve(el)
   if (originalViewport) originalViewport.observe(el)   // upgraded again when it comes back
   releasedCount++
   if (releasedCount % 10 === 1) dbg(`memory: released ${releasedCount} off-screen images so far`)
@@ -69,13 +65,12 @@ const liveDecoders = () => document.querySelectorAll('video[data-ibh]').length +
 // card rebuilt) keeps its decoder until garbage collection, and the
 // live-cover count would never come back down. Unload them and recount
 // from what is actually in the document.
-/** @param {Iterable<AnyNode>} nodes */
-export function onNodesRemoved(nodes) {
+export function onNodesRemoved(nodes: Iterable<AnyNode>) {
   let unloaded = 0
   for (const node of nodes) {
     if (node.nodeType !== 1) continue
     const vids = node.matches && node.matches('video[data-ibh]')
-      ? [/** @type {HTMLVideoElement} */ (node)]
+      ? [node as HTMLVideoElement]
       : (node.querySelectorAll ? [...node.querySelectorAll('video[data-ibh]')] : [])
     for (const v of vids) {
       if (!v.currentSrc) continue   // already unloaded: one of our own unmounts
@@ -111,8 +106,7 @@ const SWEEP_MS = 15000
 const SWEEP_GAP_MS = 2000   // scroll sweeps no closer than this
 let sweepAt = 0
 
-/** @param {string} why */
-function sweep(why) {
+function sweep(why: string) {
   // The modal and a preview run their own cleanup; a hidden tab is parked.
   if (document.hidden || (modal && modal.open) || scrub) return
   if (why === 'scroll' && Date.now() - sweepAt < SWEEP_GAP_MS) return
@@ -128,8 +122,7 @@ function sweep(why) {
 // their memory. Park them while hidden and bring them back on return.
 // GIFs still downloading go too: Android freezes Firefox in the background,
 // and a download cut there would leave the GIF marked as missing.
-/** @type {HTMLElement[]} */
-export const parked = []
+export const parked: HTMLElement[] = []
 
 function onVisibilityChange() {
   if (modal && modal.open) return   // the modal already unloaded the page
@@ -152,11 +145,9 @@ function onVisibilityChange() {
 // A scene preview decodes a whole video, the slideshow two: free memory
 // before it starts. Off-screen work goes, and GIFs on screen stop (an
 // animated GIF holds every frame decoded) until the preview ends.
-/** @type {HTMLElement[]} */
-export const previewPaused = []
+export const previewPaused: HTMLElement[] = []
 
-/** @param {HTMLElement} card */
-export function freeForPreview(card) {
+export function freeForPreview(card: HTMLElement) {
   if (!CFG.memorySaver) return
   const n = freeOffscreen(card)
   markedCards('[data-ibh-gif="playing"]').forEach(c => {

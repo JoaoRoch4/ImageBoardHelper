@@ -1,18 +1,13 @@
 // The settings' copies and the lists' storage: GM storage, the site's
 // IndexedDB, the move from the old storage bridge.
-/** @import { Config } from '../core/config' */
-/** @import { LaterItem } from '../lists/later' */
+import type { Config } from '../core/config'
+import type { LaterItem } from '../lists/later'
 import { CFG, CFG_FOUND, CFG_KEY, NEEDS_RELOAD, readJSON, writeJSON } from '../core/config'
 import { describeError, info, warn } from '../core/log'
 import { LATER_MAX } from '../lists/later'
 import { searchKey } from '../search/site-search'
 
-/**
- * @template {keyof Config} K
- * @param {K} key
- * @param {Config[K]} value
- */
-export function setCfg(key, value) {
+export function setCfg<K extends keyof Config>(key: K, value: Config[K]) {
   CFG[key] = value
   writeJSON(CFG_KEY, CFG)
   // The copies (see restoreCfg); not yet reachable this early in the boot.
@@ -26,12 +21,10 @@ export function setCfg(key, value) {
 // reach of anything that clears the site's data. Where GM storage is
 // missing (another userscript manager), the site's IndexedDB holds them.
 export const GM_STORE = typeof GM_getValue === 'function' && typeof GM_setValue === 'function'
-/** @typedef {'later' | 'favs' | 'cfg' | 'searches'} StoreKey */
-/** @type {StoreKey[]} */
-export const STORE_KEYS = ['later', 'favs', 'cfg', 'searches']   // also what the storage bridge held (moveIn)
+export type StoreKey = 'later' | 'favs' | 'cfg' | 'searches'
+export const STORE_KEYS: StoreKey[] = ['later', 'favs', 'cfg', 'searches']   // also what the storage bridge held (moveIn)
 // An empty list or object counts as nothing stored.
-/** @param {unknown} v */
-const hasData = v => v != null && (typeof v !== 'object' || (Array.isArray(v) ? v.length > 0 : Object.keys(v).length > 0))
+const hasData = (v: unknown) => v != null && (typeof v !== 'object' || (Array.isArray(v) ? v.length > 0 : Object.keys(v).length > 0))
 
 // A copy of the settings in Violentmonkey and in the site's IndexedDB:
 // both outlive localStorage.clear() (another script's reset cleared
@@ -64,11 +57,9 @@ export async function restoreCfg() {
 // IndexedDB of the site: a store of its own, not touched by a script that
 // clears localStorage, and far roomier (the favorites index runs to MBs).
 // Resolves undefined when IndexedDB is not available.
-/** @type {Promise<IDBDatabase> | null} */
-let idbOpen = null
+let idbOpen: Promise<IDBDatabase> | null = null
 
-/** @returns {Promise<IDBDatabase>} */
-function idb() {
+function idb(): Promise<IDBDatabase> {
   if (!idbOpen) {
     idbOpen = new Promise((resolve, reject) => {
       const req = indexedDB.open('ibh', 1)
@@ -81,11 +72,7 @@ function idb() {
 }
 
 // The stored value (null when there is none), unchecked; undefined without IndexedDB.
-/**
- * @param {string} key
- * @returns {Promise<any>}
- */
-export async function idbGet(key) {
+export async function idbGet(key: string): Promise<any> {
   try {
     const db = await idb()
     return await new Promise((resolve, reject) => {
@@ -98,8 +85,7 @@ export async function idbGet(key) {
   }
 }
 
-/** @param {string} key @param {unknown} value */
-export async function idbSet(key, value) {
+export async function idbSet(key: string, value: unknown) {
   try {
     const db = await idb()
     await new Promise((resolve, reject) => {
@@ -116,8 +102,7 @@ export async function idbSet(key, value) {
 
 // Without GM storage: IndexedDB, or localStorage where IndexedDB fails.
 // What an older version left in localStorage moves into IndexedDB.
-/** @param {string} key */
-async function siteGet(key) {
+async function siteGet(key: string) {
   const value = await idbGet(key)
   const local = readJSON(`IBH_${key}`, null)
   if (value === undefined) return local
@@ -128,8 +113,7 @@ async function siteGet(key) {
   return value
 }
 
-/** @param {string} key @param {unknown} value */
-async function siteSet(key, value) {
+async function siteSet(key: string, value: unknown) {
   if (!(await idbSet(key, value))) writeJSON(`IBH_${key}`, value)
 }
 
@@ -141,22 +125,14 @@ async function siteSet(key, value) {
 // good once the bridge has answered, or after a few loads without it.
 const BRIDGE_WAIT_MS = 1500
 const BRIDGE_TRIES = 3
-/** @type {Promise<void> | null} */
-export let movedIn = null
-/** @param {typeof movedIn} v */
-export function setMovedIn(v) { movedIn = v }
+export let movedIn: Promise<void> | null = null
+export function setMovedIn(v: typeof movedIn) { movedIn = v }
 
 // The bridge's value for each key that got an answer in time.
-/**
- * @param {string[]} keys
- * @returns {Promise<Record<string, any>>}
- */
-function askBridge(keys) {
+function askBridge(keys: string[]): Promise<Record<string, any>> {
   return new Promise(resolve => {
-    /** @type {Record<string, any>} */
-    const got = {}
-    /** @type {Map<string, string>} */
-    const asked = new Map()   // request id -> key
+    const got: Record<string, any> = {}
+    const asked: Map<string, string> = new Map()   // request id -> key
     let seq = 0
     const ask = () => {
       for (const key of keys) {
@@ -166,10 +142,9 @@ function askBridge(keys) {
         window.dispatchEvent(new CustomEvent('ibh-store-request', { detail: JSON.stringify({ id, op: 'get', key }) }))
       }
     }
-    /** @param {Event} ev */
-    const onReply = ev => {
+    const onReply = (ev: Event) => {
       let msg
-      try { msg = JSON.parse(/** @type {CustomEvent<string>} */ (ev).detail) } catch (e) { return }   // ibh-store-reply's
+      try { msg = JSON.parse((ev as CustomEvent<string>).detail) } catch (e) { return }   // ibh-store-reply's
       const key = msg && asked.get(msg.id)
       if (key === undefined) return
       got[key] = msg.value
@@ -191,24 +166,13 @@ function askBridge(keys) {
 // Two copies of the same key, as they can differ when the bridge answers
 // only on a later load: everything from both, this script's own first.
 // Both are stored values, unchecked.
-/**
- * @param {StoreKey} key
- * @param {any} mine
- * @param {any} theirs
- */
-function mergeStored(key, mine, theirs) {
+function mergeStored(key: StoreKey, mine: any, theirs: any) {
   if (!hasData(mine)) return theirs
-  /**
-   * @template T
-   * @param {T[]} a
-   * @param {T[]} b
-   * @param {(x: T) => string} id
-   */
-  const union = (a, b, id) => {
+  const union = <T>(a: T[], b: T[], id: (x: T) => string) => {
     const seen = new Set(a.map(id))
     return [...a, ...b.filter(x => !seen.has(id(x)))]
   }
-  if (key === 'later') return union(mine, theirs, (/** @type {LaterItem} */ item) => item.href).slice(0, LATER_MAX)
+  if (key === 'later') return union(mine, theirs, (item: LaterItem) => item.href).slice(0, LATER_MAX)
   if (key === 'searches') {
     return { saved: union(mine.saved || [], theirs.saved || [], searchKey), recent: union(mine.recent || [], theirs.recent || [], searchKey),
       favLast: mine.favLast || theirs.favLast || null }
@@ -245,17 +209,12 @@ export const storeReady = () => movedIn || (movedIn = (GM_STORE ? moveIn() : Pro
   .catch(e => warn(`storage: moving in failed — ${describeError(e)}`)))
 
 // What was stored under the key (null when nothing was), unchecked.
-/**
- * @param {StoreKey} key
- * @returns {Promise<any>}
- */
-export async function storeGet(key) {
+export async function storeGet(key: StoreKey): Promise<any> {
   await storeReady()
   return GM_STORE ? GM_getValue(key, null) : siteGet(key)
 }
 
-/** @param {StoreKey} key @param {unknown} value */
-export async function storeSet(key, value) {
+export async function storeSet(key: StoreKey, value: unknown) {
   await storeReady()
   if (GM_STORE) GM_setValue(key, value)
   else await siteSet(key, value)

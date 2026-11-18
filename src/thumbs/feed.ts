@@ -1,4 +1,4 @@
-/** @import { AnyNode } from './covers' */
+import type { AnyNode } from './covers'
 import { LIST, THUMB } from '../core/site'
 import { CFG } from '../core/config'
 import { dbg } from '../core/log'
@@ -27,16 +27,14 @@ export const ORIGINAL_EXTS = ['jpg', 'png', 'jpeg']   // no gif: animated origin
 // In the one-column feed a 150 px thumbnail is stretched to the screen width.
 // The sample (about 850 px) is already sharp there and far lighter than the
 // original; posts too small to have a sample fall through to the original.
-/** @param {Element} el */
-const inFeed = el => CFG.nativeFeed && !!el.closest(LIST)
+const inFeed = (el: Element) => CFG.nativeFeed && !!el.closest(LIST)
 
-/** @param {string} src */
-export function sampleCandidates(src) {
+export function sampleCandidates(src: string) {
   const p = thumbParts(src)
   if (!p) return []
   const bases = [imageBase()]
   try { bases.push(`${new URL(src).origin}/images`) } catch (e) { /* ignore */ }
-  return [...new Set(/** @type {string[]} */ (bases.filter(Boolean)))]
+  return [...new Set(bases.filter(Boolean) as string[])]
     .map(b => `${b.replace(/\/images$/, '/samples')}/${p.dir}/sample_${p.hash}.jpg`)
 }
 
@@ -52,18 +50,12 @@ export function sampleCandidates(src) {
 // box is wider than the sample (a desktop screen).
 const SAMPLE_WIDTH = 850
 
-/** @param {HTMLElement} el */
-function displayPixels(el) {
+function displayPixels(el: HTMLElement) {
   const box = el.closest(THUMB) || el
   return (box.clientWidth || el.clientWidth || 0) * (window.devicePixelRatio || 1)
 }
 
-/**
- * @param {HTMLElement} el
- * @param {string} src
- * @returns {{ kind: string, stages: string[][] }}
- */
-function upgradePlan(el, src) {
+function upgradePlan(el: HTMLElement, src: string): { kind: string, stages: string[][] } {
   if (thumbKind(el) === 'video') return { kind: 'poster', stages: [fileCandidates(src, ['jpg'])] }
   const originals = fileCandidates(src, ORIGINAL_EXTS)
   const sitePage = true
@@ -76,22 +68,18 @@ function upgradePlan(el, src) {
 // with GIFs (IMAGE_MAX_INFLIGHT, see B) cap how many the script starts at once.
 // Targets are the thumbnails (and samples) on the site's pages.
 const ORIGINAL_SELECTOR = 'img[src*="/thumbnails/"], img[src*="/samples/"]'
-/** @type {HTMLImageElement[]} */
-export const originalQueue = []
+export const originalQueue: HTMLImageElement[] = []
 export let upgradeGen = 0   // bumped by freeMemory(): upgrades already in flight drop their result
-/** @param {typeof upgradeGen} v */
-export function setUpgradeGen(v) { upgradeGen = v }
+export function setUpgradeGen(v: typeof upgradeGen) { upgradeGen = v }
 
 
-/** @param {HTMLImageElement} el */
-export function pictureOf(el) {
+export function pictureOf(el: HTMLImageElement) {
   return imgPicture(el)
 }
 
 // The kind of post a thumbnail shows, taken from its link, which is what the
 // cover and GIF code treat as the card (the tags sit in title/alt).
-/** @param {Element} el */
-export function thumbKind(el) {
+export function thumbKind(el: Element) {
   const card = el.closest('a') || el.parentElement
   if (card && isGifCard(card)) return 'gif'
   if (card && isVideoCard(card)) return 'video'
@@ -100,9 +88,8 @@ export function thumbKind(el) {
 
 /**
  * Returns true once the element needs no more watching.
- * @param {HTMLImageElement} el
  */
-export function upgradeToOriginal(el) {
+export function upgradeToOriginal(el: HTMLImageElement) {
   if (el.dataset.ibhOrig) return true   // already queued, done or failed
   // Without originalThumbs, only feed images on site pages get upgraded.
   if (!CFG.originalThumbs && !inFeed(el)) return true
@@ -123,8 +110,7 @@ export function upgradeToOriginal(el) {
 // passed by.
 function nextQueued() {
   const h = window.innerHeight
-  /** @type {Array<[number, HTMLImageElement]>} */
-  const near = []
+  const near: Array<[number, HTMLImageElement]> = []
   for (const el of originalQueue) {
     if (!el.isConnected) continue
     const r = el.getBoundingClientRect()
@@ -145,16 +131,14 @@ function nextQueued() {
 
 let pumpAfterRead = false
 export function pumpOriginals() {
-  /** @type {HTMLImageElement[]} */
-  const later = []   // their URLs may still come from IndexedDB
+  const later: HTMLImageElement[] = []   // their URLs may still come from IndexedDB
   while (imagesInflight < IMAGE_MAX_INFLIGHT && originalQueue.length) {
     const el = nextQueued()
     if (!el) break
     const pic = pictureOf(el)
     if (!pic) continue
     const plan = upgradePlan(el, pic.src)
-    /** @type {CacheKey} */
-    const ck = { kind: plan.kind, hash: (thumbParts(pic.src) || {}).hash }
+    const ck: CacheKey = { kind: plan.kind, hash: (thumbParts(pic.src) || {}).hash }
     if (urlPending(ck.kind, ck.hash)) { later.push(el); continue }
     ck.cached = cacheGet(ck.kind, ck.hash)
     if (ck.cached === null) { el.dataset.ibhOrig = 'failed'; continue }   // known: nothing loads
@@ -172,18 +156,10 @@ export function pumpOriginals() {
 // The candidates race (raceImage): a wrong extension costs nothing, where
 // trying them in turn held a download slot ~0.5 s per miss.
 // ck: where the winner is cached, and what cacheGet had for it.
-/** @typedef {{ kind: string, hash: string | undefined, cached?: string | null }} CacheKey */
-/**
- * @param {HTMLImageElement} el
- * @param {string} from
- * @param {string[][]} stages
- * @param {() => void} done
- * @param {CacheKey} [ck]
- */
-function probeOriginal(el, from, stages, done, ck) {
+export type CacheKey = { kind: string, hash: string | undefined, cached?: string | null }
+function probeOriginal(el: HTMLImageElement, from: string, stages: string[][], done: () => void, ck?: CacheKey) {
   const gen = upgradeGen
-  /** @type {HTMLImageElement | null} */
-  let probe = null
+  let probe: HTMLImageElement | null = null
   raceImage(stages, ck ? ck.cached : undefined, winner => {
     probe = winner
     if (gen !== upgradeGen) { done(); return }   // memory freed meanwhile: start over later
@@ -219,12 +195,12 @@ function probeOriginal(el, from, stages, done, ck) {
     }
     if (el.tagName === 'IMG') el.decoding = 'async'
     const pic = pictureOf(el)
-    if (pic) pic.set(/** @type {HTMLImageElement} */ (probe).src)   // already in cache and decoded, so this paints at once
+    if (pic) pic.set((probe as HTMLImageElement).src)   // already in cache and decoded, so this paints at once
     el.dataset.ibhThumb = from    // what freeMemory() and redoThumbs() put back
     el.dataset.ibhOrig = 'done'
     unpinHeight(el)
     watchDistance(el)   // released again once it is far off screen, see G
-    dbg(`original: ${/** @type {HTMLImageElement} */ (probe).src}`)   // swap runs once the race won
+    dbg(`original: ${(probe as HTMLImageElement).src}`)   // swap runs once the race won
     done()
   }
 }
@@ -235,20 +211,18 @@ export const originalViewport = 'IntersectionObserver' in window
         if (!e.isIntersecting) continue
         // Scrolled in under the modal: wait for it to close (resumePage observes again).
         // The observer is this very one, and what it watches are scanThumbs' images.
-        if (modal && modal.open) { /** @type {IntersectionObserver} */ (originalViewport).unobserve(e.target); suspended.push(/** @type {HTMLImageElement} */ (e.target)); continue }
-        if (upgradeToOriginal(/** @type {HTMLImageElement} */ (e.target))) /** @type {IntersectionObserver} */ (originalViewport).unobserve(e.target)
+        if (modal && modal.open) { (originalViewport as IntersectionObserver).unobserve(e.target); suspended.push(e.target as HTMLImageElement); continue }
+        if (upgradeToOriginal(e.target as HTMLImageElement)) (originalViewport as IntersectionObserver).unobserve(e.target)
       }
     }, { rootMargin: '300px' })
   : null
 
-/** @type {WeakSet<Element>} */
-const watchedThumbs = new WeakSet()
+const watchedThumbs: WeakSet<Element> = new WeakSet()
 
-/** @param {AnyNode} root */
-export function scanThumbs(root) {
+export function scanThumbs(root: AnyNode) {
   if (!(CFG.originalThumbs || CFG.nativeFeed) || !root || !root.querySelectorAll) return
   const found = [...root.querySelectorAll(ORIGINAL_SELECTOR)]
-  if (root.matches && root.matches(ORIGINAL_SELECTOR)) found.push(/** @type {HTMLImageElement} */ (root))   // matched img[…]
+  if (root.matches && root.matches(ORIGINAL_SELECTOR)) found.push(root as HTMLImageElement)   // matched img[…]
   for (const el of found) {
     if (watchedThumbs.has(el)) continue
     watchedThumbs.add(el)

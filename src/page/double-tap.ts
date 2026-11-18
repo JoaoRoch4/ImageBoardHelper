@@ -10,18 +10,15 @@ import { popHeart } from '../post/votes'
 // a moment later: that is how long a second tap is waited for. Registered
 // after the scrub's and the raw hold's click guards, before the modal.
 const DOUBLE_TAP_MS = 300
-/** @type {{ link: HTMLAnchorElement, timer: number } | null} */
-let pendingTap = null   // { link, timer }: a first tap waiting for a second
-/** @type {HTMLAnchorElement | null} */
-let passTap = null      // the single tap going through to whatever opens the post
+let pendingTap: { link: HTMLAnchorElement, timer: number } | null = null   // { link, timer }: a first tap waiting for a second
+let passTap: HTMLAnchorElement | null = null      // the single tap going through to whatever opens the post
 
 const wantsDoubleTap = () => !!CFG.doubleTapFav && SITE === 'rule34.xxx' && !!userId()
 
-/** @param {MouseEvent} ev */
-export function onDoubleTapClick(ev) {
+export function onDoubleTapClick(ev: MouseEvent) {
   if (ev.defaultPrevented || ev.button !== 0 || bulkMode) return
   // SITE_LINK ends in a: the link.
-  const link = /** @type {HTMLAnchorElement | null | undefined} */ (asElement(ev.target)?.closest(SITE_LINK))
+  const link = asElement(ev.target)?.closest(SITE_LINK) as HTMLAnchorElement | null | undefined
   if (!link || link === passTap || !wantsDoubleTap()) return
   ev.preventDefault()
   ev.stopImmediatePropagation()
@@ -39,8 +36,7 @@ export function onDoubleTapClick(ev) {
 }
 
 // The single tap, replayed: the modal (or the link itself) takes it from here.
-/** @param {HTMLAnchorElement} link */
-function openTapped(link) {
+function openTapped(link: HTMLAnchorElement) {
   if (!link.isConnected) return
   passTap = link
   try { link.click() } finally { passTap = null }

@@ -10,10 +10,9 @@ import { el } from '../panel/panel'
 // found by its cover (size), its reel's index (size and fps) or a hold that
 // played it (fps measured). Kept on the card: the mark also skips the cover.
 /**
- * @param {HTMLElement} card
- * @param {string} what   "3840x2160" or "1920x1080 at 120 fps", for the log and the title
+ * @param what   "3840x2160" or "1920x1080 at 120 fps", for the log and the title
  */
-export function markPastDecoder(card, what) {
+export function markPastDecoder(card: HTMLElement, what: string) {
   if (card.dataset.ibhBigVideo === what) return
   card.dataset.ibhBigVideo = what
   dbg(`card: post ${postId(card)} marked past the hardware decoder (${what})`)
@@ -24,8 +23,7 @@ export function markPastDecoder(card, what) {
 }
 
 // A video card's duration, small in its bottom right corner (thumbBadges).
-/** @param {HTMLElement} card @param {number} secs */
-export function markDuration(card, secs) {
+export function markDuration(card: HTMLElement, secs: number) {
   if (!Number.isFinite(secs) || secs <= 0) return
   const badge = cardBadge(card, 'ibh-dur', 'bottom:3px;right:3px;padding:0 3px;border-radius:3px;' +
     'font:10px/1.4 ui-monospace,monospace;color:#fff;background:rgba(0,0,0,.65)')
@@ -35,10 +33,9 @@ export function markDuration(card, secs) {
 // The card's badge of that class, made once (the observer comes back to the
 // same card); null with thumbBadges off. Painted by us: the theme skips it,
 // and z-index keeps it over the cover video and the slideshow's canvas.
-/** @param {HTMLElement} card @param {string} cls @param {string} css */
-function cardBadge(card, cls, css) {
+function cardBadge(card: HTMLElement, cls: string, css: string) {
   if (!CFG.thumbBadges) return null
-  const had = /** @type {HTMLElement | null} */ (card.querySelector(`.${cls}`))
+  const had = card.querySelector(`.${cls}`) as HTMLElement | null
   if (had) return had
   if (getComputedStyle(card).position === 'static') card.style.position = 'relative'
   const badge = el('span', { class: cls, 'data-ibh-ui': '' })

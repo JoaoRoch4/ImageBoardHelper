@@ -1790,7 +1790,7 @@
   }
   __name(decodeKeyframe, "decodeKeyframe");
 
-  // src/scrub/reel.js
+  // src/scrub/reel.ts
   var REEL_HEAD = 256 * 1024;
   var REEL_MAX_MOOV = 8e6;
   var REEL_MAX_BYTES = 12e6;
@@ -1935,15 +1935,11 @@
     }
     let places = keys.map((k) => track.place(k));
     if (places.some((pl) => !pl)) throw new Error("a keyframe outside the chunk table");
-    while (keys.length > 2 && places.reduce((sum, pl) => sum + /** @type {[number, number]} */
-    pl[1], 0) > REEL_MAX_BYTES) {
+    while (keys.length > 2 && places.reduce((sum, pl) => sum + pl[1], 0) > REEL_MAX_BYTES) {
       keys = keys.filter((k, i) => i % 2 === 0);
       places = places.filter((pl, i) => i % 2 === 0);
     }
-    const frames = await Promise.all(
-      /** @type {Array<[number, number]>} */
-      places.map(([off, size]) => rangeRead(url, off, off + size - 1, reqs).then((r) => r.buf))
-    );
+    const frames = await Promise.all(places.map(([off, size]) => rangeRead(url, off, off + size - 1, reqs).then((r) => r.buf)));
     const secs = track.duration / track.timescale;
     return {
       frames,
@@ -1984,8 +1980,7 @@
         }
         return reel;
       } catch (e) {
-        if (!/** @type {{ status?: number }} */
-        e.status || urls.indexOf(url) === urls.length - 1) throw e;
+        if (!e.status || urls.indexOf(url) === urls.length - 1) throw e;
       }
     }
     throw new Error("no host has the file");
@@ -2026,21 +2021,14 @@
     markDuration(s.card, reel.duration);
     if (pastDecoder(reel.width, reel.height, reel.fps)) markPastDecoder(s.card, `${reel.width}x${reel.height} at ${Math.round(reel.fps)} fps`);
     s.stats.detail = `${reel.width}x${reel.height}, ${mmss(reel.duration)}, ${reel.scenes.length} keyframes, ${Math.round(reel.bytes / 1024)} KB, ${reel.kept ? "kept from before" : `read in ${reel.ms} ms`}`;
-    if (CFG.wasmDecode && reel.avcC && !h264Broken) showReelWasm(
-      s,
-      /** @type {H264Reel} */
-      reel
-    ).catch((e) => {
+    if (CFG.wasmDecode && reel.avcC && !h264Broken) showReelWasm(s, reel).catch((e) => {
       if (scrub === s) wasmFailed(s, reel, e);
     });
     else showReelVideo(s, reel);
   }
   __name(showReel, "showReel");
   function showReelVideo(s, reel) {
-    const r = (
-      /** @type {ReelShow} */
-      s.reel
-    );
+    const r = s.reel;
     borrowDecoder(s.card);
     r.borrowed = true;
     r.holder = document.createElement("div");
@@ -2090,10 +2078,7 @@
     if (scrub !== s) return;
     openStream(x, reel);
     s.stats.method = "wasm reel";
-    const r = (
-      /** @type {ReelShow} */
-      s.reel
-    );
+    const r = s.reel;
     const maxW = Math.round(s.card.getBoundingClientRect().width * (window.devicePixelRatio || 1));
     const times = [];
     const decode = /* @__PURE__ */ __name((i2) => {
@@ -2110,10 +2095,7 @@
     cv.style.cssText = "width:100%;height:100%;object-fit:cover;border-radius:4px;background:#000";
     r.holder.appendChild(cv);
     placeOverPicture(s.card, r.holder);
-    const ctx = (
-      /** @type {CanvasRenderingContext2D} */
-      cv.getContext("2d")
-    );
+    const ctx = cv.getContext("2d");
     let i = 0;
     const show = /* @__PURE__ */ __name(() => {
       if (scrub !== s) return;
@@ -2179,8 +2161,7 @@
       endScrub();
       return;
     }
-    if (e.sparse && /** @type {number} */
-    e.duration <= PLAY_MAX_S) playShow(s);
+    if (e.sparse && e.duration <= PLAY_MAX_S) playShow(s);
     else chooseShow(s);
   }
   __name(reelFailed, "reelFailed");
@@ -2964,7 +2945,7 @@
   }
   __name(buildPageNav, "buildPageNav");
 
-  // src/page/feed-css.js
+  // src/page/feed-css.ts
   var FEED_COL_MIN = 170;
   function feedCss() {
     const cols = CFG.feedColumns;
@@ -5287,7 +5268,7 @@ host: ${STATE.imageBase}
   }
   __name(renderLater, "renderLater");
 
-  // src/storage/storage.js
+  // src/storage/storage.ts
   function setCfg(key, value) {
     CFG[key] = value;
     writeJSON(CFG_KEY, CFG);
@@ -5409,10 +5390,7 @@ host: ${STATE.imageBase}
       const onReply = /* @__PURE__ */ __name((ev) => {
         let msg;
         try {
-          msg = JSON.parse(
-            /** @type {CustomEvent<string>} */
-            ev.detail
-          );
+          msg = JSON.parse(ev.detail);
         } catch (e) {
           return;
         }
@@ -6464,13 +6442,10 @@ host: ${STATE.imageBase}
   }
   __name(asElement, "asElement");
 
-  // src/thumbs/memory.js
+  // src/thumbs/memory.ts
   var FAR_MARGIN = "200% 0px";
   var farViewport = "IntersectionObserver" in window ? new IntersectionObserver((entries) => {
-    for (const e of entries) if (!e.isIntersecting) releaseFar(
-      /** @type {HTMLImageElement} */
-      e.target
-    );
+    for (const e of entries) if (!e.isIntersecting) releaseFar(e.target);
   }, { rootMargin: FAR_MARGIN }) : null;
   function watchDistance(el2) {
     if (CFG.memorySaver && farViewport) farViewport.observe(el2);
@@ -6507,10 +6482,7 @@ host: ${STATE.imageBase}
     let unloaded = 0;
     for (const node of nodes) {
       if (node.nodeType !== 1) continue;
-      const vids = node.matches && node.matches("video[data-ibh]") ? [
-        /** @type {HTMLVideoElement} */
-        node
-      ] : node.querySelectorAll ? [...node.querySelectorAll("video[data-ibh]")] : [];
+      const vids = node.matches && node.matches("video[data-ibh]") ? [node] : node.querySelectorAll ? [...node.querySelectorAll("video[data-ibh]")] : [];
       for (const v of vids) {
         if (!v.currentSrc) continue;
         v.removeAttribute("src");
@@ -6604,7 +6576,7 @@ host: ${STATE.imageBase}
   }
   __name(installMemorySaver, "installMemorySaver");
 
-  // src/thumbs/feed.js
+  // src/thumbs/feed.ts
   var ORIGINAL_EXTS = ["jpg", "png", "jpeg"];
   var inFeed = /* @__PURE__ */ __name((el2) => CFG.nativeFeed && !!el2.closest(LIST), "inFeed");
   function sampleCandidates(src) {
@@ -6615,10 +6587,7 @@ host: ${STATE.imageBase}
       bases.push(`${new URL(src).origin}/images`);
     } catch (e) {
     }
-    return [...new Set(
-      /** @type {string[]} */
-      bases.filter(Boolean)
-    )].map((b) => `${b.replace(/\/images$/, "/samples")}/${p.dir}/sample_${p.hash}.jpg`);
+    return [...new Set(bases.filter(Boolean))].map((b) => `${b.replace(/\/images$/, "/samples")}/${p.dir}/sample_${p.hash}.jpg`);
   }
   __name(sampleCandidates, "sampleCandidates");
   var SAMPLE_WIDTH = 850;
@@ -6765,16 +6734,12 @@ host: ${STATE.imageBase}
       }
       if (el2.tagName === "IMG") el2.decoding = "async";
       const pic = pictureOf(el2);
-      if (pic) pic.set(
-        /** @type {HTMLImageElement} */
-        probe.src
-      );
+      if (pic) pic.set(probe.src);
       el2.dataset.ibhThumb = from;
       el2.dataset.ibhOrig = "done";
       unpinHeight(el2);
       watchDistance(el2);
-      dbg(`original: ${/** @type {HTMLImageElement} */
-      probe.src}`);
+      dbg(`original: ${probe.src}`);
       done();
     }, "swap");
   }
@@ -6784,26 +6749,17 @@ host: ${STATE.imageBase}
       if (!e.isIntersecting) continue;
       if (modal && modal.open) {
         originalViewport.unobserve(e.target);
-        suspended.push(
-          /** @type {HTMLImageElement} */
-          e.target
-        );
+        suspended.push(e.target);
         continue;
       }
-      if (upgradeToOriginal(
-        /** @type {HTMLImageElement} */
-        e.target
-      )) originalViewport.unobserve(e.target);
+      if (upgradeToOriginal(e.target)) originalViewport.unobserve(e.target);
     }
   }, { rootMargin: "300px" }) : null;
   var watchedThumbs = /* @__PURE__ */ new WeakSet();
   function scanThumbs(root) {
     if (!(CFG.originalThumbs || CFG.nativeFeed) || !root || !root.querySelectorAll) return;
     const found = [...root.querySelectorAll(ORIGINAL_SELECTOR)];
-    if (root.matches && root.matches(ORIGINAL_SELECTOR)) found.push(
-      /** @type {HTMLImageElement} */
-      root
-    );
+    if (root.matches && root.matches(ORIGINAL_SELECTOR)) found.push(root);
     for (const el2 of found) {
       if (watchedThumbs.has(el2)) continue;
       watchedThumbs.add(el2);
@@ -8614,7 +8570,7 @@ host: ${STATE.imageBase}
   }
   __name(onOrientationChange, "onOrientationChange");
 
-  // src/thumbs/badges.js
+  // src/thumbs/badges.ts
   function markPastDecoder(card, what) {
     if (card.dataset.ibhBigVideo === what) return;
     card.dataset.ibhBigVideo = what;
@@ -8633,10 +8589,7 @@ host: ${STATE.imageBase}
   __name(markDuration, "markDuration");
   function cardBadge(card, cls, css) {
     if (!CFG.thumbBadges) return null;
-    const had = (
-      /** @type {HTMLElement | null} */
-      card.querySelector(`.${cls}`)
-    );
+    const had = card.querySelector(`.${cls}`);
     if (had) return had;
     if (getComputedStyle(card).position === "static") card.style.position = "relative";
     const badge = el("span", { class: cls, "data-ibh-ui": "" });
@@ -8646,40 +8599,22 @@ host: ${STATE.imageBase}
   }
   __name(cardBadge, "cardBadge");
 
-  // src/page/raw-hold.js
+  // src/page/raw-hold.ts
   var RAW_HOLD_MS = 500;
   var rawHold = null;
   var rawClickUntil = 0;
   function rawTarget(target) {
-    const img = (
-      /** @type {HTMLImageElement | null | undefined} */
-      asElement(target)?.closest(`${SITE_LINK} img`)
-    );
-    const link = (
-      /** @type {HTMLAnchorElement | null | undefined} */
-      img && img.closest(SITE_LINK)
-    );
+    const img = asElement(target)?.closest(`${SITE_LINK} img`);
+    const link = img && img.closest(SITE_LINK);
     if (!link || link.dataset.ibhVideo || isVideoCard(link) || isGifCard(link)) return null;
-    return (
-      /** @type {{ img: HTMLImageElement, link: HTMLAnchorElement }} */
-      { img, link }
-    );
+    return { img, link };
   }
   __name(rawTarget, "rawTarget");
   function gifTarget(target) {
-    const img = (
-      /** @type {HTMLImageElement | null | undefined} */
-      asElement(target)?.closest(`${SITE_LINK} img`)
-    );
-    const link = (
-      /** @type {HTMLAnchorElement | null | undefined} */
-      img && img.closest(SITE_LINK)
-    );
+    const img = asElement(target)?.closest(`${SITE_LINK} img`);
+    const link = img && img.closest(SITE_LINK);
     if (!link || !isGifCard(link)) return null;
-    return (
-      /** @type {{ img: HTMLImageElement, link: HTMLAnchorElement }} */
-      { img, link }
-    );
+    return { img, link };
   }
   __name(gifTarget, "gifTarget");
   function holdTarget(target) {
@@ -8778,11 +8713,7 @@ host: ${STATE.imageBase}
     img.dataset.ibhPreRaw = img.getAttribute("srcset") || "";
     bulkBadge(link, "RAW…", "rgba(15, 20, 23, .85)", "ibh-rawbadge");
     if (navigator.vibrate) navigator.vibrate(15);
-    rawLoads.set(img, raceImage([fileCandidates(
-      /** @type {string} */
-      src,
-      ORIGINAL_EXTS
-    )], cached, (probe) => {
+    rawLoads.set(img, raceImage([fileCandidates(src, ORIGINAL_EXTS)], cached, (probe) => {
       cacheSet("orig", parts.hash, probe.src, cached);
       const decoded = typeof probe.decode === "function" ? probe.decode().catch(() => {
       }) : Promise.resolve();
@@ -8792,8 +8723,7 @@ host: ${STATE.imageBase}
         if (!pic) return;
         rawLoads.delete(img);
         if (img.dataset.ibhOrig !== "done") {
-          img.dataset.ibhThumb = /** @type {string} */
-          src;
+          img.dataset.ibhThumb = src;
           img.dataset.ibhOrig = "done";
           img.dataset.ibhRawMarked = "1";
           watchDistance(img);
@@ -8814,17 +8744,14 @@ host: ${STATE.imageBase}
   }
   __name(loadRaw, "loadRaw");
 
-  // src/page/double-tap.js
+  // src/page/double-tap.ts
   var DOUBLE_TAP_MS = 300;
   var pendingTap = null;
   var passTap = null;
   var wantsDoubleTap = /* @__PURE__ */ __name(() => !!CFG.doubleTapFav && SITE === "rule34.xxx" && !!userId(), "wantsDoubleTap");
   function onDoubleTapClick(ev) {
     if (ev.defaultPrevented || ev.button !== 0 || bulkMode) return;
-    const link = (
-      /** @type {HTMLAnchorElement | null | undefined} */
-      asElement(ev.target)?.closest(SITE_LINK)
-    );
+    const link = asElement(ev.target)?.closest(SITE_LINK);
     if (!link || link === passTap || !wantsDoubleTap()) return;
     ev.preventDefault();
     ev.stopImmediatePropagation();

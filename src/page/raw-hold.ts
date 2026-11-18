@@ -19,42 +19,37 @@ import { knownOriginal, postId, raceImage } from '../modal/media'
 // does not open the post, and the long-press menu stays out of the way.
 // A GIF's thumbnail takes the same hold to be built again (holdGif).
 const RAW_HOLD_MS = 500
-/** @type {{ img: HTMLImageElement, link: HTMLAnchorElement, gif: boolean, x: number, y: number, scrollY: number, fired: boolean, timer: number } | null} */
-export let rawHold = null
+export let rawHold: { img: HTMLImageElement, link: HTMLAnchorElement, gif: boolean, x: number, y: number, scrollY: number, fired: boolean, timer: number } | null = null
 let rawClickUntil = 0
 
 // An image post's thumbnail on a site page (not a video or GIF: those have
 // their own hold, the scene preview, or play on their own).
-/** @param {EventTarget | null} target */
-function rawTarget(target) {
+function rawTarget(target: EventTarget | null) {
   // The selectors end in img and in a.
-  const img = /** @type {HTMLImageElement | null | undefined} */ (asElement(target)?.closest(`${SITE_LINK} img`))
-  const link = /** @type {HTMLAnchorElement | null | undefined} */ (img && img.closest(SITE_LINK))
+  const img = asElement(target)?.closest(`${SITE_LINK} img`) as HTMLImageElement | null | undefined
+  const link = (img && img.closest(SITE_LINK)) as HTMLAnchorElement | null | undefined
   if (!link || link.dataset.ibhVideo || isVideoCard(link) || isGifCard(link)) return null
-  return /** @type {{ img: HTMLImageElement, link: HTMLAnchorElement }} */ ({ img, link })   // the link was found from img
+  return { img, link } as { img: HTMLImageElement, link: HTMLAnchorElement }   // the link was found from img
 }
 
 // A GIF post's thumbnail, by tag or found out (a card tagged "animated"
 // that no video host has).
-/** @param {EventTarget | null} target */
-function gifTarget(target) {
-  const img = /** @type {HTMLImageElement | null | undefined} */ (asElement(target)?.closest(`${SITE_LINK} img`))
-  const link = /** @type {HTMLAnchorElement | null | undefined} */ (img && img.closest(SITE_LINK))
+function gifTarget(target: EventTarget | null) {
+  const img = asElement(target)?.closest(`${SITE_LINK} img`) as HTMLImageElement | null | undefined
+  const link = (img && img.closest(SITE_LINK)) as HTMLAnchorElement | null | undefined
   if (!link || !isGifCard(link)) return null
-  return /** @type {{ img: HTMLImageElement, link: HTMLAnchorElement }} */ ({ img, link })
+  return { img, link } as { img: HTMLImageElement, link: HTMLAnchorElement }
 }
 
 // What a hold on this target does: the raw file, or the GIF built again.
-/** @param {EventTarget | null} target */
-function holdTarget(target) {
+function holdTarget(target: EventTarget | null) {
   const raw = CFG.holdRaw && rawTarget(target)
   if (raw) return { ...raw, gif: false }
   const gif = CFG.holdGif && gifTarget(target)
   return gif ? { ...gif, gif: true } : null
 }
 
-/** @param {TouchEvent} ev */
-export function onRawTouchStart(ev) {
+export function onRawTouchStart(ev: TouchEvent) {
   rawHold = null
   if (!(CFG.holdRaw || CFG.holdGif) || bulkMode || ev.touches.length !== 1 || (modal && modal.open)) return
   const hit = holdTarget(ev.target)
@@ -76,34 +71,29 @@ export function cancelRawHold() {
   rawHold = null
 }
 
-/** @param {TouchEvent} ev */
-export function onRawTouchMove(ev) {
+export function onRawTouchMove(ev: TouchEvent) {
   if (!rawHold || rawHold.fired) return
   const finger = ev.touches[0]
   if (ev.touches.length > 1 || Math.hypot(finger.clientX - rawHold.x, finger.clientY - rawHold.y) > 12) cancelRawHold()
 }
 
-/** @param {MouseEvent} ev */
-export function onRawClick(ev) {
+export function onRawClick(ev: MouseEvent) {
   if (Date.now() > rawClickUntil) return
   rawClickUntil = 0
   ev.preventDefault()
   ev.stopImmediatePropagation()
 }
 
-/** @param {MouseEvent} ev */
-export function onRawContextMenu(ev) {
+export function onRawContextMenu(ev: MouseEvent) {
   if (holdTarget(ev.target)) ev.preventDefault()   // the hold is ours
 }
 
 // The download in flight per image, so a second hold can call it off.
-/** @type {WeakMap<HTMLImageElement, () => void>} */
-const rawLoads = new WeakMap()
+const rawLoads: WeakMap<HTMLImageElement, () => void> = new WeakMap()
 
 // A second hold undoes the first: back to what was on show (the sample, or
 // the thumbnail), or the download in flight called off.
-/** @param {HTMLImageElement} img @param {HTMLAnchorElement} link */
-function undoRaw(img, link) {
+function undoRaw(img: HTMLImageElement, link: HTMLAnchorElement) {
   const cancel = rawLoads.get(img)
   if (cancel) { cancel(); rawLoads.delete(img) }
   const before = img.dataset.ibhPreRaw || ''
@@ -126,8 +116,7 @@ function undoRaw(img, link) {
   info(`raw: post ${postId(link)} back to the ${before ? 'sample' : 'thumbnail'}`)
 }
 
-/** @param {HTMLImageElement} img @param {HTMLAnchorElement} link */
-function loadRaw(img, link) {
+function loadRaw(img: HTMLImageElement, link: HTMLAnchorElement) {
   if (img.dataset.ibhRaw) { undoRaw(img, link); return }   // loading or loaded: a second hold undoes it
   const src = img.getAttribute('src')
   const parts = thumbParts(src)
@@ -147,7 +136,7 @@ function loadRaw(img, link) {
   bulkBadge(link, 'RAW…', 'rgba(15, 20, 23, .85)', 'ibh-rawbadge')
   if (navigator.vibrate) navigator.vibrate(15)
   // src: thumbParts found the parts in it.
-  rawLoads.set(img, raceImage([fileCandidates(/** @type {string} */ (src), ORIGINAL_EXTS)], cached, probe => {
+  rawLoads.set(img, raceImage([fileCandidates(src as string, ORIGINAL_EXTS)], cached, probe => {
     cacheSet('orig', parts.hash, probe.src, cached)
     const decoded = typeof probe.decode === 'function' ? probe.decode().catch(() => {}) : Promise.resolve()
     decoded.then(() => {
@@ -157,7 +146,7 @@ function loadRaw(img, link) {
       rawLoads.delete(img)
       // Release goes back to the thumbnail like any upgrade (see D).
       if (img.dataset.ibhOrig !== 'done') {
-        img.dataset.ibhThumb = /** @type {string} */ (src)
+        img.dataset.ibhThumb = src as string
         img.dataset.ibhOrig = 'done'
         img.dataset.ibhRawMarked = '1'
         watchDistance(img)
