@@ -1,0 +1,64 @@
+# The checks of `npm run check`, one step each, and the browser tests in a
+# headless Firefox (Playwright), on every push to main, every pull request
+# and by hand (Actions → Tests → Run workflow).
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build, type-check, lint, tool tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24   # runs tools/*.mts as they are (type stripping)
+          cache: npm
+      - run: npm ci
+      # esbuild joins src/ into the userscript, with the build's own checks
+      # (no renamed name, no value read before its module loads), and the
+      # committed file must be what src/ builds.
+      - name: Build (esbuild) and compare with the committed userscript
+        run: node tools/build.mts --check
+      - name: Type-check src/ and tools/ (TypeScript 7)
+        run: npm run -s typecheck
+      - name: ESLint
+        run: npx eslint
+      - name: I18N tables have the same keys
+        run: node tools/check-i18n.js
+      - name: Tool tests (build checks, rish, phone server, video reducer)
+        run: npm run -s test:tools
+      - name: Keep the built userscript
+        run: node tools/build.mts
+      - uses: actions/upload-artifact@v4
+        with:
+          name: image-board-helper.user.js
+          path: image-board-helper.user.js
+
+  browser:
+    name: Browser ${{ matrix.test }}
+    runs-on: ubuntu-latest
+    needs: build
+    strategy:
+      fail-fast: false   # each test says something of its own
+      matrix:
+        # smoke loads safebooru.org live; the others fake the network.
+        test: [smoke, 'test:gif', 'test:fav', 'test:url']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - run: npm ci
+      - name: Playwright's Firefox
+        run: npx playwright install --with-deps firefox
+      - run: npm run -s ${{ matrix.test }}
