@@ -16,19 +16,15 @@ import { el } from '../panel/panel'
 // in a new tab, to be saved with a long press (still inside the tap's user
 // activation, so the popup blocker lets it through).
 export const GM_XHR = typeof GM_xmlhttpRequest === 'function'
-/** @type {Set<string>} */
-const downloading = new Set() // post ids in flight: a second tap does not start another
-/** @type {Map<string, number>} */
-const dlPercent = new Map()   // post id -> last progress, for the button
+const downloading: Set<string> = new Set() // post ids in flight: a second tap does not start another
+const dlPercent: Map<string, number> = new Map()   // post id -> last progress, for the button
 const DL_DONE_MS = 1500       // the ✓ stays this long before the button comes back
 const BLOB_LIFE_MS = 120000   // how long Firefox gets to save the file
 const DL_STALL_MS = 60000     // a download that gets nothing for this long is given up (no cap on the whole)
-/** @type {{ post: string | null, until: number }} */
-let dlDoneAt = { post: null, until: 0 }
+let dlDoneAt: { post: string | null, until: number } = { post: null, until: 0 }
 
 // Files come only from the site's own hosts (rule34.xxx, api-cdn.rule34.xxx…).
-/** @param {string} url */
-function siteFile(url) {
+function siteFile(url: string) {
   try {
     const u = new URL(url)
     return u.protocol === 'https:' && (u.hostname === SITE || u.hostname.endsWith(`.${SITE}`))
@@ -41,18 +37,11 @@ function siteFile(url) {
 // blob: link right away, so confirming saves nothing. Same path, done here:
 // fetch the file, hand Firefox a blob: link to save, and keep that link
 // alive long enough to confirm the prompt.
-/**
- * @param {string} url
- * @param {string} name
- * @param {(ok: boolean, error?: string) => void} done
- * @param {(loaded: number, total: number) => void} progress
- */
-function saveFile(url, name, done, progress) {
+function saveFile(url: string, name: string, done: (ok: boolean, error?: string) => void, progress: (loaded: number, total: number) => void) {
   let last = 0
   let heard = Date.now()   // the last time any bytes came
   let over = false
-  /** @param {boolean} ok @param {string} [reason] */
-  const end = (ok, reason) => {
+  const end = (ok: boolean, reason?: string) => {
     if (over) return
     over = true
     clearInterval(watch)
@@ -123,12 +112,7 @@ export function refreshDlButton() {
   }
 }
 
-/**
- * @param {string} post
- * @param {boolean} ok
- * @param {string} [reason]
- */
-function dlFinished(post, ok, reason) {
+function dlFinished(post: string, ok: boolean, reason?: string) {
   downloading.delete(post)
   dlPercent.delete(post)
   if (ok) {
@@ -145,8 +129,7 @@ function dlFinished(post, ok, reason) {
 // The post's own file, once it loaded: with the sample on screen, the
 // original, known from the cache or the post page's Original image link
 // (the sample only as a last resort).
-/** @returns {Promise<string | null | undefined>} */
-export async function rawFileUrl() {
+export async function rawFileUrl(): Promise<string | null | undefined> {
   const url = modal.fileUrl
   if (!url || !modal.isSample) return url
   const pic = cardPicture(modal.link)
@@ -160,8 +143,7 @@ export async function rawFileUrl() {
 // A link that opens outside the site: rule34's fast host serves videos
 // only with the site as Referer (images it serves to anyone); its origin
 // host serves both.
-/** @param {string} url */
-export const portableUrl = url => url.replace(/:\/\/api-cdn\.rule34\.xxx\/(.*\.(?:mp4|webm)(?:[?#]|$))/i, '://api-cdn-mp4.rule34.xxx/$1')
+export const portableUrl = (url: string) => url.replace(/:\/\/api-cdn\.rule34\.xxx\/(.*\.(?:mp4|webm)(?:[?#]|$))/i, '://api-cdn-mp4.rule34.xxx/$1')
 
 // 🔗: the raw file's link, on the clipboard.
 export async function copyRawLink() {

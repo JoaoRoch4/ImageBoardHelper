@@ -17,21 +17,18 @@ const RECENT_MAX = 15   // per bar
 
 // A search as a bar holds it (where: 'fav' or 'site'); active: the favorites
 // bar's last one is on show.
-/** @typedef {{ where: string, text: string, or?: string, kind: string, sort: string, min?: string, active?: boolean }} Search */
-/** @typedef {{ saved: Search[], recent: Search[], favLast: Omit<Search, 'where'> | null }} SearchStore */
-/** @returns {Promise<SearchStore>} */
-export async function searchStore() {
+export type Search = { where: string, text: string, or?: string, kind: string, sort: string, min?: string, active?: boolean }
+export type SearchStore = { saved: Search[], recent: Search[], favLast: Omit<Search, 'where'> | null }
+export async function searchStore(): Promise<SearchStore> {
   const v = await storeGet('searches')
   const ok = v && typeof v === 'object' && !Array.isArray(v)
   return { saved: (ok && v.saved) || [], recent: (ok && v.recent) || [], favLast: (ok && v.favLast) || null }
 }
 
 // Nothing typed and no filter: not worth keeping.
-/** @param {Search} q */
-const emptySearch = q => !q.text.trim() && !orGroups(q.or).length && q.kind === 'all' && !q.min && q.sort === 'new'
+const emptySearch = (q: Search) => !q.text.trim() && !orGroups(q.or).length && q.kind === 'all' && !q.min && q.sort === 'new'
 
-/** @param {SearchStore} store @param {Search} q */
-export function addRecent(store, q) {
+export function addRecent(store: SearchStore, q: Search) {
   if (emptySearch(q)) return
   const key = searchKey(q)
   store.recent = [q, ...store.recent.filter(other => searchKey(other) !== key)]
@@ -39,15 +36,11 @@ export function addRecent(store, q) {
   if (mine.length > RECENT_MAX) store.recent = store.recent.filter(other => !mine.slice(RECENT_MAX).includes(other))
 }
 
-/** @param {Search} q */
-export const searchKey = q => [q.where, q.text.trim().replace(/\s+/g, ' '), orGroups(q.or).map(g => g.join(' ')).join(' || '), q.kind, q.sort, String(q.min || '')].join('|')
+export const searchKey = (q: Search) => [q.where, q.text.trim().replace(/\s+/g, ' '), orGroups(q.or).map(g => g.join(' ')).join(' || '), q.kind, q.sort, String(q.min || '')].join('|')
 
-/** @param {Search} q */
-function searchLabel(q) {
-  /** @type {Record<string, string>} */
-  const kinds = { image: t('favKindImage'), video: t('favKindVideo'), gif: t('favKindGif'), animated: t('favKindAnimated') }
-  /** @type {Record<string, string>} */
-  const orders = { score: t('favSortScore'), random: t('favSortRandom'), old: t('favSortOld') }
+function searchLabel(q: Search) {
+  const kinds: Record<string, string> = { image: t('favKindImage'), video: t('favKindVideo'), gif: t('favKindGif'), animated: t('favKindAnimated') }
+  const orders: Record<string, string> = { score: t('favSortScore'), random: t('favSortRandom'), old: t('favSortOld') }
   const or = orGroups(q.or)
   return [q.text.trim() || (or.length ? '' : t('savedAll')), or.map(g => `( ${g.join(' | ')} )`).join(' '), kinds[q.kind], q.min ? `≥ ${q.min}` : '', orders[q.sort] || '']
     .filter(Boolean).join(' · ')
@@ -55,30 +48,18 @@ function searchLabel(q) {
 
 // The two pick lists (favorites, recent) and the ☆ button for a bar:
 // read() gives its search, apply() fills it in and runs it.
-/**
- * @param {string} where
- * @param {() => Search} read
- * @param {(q: Search) => void} apply
- */
-export function savedControls(where, read, apply) {
+export function savedControls(where: string, read: () => Search, apply: (q: Search) => void) {
   const pick = el('select', { class: 'saved' })
   const recentPick = el('select', { class: 'saved' })
   const star = el('button', { type: 'button', class: 'star' })
-  /** @type {Search[]} */
-  let saved = []
-  /** @type {Search[]} */
-  let recent = []
+  let saved: Search[] = []
+  let recent: Search[] = []
   const sync = () => {
     const on = saved.some(q => searchKey(q) === searchKey(read()))
     star.textContent = t(on ? 'savedSearch' : 'saveSearch')
     star.classList.toggle('on', on)
   }
-  /**
-   * @param {HTMLSelectElement} select
-   * @param {Search[]} list
-   * @param {'savedPick' | 'recentPick'} title
-   */
-  const fillOne = (select, list, title) => {
+  const fillOne = (select: HTMLSelectElement, list: Search[], title: 'savedPick' | 'recentPick') => {
     const mine = list.filter(q => q.where === where)
     select.replaceChildren(el('option', { value: '', text: t(title) }), ...mine.map((q, i) => el('option', { value: String(i), text: searchLabel(q) })))
     select.hidden = !mine.length
@@ -89,8 +70,7 @@ export function savedControls(where, read, apply) {
     sync()
   }
   const reload = async () => { const store = await searchStore(); saved = store.saved; recent = store.recent; fill() }
-  /** @param {HTMLSelectElement} select @param {() => Search[]} source */
-  const onPick = (select, source) => select.addEventListener('change', () => {
+  const onPick = (select: HTMLSelectElement, source: () => Search[]) => select.addEventListener('change', () => {
     const q = source().filter(other => other.where === where)[Number(select.value)]
     select.value = ''
     if (q) apply(q)
@@ -113,8 +93,7 @@ export function savedControls(where, read, apply) {
 }
 
 // A search the site bar finds in the address (typed, or a tag link) is a recent one.
-/** @param {Search} q */
-async function recordSiteSearch(q) {
+async function recordSiteSearch(q: Search) {
   if (emptySearch(q)) return
   const store = await searchStore()
   addRecent(store, q)
@@ -126,16 +105,14 @@ async function recordSiteSearch(q) {
 // own search: the kind becomes tags, the minimum score score:>=N, the order
 // sort:score, and the bar reads them back from the address, so it always
 // shows the search on screen.
-/** @type {Record<string, string>} */
-const KIND_QUERY = {
+const KIND_QUERY: Record<string, string> = {
   image: '-animated -video -gif',
   video: 'video',
   gif: '( gif ~ animated_gif )',
   animated: '( animated ~ video ~ gif )',
 }
 
-/** @param {string} tags */
-function readSiteQuery(tags) {
+function readSiteQuery(tags: string) {
   let rest = ` ${tags.trim().replace(/\s+/g, ' ')} `
   let kind = 'all'
   for (const [k, q] of Object.entries(KIND_QUERY)) {
@@ -143,8 +120,7 @@ function readSiteQuery(tags) {
   }
   // The ( a ~ b ) groups left after the kind go to the OR field, apart by ||.
   // The lookahead leaves the space after a group for the next one to start with.
-  /** @type {string[]} */
-  const groups = []
+  const groups: string[] = []
   rest = rest.replace(/ \( ([^()]+?) \)(?= )/g, (m, inner) => {
     if (!/ ~ /.test(` ${inner} `)) return m
     groups.push(orTags(inner).join(' '))
@@ -159,8 +135,7 @@ function readSiteQuery(tags) {
   return { rest: rest.trim(), kind, sort, min, or }
 }
 
-/** @param {{ rest: string, kind: string, sort: string, min?: string, or?: string }} q */
-function siteQuery({ rest, kind, sort, min, or }) {
+function siteQuery({ rest, kind, sort, min, or }: { rest: string, kind: string, sort: string, min?: string, or?: string }) {
   const either = orGroups(or).map(g => g.length > 1 ? `( ${g.join(' ~ ')} )` : g[0]).join(' ')
   return [rest, either, KIND_QUERY[kind] || '', min ? `score:>=${min}` : '', sort === 'score' ? 'sort:score' : sort === 'random' ? 'sort:random' : '']
     .filter(Boolean).join(' ')
@@ -212,7 +187,7 @@ export function ensureSiteSearch() {
     home.before(box)
     home.style.display = 'none'
   } else {
-    const list = /** @type {Element} */ (document.querySelector(LIST))   // no home box: a listing, so want found it
+    const list = document.querySelector(LIST) as Element   // no home box: a listing, so want found it
     list.before(box)
   }
   recordSiteSearch(read()).then(saved.reload)

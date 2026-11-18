@@ -125,18 +125,18 @@ O usuário quer trazer vários recursos do app para o script no futuro (2026-11-
 - `modal/open.js` — `openModal`, `closeModal`, `stepModal`, `suspendPage`, `resumePage`, próximo post pronto (`preloadAhead`), `installVideoModal`
 - `modal/media.js` — `showVideo`, `showImage`, `raceImage`, `loadModalOriginal`, `sniffVideo`, `raceVideoAndGif`
 - `modal/player.js` — gestos e controles do vídeo (`installVideoGestures`, `installVideoControls`, `installGearMenu`), a prévia na barra (`seekReel`, `drawKeyframe`), o arraste lateral que move o vídeo (`playerRub`, com o `makeRub` do scrub), tela cheia
-- `modal/gestures.js` — `installModalSwipe`, `installImageHold`, `installImageZoom`
-- `modal/tags.js` — menu de tags e abas Info/Comentários (`renderTags`, `renderInfo`, `renderComments`, `voteComment`), `chipGestures`, `copyText`, `applyMarks`
+- `modal/gestures.ts` — `installModalSwipe`, `installImageHold`, `installImageZoom`
+- `modal/tags.ts` — menu de tags e abas Info/Comentários (`renderTags`, `renderInfo`, `renderComments`, `voteComment`), `chipGestures`, `copyText`, `applyMarks`
 - `post/post.js` — `userId`, `onOwnFavorites`, `postInfo`, `readComments`, `readPostPage`, `lookUpFavorite`
 - `post/votes.js` — `favoritePost`, `upvotePost`, `modalFavorite`, `modalUpvote`; o curtir com toque duplo no meio (`modalLike`, `popHeart`, `centerDoubleTap`)
-- `post/download.js` — Baixar: `saveFile`, `modalDownload`, `rawFileUrl`, `copyRawLink`
-- `post/app.js` — o app QtMediaPlayer: `sendToApp`, `APP`, o servidor (`appCall`, `appDownload`, `followAppDownload`)
+- `post/download.ts` — Baixar: `saveFile`, `modalDownload`, `rawFileUrl`, `copyRawLink`
+- `post/app.ts` — o app QtMediaPlayer: `sendToApp`, `APP`, o servidor (`appCall`, `appDownload`, `followAppDownload`)
 - `storage/storage.ts` — `setCfg` e as cópias (`backupCfg`, `restoreCfg`), IndexedDB `idbGet/idbSet`, `storeGet/storeSet`, `storeReady`/`moveIn`, `GM_STORE`, `STORE_KEYS`
-- `lists/later.js` — Ver depois (`showLater`, `toggleLaterHere`)
+- `lists/later.ts` — Ver depois (`showLater`, `toggleLaterHere`)
 - `lists/favorites.js` — busca nos favoritos (`searchFavs`, `updateFavIndex`, `ensureFavSearch`, `orInput`)
-- `lists/autopager.js` — autopager (`ensureFavPager`, `favPagerNext`), `sharpenTile`
-- `search/suggest.js` — sugestões de tags (`attachSuggest`), `orTags`, `orGroups`, `minScoreInput`, `kindSelect`
-- `search/site-search.js` — buscas salvas (`savedControls`), barra de busca do site (`ensureSiteSearch`, `homeSearchForm`)
+- `lists/autopager.ts` — autopager (`ensureFavPager`, `favPagerNext`), `sharpenTile`
+- `search/suggest.ts` — sugestões de tags (`attachSuggest`), `orTags`, `orGroups`, `minScoreInput`, `kindSelect`
+- `search/site-search.ts` — buscas salvas (`savedControls`), barra de busca do site (`ensureSiteSearch`, `homeSearchForm`)
 - `page/bulk.js` — favoritar em massa (`setBulkMode`, `bulkFavorite`, `onBulkClick`), `pageToast`
 - `page/raw-hold.ts` — segurar para o raw (`holdRaw`) e para refazer um GIF (`onRawTouchStart`, `loadRaw`, `undoRaw`)
 - `page/double-tap.ts` — toque duplo favorita (`onDoubleTapClick`)

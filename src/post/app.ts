@@ -21,8 +21,7 @@ import { el } from '../panel/panel'
 // Referer, which rule34's fast host (api-cdn) wants, so the app gets the
 // origin host: slower, open to anyone. The title and position ride along.
 const APP = 'com.example.qtmediaplayer'
-/** @param {'play' | 'download' | 'reduce'} mode */
-export async function sendToApp(mode) {
+export async function sendToApp(mode: 'play' | 'download' | 'reduce') {
   const playing = modal.fileUrl || modal.video.currentSrc
   if (!playing) { flash(t('dlWait')); return }
   const title = `${SITE.split('.')[0]} ${postId(modal.link)}`
@@ -56,18 +55,11 @@ const APP_TIMEOUT_MS = 1500
 const APP_POLL_MS = 2000
 const APP_POLL_MISSES = 30   // a minute without an answer ends the following
 const appToken = () => (GM_STORE ? String(GM_getValue('appToken', '') || '') : '')
-/** @param {string} value */
-function setAppToken(value) { if (GM_STORE) GM_setValue('appToken', String(value).trim()) }
+function setAppToken(value: string) { if (GM_STORE) GM_setValue('appToken', String(value).trim()) }
 
 // One request to the app: { ok, status, json } or { ok: false, stage, error },
 // where stage is 'token' (401) or 'app' (not answering, or its own error).
-/**
- * @param {'GET' | 'POST'} method
- * @param {string} route
- * @param {AppDownloadRequest} [body]
- * @returns {Promise<{ ok: boolean, status: number, json: any, stage?: string, error?: string }>}
- */
-function appCall(method, route, body) {
+function appCall(method: 'GET' | 'POST', route: string, body?: AppDownloadRequest): Promise<{ ok: boolean, status: number, json: any, stage?: string, error?: string }> {
   return new Promise(resolve => {
     const down = () => resolve({ ok: false, status: 0, json: null, stage: 'app', error: 'not answering' })
     if (!GM_XHR) { down(); return }
@@ -92,8 +84,7 @@ function appCall(method, route, body) {
 
 // The panel's token field and the app's status (asked each time the panel
 // is built or opened).
-/** @type {HTMLDivElement | null} */
-let appStatusRow = null
+let appStatusRow: HTMLDivElement | null = null
 export function appControls() {
   const field = el('input', { class: 'apptoken', type: 'password', autocomplete: 'off', placeholder: t(GM_STORE ? 'appToken' : 'appNoStore') })
   field.disabled = !GM_STORE
@@ -109,7 +100,7 @@ export async function refreshAppStatus() {
   if (!row || !CFG.appBridge) return
   if (!GM_STORE) { row.textContent = t('appNoStore'); return }
   const r = await appCall('GET', 'v1/status')
-  const status = /** @type {AppStatus} */ (r.ok ? r.json : null)
+  const status = (r.ok ? r.json : null) as AppStatus
   row.textContent = status ? `${t('appOk')} · ${status.version}` : t(r.stage === 'token' ? 'appBadToken' : 'appDown')
   if (status) dbg(`app server: ${status.app} ${status.version}, api ${status.api}`)
   else if (!r.ok) info(`app server: ${r.stage} ${r.error}`)
@@ -117,19 +108,13 @@ export async function refreshAppStatus() {
 
 // ⬇ App or ⚡ 1080p by the app's server; false when it can't take it, and
 // the caller sends the intent link instead.
-/**
- * @param {string} fileUrl
- * @param {boolean} reduce
- * @param {string} title
- */
-async function appDownload(fileUrl, reduce, title) {
+async function appDownload(fileUrl: string, reduce: boolean, title: string) {
   if (!CFG.appBridge || !appToken()) return false
   const post = postId(modal.link)
-  /** @type {AppDownloadRequest} */
-  const body = { url: fileUrl, referer: `${location.origin}/`, title, reduce }
+  const body: AppDownloadRequest = { url: fileUrl, referer: `${location.origin}/`, title, reduce }
   const r = await appCall('POST', 'v1/download', body)
   if (!r.ok) { info(`app server: ${r.stage} ${r.error}; post ${post} goes by the intent link`); return false }
-  const queued = /** @type {AppDownloadQueued} */ (r.json)
+  const queued = r.json as AppDownloadQueued
   info(`app server: post ${post} queued as download ${queued.id}${reduce ? ', to convert' : ''}`)
   flash(t(reduce ? 'appReduceQueued' : 'appQueued'))
   followAppDownload(queued.id, post)
@@ -139,12 +124,10 @@ async function appDownload(fileUrl, reduce, title) {
 // Asks the app how a download goes until it (and its conversion) ends,
 // and says so on the page. The app answers while it downloads or converts
 // (a foreground service keeps it awake), so misses mean it went away.
-/** @param {number} id @param {string} post */
-function followAppDownload(id, post) {
+function followAppDownload(id: number, post: string) {
   let misses = 0
   let said = ''
-  /** @param {'appFailed' | 'appSaved' | 'appFits' | 'appConverted' | 'appConverting'} key @param {string} line */
-  const say = (key, line) => { if (said === key) return; said = key; flash(t(key)); info(`app server: post ${post} ${line}`) }
+  const say = (key: 'appFailed' | 'appSaved' | 'appFits' | 'appConverted' | 'appConverting', line: string) => { if (said === key) return; said = key; flash(t(key)); info(`app server: post ${post} ${line}`) }
   const tick = async () => {
     const r = await appCall('GET', `v1/download/${id}`)
     if (!r.ok) {
@@ -153,7 +136,7 @@ function followAppDownload(id, post) {
       return
     }
     misses = 0
-    const s = /** @type {AppDownloadState} */ (r.json)
+    const s = r.json as AppDownloadState
     if (s.status === 'failed' || s.status === 'cancelled') { say('appFailed', `download ${s.status}${s.error ? ` — ${s.error}` : ''}`); return }
     if (s.status !== 'done') { setTimeout(tick, APP_POLL_MS); return }
     const c = s.reduce

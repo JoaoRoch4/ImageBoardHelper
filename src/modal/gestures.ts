@@ -7,10 +7,8 @@ import { setCleanUi, videoPress } from './player'
 import { loadModalOriginal } from './media'
 import { closeModal, stepModal } from './open'
 
-/** @param {HTMLElement} stage @param {HTMLVideoElement} video */
-export function installModalSwipe(stage, video) {
-  /** @type {{ x: number, y: number, t: number, top: number } | null} */
-  let start = null
+export function installModalSwipe(stage: HTMLElement, video: HTMLVideoElement) {
+  let start: { x: number, y: number, t: number, top: number } | null = null
   stage.addEventListener('pointerdown', ev => {
     const r = video.hidden ? null : video.getBoundingClientRect()
     // Drags on the video's own controls are seeks, not swipes.
@@ -61,10 +59,8 @@ export function resetZoom() {
 // or a hold on the bars around the picture would close the modal.
 const MODAL_HOLD_MS = 500
 
-/** @param {HTMLElement} stage @param {HTMLImageElement} img @param {HTMLElement} box */
-export function installImageHold(stage, img, box) {
-  /** @type {{ x: number, y: number, scale: number, timer: number } | null} */
-  let hold = null
+export function installImageHold(stage: HTMLElement, img: HTMLImageElement, box: HTMLElement) {
+  let hold: { x: number, y: number, scale: number, timer: number } | null = null
   let swallowUntil = 0
   const cancel = () => { if (hold) clearTimeout(hold.timer); hold = null }
   stage.addEventListener('touchstart', ev => {
@@ -97,14 +93,10 @@ export function installImageHold(stage, img, box) {
   }, true)
 }
 
-/** @param {HTMLElement} stage @param {HTMLImageElement} img */
-export function installImageZoom(stage, img) {
-  /** @type {Map<number, { x: number, y: number, t: number }>} */
-  const pts = new Map()   // pointer id -> where it is, and when it went down
-  /** @type {{ d: number, scale: number, cx: number, cy: number, o: { left: number, top: number } } | null} */
-  let pinch = null
-  /** @type {{ x: number, y: number, zx: number, zy: number } | null} */
-  let pan = null
+export function installImageZoom(stage: HTMLElement, img: HTMLImageElement) {
+  const pts: Map<number, { x: number, y: number, t: number }> = new Map()   // pointer id -> where it is, and when it went down
+  let pinch: { d: number, scale: number, cx: number, cy: number, o: { left: number, top: number } } | null = null
+  let pan: { x: number, y: number, zx: number, zy: number } | null = null
   let lastTap = { t: 0, x: 0, y: 0 }
   // Layout top-left of the image on screen, transform taken out.
   const origin = () => { const r = img.getBoundingClientRect(); return { left: r.left - zoom.x, top: r.top - zoom.y } }
@@ -143,8 +135,7 @@ export function installImageZoom(stage, img) {
     }
   })
 
-  /** @param {PointerEvent} ev */
-  const end = ev => {
+  const end = (ev: PointerEvent) => {
     const p = pts.get(ev.pointerId)
     pts.delete(ev.pointerId)
     if (pts.size < 2) pinch = null

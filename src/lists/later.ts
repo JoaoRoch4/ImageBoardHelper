@@ -17,15 +17,13 @@ import { el } from '../panel/panel'
 // link, its thumbnail and its tags (they tell a video or a GIF apart).
 export const LATER_MAX = 500
 
-/** @typedef {ReturnType<typeof laterItem>} LaterItem */
-/** @returns {Promise<LaterItem[]>} */
-async function laterList() {
+export type LaterItem = ReturnType<typeof laterItem>
+async function laterList(): Promise<LaterItem[]> {
   const list = await storeGet('later')
   return Array.isArray(list) ? list : []
 }
 
-/** @param {HTMLAnchorElement} link */
-function laterItem(link) {
+function laterItem(link: HTMLAnchorElement) {
   const img = link.querySelector('img')
   return {
     site: SITE,
@@ -38,8 +36,7 @@ function laterItem(link) {
 }
 
 // A detached stand-in for a page thumbnail, which is what the modal reads.
-/** @param {LaterItem} item */
-function laterLink(item) {
+function laterLink(item: LaterItem) {
   const a = document.createElement('a')
   a.href = item.href
   const img = document.createElement('img')
@@ -64,14 +61,12 @@ export async function toggleLaterHere() {
   info(`later: ${i < 0 ? 'saved' : 'removed'} post ${postId(link)} (${list.length} in the list)`)
 }
 
-/** @param {boolean} saved */
-function setLaterButton(saved) {
+function setLaterButton(saved: boolean) {
   modal.laterBtn.textContent = t(saved ? 'laterIn' : 'laterAdd')
   modal.laterBtn.classList.toggle('on', saved)
 }
 
-/** @param {HTMLAnchorElement} link @param {number} seq */
-export function refreshLaterButton(link, seq) {
+export function refreshLaterButton(link: HTMLAnchorElement, seq: number) {
   setLaterButton(false)
   laterList().then(list => {
     if (modal.seq === seq) setLaterButton(list.some(item => item.href === link.href))
@@ -88,7 +83,7 @@ export async function showLater() {
 
 async function renderLater() {
   const list = (await laterList()).filter(item => item.site === SITE)
-  const title = /** @type {Element} */ (modal.laterHead.querySelector('.lt'))   // buildModal made it
+  const title = modal.laterHead.querySelector('.lt') as Element   // buildModal made it
   title.textContent = `🕒 ${t('laterTitle')} · ${list.length}`
   modal.laterNote.textContent = t(GM_STORE ? 'laterOnDevice' : 'laterOnSite')
   if (!list.length) {
@@ -102,8 +97,8 @@ async function renderLater() {
     ? new IntersectionObserver(entries => {
         for (const e of entries) {
           if (!e.isIntersecting) continue
-          /** @type {IntersectionObserver} */ (modal.laterIO).unobserve(e.target)   // set while it observes: closeModal disconnects it first
-          sharpenTile(/** @type {HTMLImageElement} */ (e.target))   // it watches the tiles' images
+          (modal.laterIO as IntersectionObserver).unobserve(e.target)   // set while it observes: closeModal disconnects it first
+          sharpenTile(e.target as HTMLImageElement)   // it watches the tiles' images
         }
       }, { root: modal.laterView, rootMargin: '300px' })
     : null

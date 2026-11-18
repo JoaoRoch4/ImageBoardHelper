@@ -1219,7 +1219,7 @@
   var MB_PER_S = 489600;
   var pastDecoder = /* @__PURE__ */ __name((w, h, fps) => Math.max(w, h) > 1920 || Math.min(w, h) > 1088 || !!fps && Math.ceil(w / 16) * Math.ceil(h / 16) * Math.round(fps) > MB_PER_S, "pastDecoder");
 
-  // src/post/app.js
+  // src/post/app.ts
   var APP = "com.example.qtmediaplayer";
   async function sendToApp(mode) {
     const playing = modal.fileUrl || modal.video.currentSrc;
@@ -1301,10 +1301,7 @@
       return;
     }
     const r = await appCall("GET", "v1/status");
-    const status = (
-      /** @type {AppStatus} */
-      r.ok ? r.json : null
-    );
+    const status = r.ok ? r.json : null;
     row.textContent = status ? `${t("appOk")} · ${status.version}` : t(r.stage === "token" ? "appBadToken" : "appDown");
     if (status) dbg(`app server: ${status.app} ${status.version}, api ${status.api}`);
     else if (!r.ok) info(`app server: ${r.stage} ${r.error}`);
@@ -1319,10 +1316,7 @@
       info(`app server: ${r.stage} ${r.error}; post ${post} goes by the intent link`);
       return false;
     }
-    const queued = (
-      /** @type {AppDownloadQueued} */
-      r.json
-    );
+    const queued = r.json;
     info(`app server: post ${post} queued as download ${queued.id}${reduce ? ", to convert" : ""}`);
     flash(t(reduce ? "appReduceQueued" : "appQueued"));
     followAppDownload(queued.id, post);
@@ -1349,10 +1343,7 @@
         return;
       }
       misses = 0;
-      const s = (
-        /** @type {AppDownloadState} */
-        r.json
-      );
+      const s = r.json;
       if (s.status === "failed" || s.status === "cancelled") {
         say("appFailed", `download ${s.status}${s.error ? ` — ${s.error}` : ""}`);
         return;
@@ -1385,7 +1376,7 @@
   }
   __name(followAppDownload, "followAppDownload");
 
-  // src/search/site-search.js
+  // src/search/site-search.ts
   var RECENT_MAX = 15;
   async function searchStore() {
     const v = await storeGet("searches");
@@ -1557,10 +1548,7 @@
       home.before(box);
       home.style.display = "none";
     } else {
-      const list = (
-        /** @type {Element} */
-        document.querySelector(LIST)
-      );
+      const list = document.querySelector(LIST);
       list.before(box);
     }
     recordSiteSearch(read()).then(saved.reload);
@@ -3621,7 +3609,7 @@ host: ${STATE.imageBase}
   }
   __name(modalUpvote, "modalUpvote");
 
-  // src/modal/gestures.js
+  // src/modal/gestures.ts
   function installModalSwipe(stage, video) {
     let start = null;
     stage.addEventListener("pointerdown", (ev) => {
@@ -4142,7 +4130,7 @@ host: ${STATE.imageBase}
   }
   __name(raceVideoAndGif, "raceVideoAndGif");
 
-  // src/modal/tags.js
+  // src/modal/tags.ts
   var TAG_ORDER = ["artist", "character", "copyright", "general", "metadata"];
   var tagRank = /* @__PURE__ */ __name((type) => {
     const i = TAG_ORDER.indexOf(type);
@@ -4153,10 +4141,7 @@ host: ${STATE.imageBase}
   }
   __name(thumbTags, "thumbTags");
   function toggleMenu() {
-    const open = (
-      /** @type {boolean} */
-      modal.sheet.hidden
-    );
+    const open = modal.sheet.hidden;
     modal.sheet.hidden = !open;
     modal.menu.classList.toggle("on", open);
     if (open) renderSheet(modal.link, modal.seq);
@@ -4253,17 +4238,9 @@ host: ${STATE.imageBase}
       more.disabled = true;
       more.textContent = t("infoLoading");
       try {
-        const res = await fetch(
-          /** @type {string} */
-          page.next,
-          { credentials: "same-origin" }
-        );
+        const res = await fetch(page.next, { credentials: "same-origin" });
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        const next = readComments(
-          new DOMParser().parseFromString(await res.text(), "text/html"),
-          /** @type {string} */
-          page.next
-        );
+        const next = readComments(new DOMParser().parseFromString(await res.text(), "text/html"), page.next);
         if (modal.seq !== seq || modal.sheetTab !== "comments") return;
         more.remove();
         appendComments(next, seq);
@@ -4447,13 +4424,12 @@ host: ${STATE.imageBase}
   __name(applyMarks, "applyMarks");
   function onSiteVoteClick(ev) {
     const a = asElement(ev.target)?.closest('a[onclick*="post_vote("]');
-    const m = a && /** @type {string} */
-    a.getAttribute("onclick").match(/post_vote\('(\d+)',\s*'up'\)/);
+    const m = a && a.getAttribute("onclick").match(/post_vote\('(\d+)',\s*'up'\)/);
     if (m) setMark("v", m[1], true);
   }
   __name(onSiteVoteClick, "onSiteVoteClick");
 
-  // src/search/suggest.js
+  // src/search/suggest.ts
   var SUGGEST_MS = 200;
   var suggesting = /* @__PURE__ */ new WeakSet();
   async function fetchSuggestions(term) {
@@ -5023,7 +4999,7 @@ host: ${STATE.imageBase}
   }
   __name(orInput, "orInput");
 
-  // src/lists/autopager.js
+  // src/lists/autopager.ts
   var pager = null;
   var onListPage = /* @__PURE__ */ __name(() => {
     const q = new URLSearchParams(location.search);
@@ -5045,10 +5021,7 @@ host: ${STATE.imageBase}
     }
     if (pager && pager.sentinel.isConnected) return;
     const sentinel = el("div", { id: "ibh-pager" });
-    const above = (
-      /** @type {Element} */
-      document.getElementById("ibh-favmore") || document.querySelector(LIST)
-    );
+    const above = document.getElementById("ibh-favmore") || document.querySelector(LIST);
     above.after(sentinel);
     sentinel.addEventListener("click", () => {
       if (pager && !pager.done) favPagerNext();
@@ -5069,10 +5042,7 @@ host: ${STATE.imageBase}
     p.busy = true;
     p.sentinel.textContent = t("pagerLoading");
     try {
-      const url = (
-        /** @type {string} */
-        p.next
-      );
+      const url = p.next;
       const res = await fetch(url, { credentials: "same-origin" });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const doc = new DOMParser().parseFromString(await res.text(), "text/html");
@@ -5114,14 +5084,7 @@ host: ${STATE.imageBase}
     const kind = video ? "poster" : "sample";
     const cached = cacheGet(kind, hash);
     if (cached === null) return;
-    const urls = cachedFirst(video ? fileCandidates(
-      /** @type {string} */
-      src,
-      ["jpg"]
-    ) : sampleCandidates(
-      /** @type {string} */
-      src
-    ), cached);
+    const urls = cachedFirst(video ? fileCandidates(src, ["jpg"]) : sampleCandidates(src), cached);
     if (!urls.length) return;
     takeImageSlot(() => {
       const probe = new Image();
@@ -5152,7 +5115,7 @@ host: ${STATE.imageBase}
   }
   __name(sharpenTile, "sharpenTile");
 
-  // src/lists/later.js
+  // src/lists/later.ts
   var LATER_MAX = 500;
   async function laterList() {
     const list = await storeGet("later");
@@ -5219,10 +5182,7 @@ host: ${STATE.imageBase}
   __name(showLater, "showLater");
   async function renderLater() {
     const list = (await laterList()).filter((item) => item.site === SITE);
-    const title = (
-      /** @type {Element} */
-      modal.laterHead.querySelector(".lt")
-    );
+    const title = modal.laterHead.querySelector(".lt");
     title.textContent = `🕒 ${t("laterTitle")} · ${list.length}`;
     modal.laterNote.textContent = t(GM_STORE ? "laterOnDevice" : "laterOnSite");
     if (!list.length) {
@@ -5235,10 +5195,7 @@ host: ${STATE.imageBase}
       for (const e of entries) {
         if (!e.isIntersecting) continue;
         modal.laterIO.unobserve(e.target);
-        sharpenTile(
-          /** @type {HTMLImageElement} */
-          e.target
-        );
+        sharpenTile(e.target);
       }
     }, { root: modal.laterView, rootMargin: "300px" }) : null;
     modal.laterGrid.replaceChildren(...list.map((item, i) => {
@@ -5852,7 +5809,7 @@ host: ${STATE.imageBase}
   }
   __name(lookUpFavorite, "lookUpFavorite");
 
-  // src/post/download.js
+  // src/post/download.ts
   var GM_XHR = typeof GM_xmlhttpRequest === "function";
   var downloading = /* @__PURE__ */ new Set();
   var dlPercent = /* @__PURE__ */ new Map();

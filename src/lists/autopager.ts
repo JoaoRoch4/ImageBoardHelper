@@ -17,8 +17,7 @@ import { pageTarget } from '../panel/nav'
 // The next address comes from the paginator of each page fetched; the
 // favorites paginator navigates from onclick handlers with no real href,
 // which is why autopager extensions find no next page there.
-/** @type {{ next: string | null, busy: boolean, done: boolean, page: number, sentinel: HTMLDivElement, io: IntersectionObserver } | null} */
-let pager = null   // { next, busy, done, io, sentinel }
+let pager: { next: string | null, busy: boolean, done: boolean, page: number, sentinel: HTMLDivElement, io: IntersectionObserver } | null = null   // { next, busy, done, io, sentinel }
 
 const onListPage = () => {
   const q = new URLSearchParams(location.search)
@@ -40,7 +39,7 @@ export function ensureFavPager() {
   }
   if (pager && pager.sentinel.isConnected) return
   const sentinel = el('div', { id: 'ibh-pager' })
-  const above = /** @type {Element} */ (document.getElementById('ibh-favmore') || document.querySelector(LIST))   // want found the list
+  const above = (document.getElementById('ibh-favmore') || document.querySelector(LIST)) as Element   // want found the list
   above.after(sentinel)
   sentinel.addEventListener('click', () => { if (pager && !pager.done) favPagerNext() })   // retry after a failure
   const next = pageTarget(1)
@@ -60,7 +59,7 @@ export async function favPagerNext() {
   p.busy = true
   p.sentinel.textContent = t('pagerLoading')
   try {
-    const url = /** @type {string} */ (p.next)   // not done: there is a next page
+    const url = p.next as string   // not done: there is a next page
     const res = await fetch(url, { credentials: 'same-origin' })
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
     const doc = new DOMParser().parseFromString(await res.text(), 'text/html')
@@ -94,8 +93,7 @@ export async function favPagerNext() {
 // the sample (images, GIFs: their still) or the full-size poster frame
 // (videos), from the same download slots and URL cache as the page; the
 // thumbnail stays when there is none.
-/** @param {HTMLImageElement} img */
-export function sharpenTile(img) {
+export function sharpenTile(img: HTMLImageElement) {
   const src = img.getAttribute('src')
   const hash = (thumbParts(src) || {}).hash
   if (!hash) return
@@ -105,7 +103,7 @@ export function sharpenTile(img) {
   const kind = video ? 'poster' : 'sample'
   const cached = cacheGet(kind, hash)
   if (cached === null) return   // known: nothing better exists
-  const urls = cachedFirst(video ? fileCandidates(/** @type {string} */ (src), ['jpg']) : sampleCandidates(/** @type {string} */ (src)), cached)
+  const urls = cachedFirst(video ? fileCandidates(src as string, ['jpg']) : sampleCandidates(src as string), cached)
   if (!urls.length) return
   takeImageSlot(() => {
     const probe = new Image()

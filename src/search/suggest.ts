@@ -15,15 +15,10 @@ import { el } from '../panel/panel'
 // list's elements carry data-ibh-ui, so the dark theme's broad rules,
 // which clear every background, leave them alone.
 const SUGGEST_MS = 200
-/** @type {WeakSet<HTMLInputElement>} */
-const suggesting = new WeakSet()
+const suggesting: WeakSet<HTMLInputElement> = new WeakSet()
 
-/** @typedef {{ value: string, count: number, kind: string }} Suggestion */
-/**
- * @param {string} term
- * @returns {Promise<Suggestion[]>}
- */
-async function fetchSuggestions(term) {
+export type Suggestion = { value: string, count: number, kind: string }
+async function fetchSuggestions(term: string): Promise<Suggestion[]> {
   const res = await fetch(PROFILE.suggest + encodeURIComponent(term), { credentials: 'same-origin' })
   const list = await res.json()
   return (Array.isArray(list) ? list : []).slice(0, 10).flatMap(x => {
@@ -32,8 +27,7 @@ async function fetchSuggestions(term) {
   })
 }
 
-/** @param {HTMLInputElement} input */
-export function attachSuggest(input) {
+export function attachSuggest(input: HTMLInputElement) {
   if (!CFG.searchSuggest || suggesting.has(input)) return
   suggesting.add(input)
   const box = el('ul', { class: 'ibh-suggest', 'data-ibh-ui': '' })
@@ -47,8 +41,7 @@ export function attachSuggest(input) {
     const m = /^(\|\||[-~]?)(.*)$/.exec(token) ?? ['', '', '']
     return { token, prefix: m[1] ?? '', term: (m[2] ?? '').replace(/\*+$/, '') }
   }
-  /** @param {Suggestion[]} items */
-  const show = items => {
+  const show = (items: Suggestion[]) => {
     if (!items.length) { close(); return }
     if (!box.isConnected) input.parentElement?.appendChild(box)
     box.style.left = `${input.offsetLeft}px`
@@ -73,22 +66,19 @@ export function attachSuggest(input) {
       }, e => { if (mine === seq) { dbg(`search: no suggestions for "${term}" (${describeError(e)})`); close() } })
     }, SUGGEST_MS)
   })
-  /** @param {HTMLElement} li */
-  const pick = li => {
+  const pick = (li: HTMLElement) => {
     const { token, prefix } = word()
     input.value = `${input.value.slice(0, input.value.length - token.length)}${prefix}${li.dataset.value} `
     close()
     input.focus()
     dbg(`search: suggestion "${li.dataset.value}" picked`)
   }
-  /** @param {Event} ev */
-  const itemAt = ev => asElement(ev.target)?.closest('li')
+  const itemAt = (ev: Event) => asElement(ev.target)?.closest('li')
   // A finger on the list may be scrolling it, so the tag goes in when the
   // finger lifts, and only if it stayed nearly still and the list did not
   // scroll. Measured on touch events, as in chipGestures: Firefox for
   // Android cancels the pointer as soon as the list starts to scroll.
-  /** @type {{ x: number, y: number, top: number } | null} */
-  let finger = null
+  let finger: { x: number, y: number, top: number } | null = null
   let touchedAt = 0
   box.addEventListener('touchstart', ev => {
     const t = ev.touches[0]
@@ -118,12 +108,10 @@ export function attachSuggest(input) {
   input.addEventListener('keydown', ev => { if (ev.key === 'Escape') close() })
 }
 
-/** @param {string | undefined} text */
-export const orTags = text => String(text || '').trim().split(/[\s~()]+/).filter(Boolean)
+export const orTags = (text: string | undefined) => String(text || '').trim().split(/[\s~()]+/).filter(Boolean)
 // The OR field's groups: || starts another one, and each must hold, so
 // a b || c d is (a or b) and (c or d).
-/** @param {string | undefined} text */
-export const orGroups = text => String(text || '').split('||').map(orTags).filter(g => g.length)
+export const orGroups = (text: string | undefined) => String(text || '').split('||').map(orTags).filter(g => g.length)
 
 export function minScoreInput() {
   const min = el('input', { class: 'min', type: 'number', min: '0', step: '1', inputmode: 'numeric', placeholder: t('minScore') })
