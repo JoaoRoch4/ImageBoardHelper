@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.21.0
+
+- The same features as 1.20.0, now built from source: the script's code
+  lives in TypeScript modules in `src/`, joined by esbuild into the one
+  `image-board-helper.user.js` you install, not minified, with names and
+  layout kept. `npm run build` makes it and `npm run check` fails when the
+  committed file is not what `src/` builds (see Building in the README)
+- The build checks the two ways joining modules could change what the
+  script does: a name esbuild renamed to one that is not in `src/`, and a
+  value read while loading before its module ran
+- ESLint reads the TypeScript through typescript-eslint
+
 ## 1.20.0
 
 - A ❤️ in the top right of every thumbnail already in your favorites, on
