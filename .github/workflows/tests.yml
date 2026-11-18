@@ -52,22 +52,41 @@ jobs:
     steps:
       - uses: actions/checkout@v7
       - uses: ./.github/actions/node-modules
-      # Playwright's Firefox kept by the cache under the Playwright version
-      # it belongs to (its download took 14-19 s in every job). The system
-      # libraries it needs are installed in every run: a runner starts clean.
+      # Playwright's Firefox and the .deb files of the system libraries it
+      # needs, kept by the cache: the browser under the Playwright version,
+      # the libraries under the runner's image too, since the image decides
+      # which ones are missing. Fetching both took 14-19 s in every job; a
+      # hit installs the kept .debs with dpkg, no apt-get update, no download.
       - name: Playwright's version
         id: playwright
         run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
-      - name: Playwright's Firefox, from the cache
+      - name: Firefox and its libraries, from the cache
         id: firefox
         uses: actions/cache@v6
         with:
-          path: ~/.cache/ms-playwright
-          key: playwright-firefox-${{ runner.os }}-${{ steps.playwright.outputs.version }}
-      - name: Playwright's Firefox
+          path: |
+            ~/.cache/ms-playwright
+            ~/firefox-debs
+          key: playwright-firefox-${{ env.ImageOS }}-${{ env.ImageVersion }}-${{ steps.playwright.outputs.version }}
+      - name: Firefox and its libraries, downloaded
         if: steps.firefox.outputs.cache-hit != 'true'
-        run: npx playwright install --with-deps firefox
-      - name: Firefox's system libraries
-        if: steps.firefox.outputs.cache-hit == 'true'
-        run: npx playwright install-deps firefox
+        run: |
+          npx playwright install firefox
+          # The libraries this runner lacks, their own dependencies included:
+          # Playwright's dry run lists what apt-get would install. Downloaded
+          # only, into the folder the cache keeps.
+          sudo apt-get update
+          missing=$(npx playwright install-deps --dry-run firefox | sed -n 's/^  //p')
+          mkdir -p ~/firefox-debs/partial
+          if [ -n "$missing" ]; then
+            sudo apt-get install -y --no-install-recommends --download-only -o Dir::Cache::Archives="$HOME/firefox-debs" $missing
+          fi
+          sudo rm -rf ~/firefox-debs/partial ~/firefox-debs/lock
+          ls ~/firefox-debs | wc -l
+      - name: Firefox's libraries, installed
+        run: |
+          set -- ~/firefox-debs/*.deb
+          # Playwright's own install is the fallback, should a kept .deb no
+          # longer fit the runner.
+          if [ -e "$1" ]; then sudo dpkg -i "$@" || npx playwright install-deps firefox; fi
       - run: npm run -s ${{ matrix.test }}
