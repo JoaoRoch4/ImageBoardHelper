@@ -1,9 +1,10 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      2.0.0
+// @version      2.0.1
 // @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
+// @icon         https://raw.githubusercontent.com/JoaoRoch4/ImageBoardHelper/105fa38fc20327b5a6b067538c0cc880d2cdf196/src/logo.png
 // @homepageURL  https://github.com/JoaoRoch4/ImageBoardHelper
 // @supportURL   https://github.com/JoaoRoch4/ImageBoardHelper/issues
 // @downloadURL  https://raw.githubusercontent.com/JoaoRoch4/ImageBoardHelper/main/image-board-helper.user.js
@@ -73,7 +74,7 @@
   "use strict";
 
   // src/core/site.ts
-  const VERSION = '2.0.0'
+  const VERSION = '2.0.1'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // The site's thumbnail list. Gelbooru 0.2 sites (rule34, safebooru, xbooru)

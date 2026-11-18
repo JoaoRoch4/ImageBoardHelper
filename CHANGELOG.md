@@ -1,5 +1,13 @@
 # Changelog
 
+## 2.0.1
+
+- The script has a logo: the TypeScript hexagon wearing the Gelbooru
+  fox's ears and tail, in TypeScript's blue. Violentmonkey shows it, and
+  the READMEs open with it. It lives in `src/logo.svg` and `src/logo.png`,
+  and `@icon` links the PNG at a fixed commit, as `@resource` does the
+  decoder
+
 ## 2.0.0
 
 A new major version for a new shape of the code, with nothing taken away:

@@ -1,3 +1,5 @@
+<img src="src/logo.svg" alt="Image Board Helper logo" width="120" align="right">
+
 # Image Board Helper
 
 [Português](README.pt-BR.md) · **English**
