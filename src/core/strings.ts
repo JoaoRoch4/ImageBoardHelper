@@ -16,8 +16,7 @@ export const I18N = {
     
     failed: 'failed', 
     notResolved: 'not resolved', cached: 'cached',
-    /** @param {number} ok @param {number} bad @param {number} all */
-    coversFmt: (ok, bad, all) => `${ok} ok · ${bad} failed · ${all} videos`,
+    coversFmt: (ok: number, bad: number, all: number) => `${ok} ok · ${bad} failed · ${all} videos`,
     tCovers: 'Video covers', tBadges: 'Duration and ⚠️ on video thumbnails', tGif: 'Animated GIFs in the grid', tGifMax: 'GIFs animating at once', tHoldGif: 'Hold a GIF to rebuild it',
     tScrub: 'Scene preview on video thumbnails',
     tScrubMode: 'scene preview gesture', modeDrag: 'Drag sideways', modeHold: 'Hold (slideshow)',
@@ -101,8 +100,7 @@ export const I18N = {
     
     failed: 'falhou', 
     notResolved: 'não resolvido', cached: 'cache',
-    /** @param {number} ok @param {number} bad @param {number} all */
-    coversFmt: (ok, bad, all) => `${ok} ok · ${bad} falha · ${all} vídeos`,
+    coversFmt: (ok: number, bad: number, all: number) => `${ok} ok · ${bad} falha · ${all} vídeos`,
     tCovers: 'Capa de vídeo', tBadges: 'Duração e ⚠️ nas miniaturas de vídeo', tGif: 'GIF animado na grade', tGifMax: 'GIFs animando ao mesmo tempo', tHoldGif: 'Segurar um GIF para reconstruí-lo',
     tScrub: 'Prévia de cenas nas miniaturas de vídeo',
     tScrubMode: 'gesto da prévia de cenas', modeDrag: 'Arrastar de lado', modeHold: 'Segurar (slideshow)',

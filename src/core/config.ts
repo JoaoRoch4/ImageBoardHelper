@@ -1,4 +1,4 @@
-/** @import { Lang } from './i18n' */
+import type { Lang } from './i18n'
 
 // ═══════════════════════════════════════════════════════════
 // Persisted configuration
@@ -66,26 +66,21 @@ const DEFAULTS = {
 
 // The settings as stored: DEFAULTS' own shape, with the two keys whose
 // default does not show every value they take.
-/** @typedef {Omit<typeof DEFAULTS, 'lang' | 'feedColumns'> & { lang: Lang | null, feedColumns: number | 'auto' }} Config */
+export type Config = Omit<typeof DEFAULTS, 'lang' | 'feedColumns'> & { lang: Lang | null, feedColumns: number | 'auto' }
 
 // Options that only take effect when the page loads.
-/** @type {Set<string>} */
-export const NEEDS_RELOAD = new Set(['originalThumbs', 'memorySaver', 'feedNav', 'videoModal', 'videoScrub', 'blockAds', 'thumbBadges'])
+export const NEEDS_RELOAD: Set<string> = new Set(['originalThumbs', 'memorySaver', 'feedNav', 'videoModal', 'videoScrub', 'blockAds', 'thumbBadges'])
 
 // Whether this page found the settings at all: a script that clears the
 // site's localStorage (one did, on its reset) takes them along, and the
 // copy in Violentmonkey's storage brings them back (restoreCfg).
 export const CFG_FOUND = (() => { try { return localStorage.getItem(CFG_KEY) !== null } catch (e) { return true } })()
-/** @type {Config} */
-export const CFG = Object.assign({}, DEFAULTS, readJSON(CFG_KEY, {}))
+export const CFG: Config = Object.assign({}, DEFAULTS, readJSON(CFG_KEY, {}))
 
 /**
  * Whatever was stored under the key, unchecked (any): the caller knows its shape.
- * @param {string} key
- * @param {unknown} fallback
- * @returns {any}
  */
-export function readJSON(key, fallback) {
+export function readJSON(key: string, fallback: unknown): any {
   try {
     const raw = localStorage.getItem(key)
     return raw ? JSON.parse(raw) : fallback
@@ -94,11 +89,7 @@ export function readJSON(key, fallback) {
   }
 }
 
-/**
- * @param {string} key
- * @param {unknown} value
- */
-export function writeJSON(key, value) {
+export function writeJSON(key: string, value: unknown) {
   try {
     localStorage.setItem(key, JSON.stringify(value))
     return true

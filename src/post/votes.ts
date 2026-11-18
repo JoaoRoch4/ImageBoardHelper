@@ -14,8 +14,7 @@ import { el } from '../panel/panel'
 // 1 already there, 2 not logged in, 4 removed (toggle only). A lit heart
 // pressed again removes the favorite, like the site's own heart.
 // The site's answer: '3' added, '1' already there, '2' logged out, '4' removed.
-/** @param {string} id @param {boolean} remove */
-export async function favoritePost(id, remove) {
+export async function favoritePost(id: string, remove: boolean) {
   const res = await fetch(`/public/addfav.php?id=${encodeURIComponent(id)}${remove ? '&toggle=1' : ''}`, { credentials: 'same-origin' })
   const code = (await res.text()).trim().replace(/"/g, '')   // toggle answers in JSON
   if (code === '3' || code === '1' || code === '4') {
@@ -28,8 +27,7 @@ export async function favoritePost(id, remove) {
 }
 
 // The new score, or null.
-/** @param {string} id */
-export async function upvotePost(id) {
+export async function upvotePost(id: string) {
   const res = await fetch(`/index.php?page=post&s=vote&id=${encodeURIComponent(id)}&type=up`, { credentials: 'same-origin' })
   const score = parseInt(await res.text(), 10)
   if (!res.ok || !Number.isFinite(score)) return null
@@ -71,10 +69,8 @@ function modalLike() {
 
 /**
  * The like's ❤️ over `parent` (positioned), `size` px tall at rest (LIKE_CSS).
- * @param {HTMLElement} parent
- * @param {number} size
  */
-export function popHeart(parent, size) {
+export function popHeart(parent: HTMLElement, size: number) {
   const heart = el('div', { class: 'ibh-likeheart', 'data-ibh-ui': '', text: '❤️' })   // the site theme leaves it alone
   heart.style.fontSize = `${Math.round(size)}px`
   if (getComputedStyle(parent).position === 'static') parent.style.position = 'relative'
@@ -92,8 +88,7 @@ export function centerDoubleTap() {
 
 // Answers with the new score as plain text, which the post page shows.
 // `quiet` (from the heart): no toast of its own, the heart's one stays.
-/** @param {boolean | Event} [quiet] */
-export async function modalUpvote(quiet) {
+export async function modalUpvote(quiet?: boolean | Event) {
   quiet = quiet === true   // as a click handler it gets the event
   const id = postId(modal.link)
   try {

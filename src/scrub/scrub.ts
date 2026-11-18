@@ -1,4 +1,4 @@
-/** @import { ReelShow } from './reel' */
+import type { ReelShow } from './reel'
 import { ACCENT } from '../core/site'
 import { CFG } from '../core/config'
 import { t } from '../core/i18n'
@@ -38,39 +38,32 @@ const EXACT_SEEK_MAX_S = 60
 const REST_MS = 180
 // wanted: the seek to start once the one in flight lands; pending: the
 // fraction asked before the duration was known; rest: the finger-rest timer.
-/** @typedef {{ wanted: number | null, pending: number | null, rest: number }} SeekState */
-/** @type {WeakMap<HTMLVideoElement, SeekState>} */
-const seekState = new WeakMap()
+export type SeekState = { wanted: number | null, pending: number | null, rest: number }
+const seekState: WeakMap<HTMLVideoElement, SeekState> = new WeakMap()
 
-/** @param {HTMLVideoElement} v @param {number} t */
-const isBuffered = (v, t) => {
+const isBuffered = (v: HTMLVideoElement, t: number) => {
   for (let i = 0; i < v.buffered.length; i++) if (t >= v.buffered.start(i) && t <= v.buffered.end(i)) return true
   return false
 }
 
 // `now`: no finger moving (the slideshow), so the rest wait is only a delay.
-/**
- * @param {HTMLVideoElement} v
- * @param {number} f
- * @param {boolean} [now]
- */
-export function seekFraction(v, f, now = false) {
+export function seekFraction(v: HTMLVideoElement, f: number, now: boolean = false) {
   let st = seekState.get(v)
   if (!st) {
     st = { wanted: null, pending: null, rest: 0 }
     seekState.set(v, st)
     // These run with st set for good (no narrowing reaches into them).
     v.addEventListener('seeked', () => {
-      if (/** @type {SeekState} */ (st).wanted === null) return
-      const t = /** @type {number} */ (/** @type {SeekState} */ (st).wanted)
-      ;/** @type {SeekState} */ (st).wanted = null
+      if ((st as SeekState).wanted === null) return
+      const t = (st as SeekState).wanted as number
+      ;(st as SeekState).wanted = null
       seekTo(v, t)
     })
     // Asked before the duration was known: seek once it is.
     v.addEventListener('loadedmetadata', () => {
-      if (/** @type {SeekState} */ (st).pending === null) return
-      const p = /** @type {number} */ (/** @type {SeekState} */ (st).pending)
-      ;/** @type {SeekState} */ (st).pending = null
+      if ((st as SeekState).pending === null) return
+      const p = (st as SeekState).pending as number
+      ;(st as SeekState).pending = null
       seekFraction(v, p, true)
     })
   }
@@ -84,24 +77,19 @@ export function seekFraction(v, f, now = false) {
   return { t, d }
 }
 
-/** @param {HTMLVideoElement} v @param {number} t */
-function seekTo(v, t) {
+function seekTo(v: HTMLVideoElement, t: number) {
   if (v.duration > EXACT_SEEK_MAX_S && typeof v.fastSeek === 'function') v.fastSeek(t)
   else v.currentTime = t   // exact: decodes from the keyframe up to this frame
 }
 
 // The shared preview video.
-/** @type {HTMLVideoElement | null} */
-export let previewEl = null
-/** @param {typeof previewEl} v */
-export function setPreviewEl(v) { previewEl = v }
+export let previewEl: HTMLVideoElement | null = null
+export function setPreviewEl(v: typeof previewEl) { previewEl = v }
 
 /**
- * @param {HTMLElement} container
- * @param {string[]} urls
- * @param {string | null | undefined} hash   the file's, to cache the host that has it
+ * @param hash   the file's, to cache the host that has it
  */
-export function previewLoad(container, urls, hash) {
+export function previewLoad(container: HTMLElement, urls: string[], hash: string | null | undefined) {
   if (!previewEl) {
     previewEl = document.createElement('video')
     previewEl.muted = true
@@ -132,8 +120,7 @@ export function previewStop() {
 // A count: the slideshow borrows a second decoder for its helper video.
 export let decodersBorrowed = 0
 
-/** @param {HTMLElement} card */
-export function borrowDecoder(card) {
+export function borrowDecoder(card: HTMLElement) {
   decodersBorrowed++
   setLiveCovers(liveCovers + 1)
   if (liveCovers <= COVER_MAX_LIVE) return
@@ -150,8 +137,7 @@ export function returnDecoder() {
 }
 
 // Right above the picture, under anything the site lays over it.
-/** @param {HTMLElement} card @param {Node} node */
-export function placeOverPicture(card, node) {
+export function placeOverPicture(card: HTMLElement, node: Node) {
   if (getComputedStyle(card).position === 'static') card.style.position = 'relative'
   const picEl = card.querySelector(':scope > img')
   if (picEl) picEl.after(node)
@@ -161,55 +147,52 @@ export function placeOverPicture(card, node) {
 // ── Scrubbing a thumbnail ──
 const SCRUB_SLOP = 8   // px of travel before a drag counts as a scrub or a scroll
 
-/**
- * A finger on a video card, from the touch to the lift. It starts with the
- * pointer's fields; scrubSource, scrubUi and the slideshow fill in the rest
- * before reading them.
- * @typedef {object} Scrub
- * @property {HTMLElement} card
- * @property {number} id          the pointer
- * @property {number} x0
- * @property {number} y0
- * @property {boolean} on         previewing: the bar and the label are up
- * @property {number} holdTimer
- * @property {HTMLVideoElement} video   what it seeks: the card's cover, or the shared preview
- * @property {HTMLElement} [holder]     the shared preview's box
- * @property {boolean} [shared]         video is the shared preview
- * @property {HTMLElement} bar
- * @property {HTMLElement} label
- * @property {SlideStats} stats         a hold's slideshow, for the log
- * @property {number[]} steps           the seeking slideshow's scenes, as fractions of the video
- * @property {number} step              the next one
- * @property {number} dwell             ms a scene stays once painted
- * @property {SlideView[]} views
- * @property {SlideView[]} queue        views seeking a scene, in the order they will show
- * @property {SlideView | null} front   the view on screen
- * @property {SlideView | null} [helper]
- * @property {number} shownAt
- * @property {number} [tick]
- * @property {ReelShow | null} [reel]
- * @property {{ rate: number, loop: boolean, muted: boolean }} played    the video's own, while a short clip (or holdVideo) plays
- * @property {(() => void) | null} [onPlayTime]
- * @property {Rub | null} [rub]          the finger sliding a playing hold (holdRub)
- */
+// A finger on a video card, from the touch to the lift. It starts with the
+// pointer's fields; scrubSource, scrubUi and the slideshow fill in the rest
+// before reading them.
+export type Scrub = {
+  card: HTMLElement,
+  id: number,   // the pointer
+  x0: number,
+  y0: number,
+  on: boolean,   // previewing: the bar and the label are up
+  holdTimer: number,
+  video: HTMLVideoElement,   // what it seeks: the card's cover, or the shared preview
+  holder?: HTMLElement,   // the shared preview's box
+  shared?: boolean,   // video is the shared preview
+  bar: HTMLElement,
+  label: HTMLElement,
+  stats: SlideStats,   // a hold's slideshow, for the log
+  steps: number[],   // the seeking slideshow's scenes, as fractions of the video
+  step: number,   // the next one
+  dwell: number,   // ms a scene stays once painted
+  views: SlideView[],
+  queue: SlideView[],   // views seeking a scene, in the order they will show
+  front: SlideView | null,   // the view on screen
+  helper?: SlideView | null,
+  shownAt: number,
+  tick?: number,
+  reel?: ReelShow | null,
+  played: { rate: number, loop: boolean, muted: boolean },   // the video's own, while a short clip (or holdVideo) plays
+  onPlayTime?: (() => void) | null,
+  rub?: Rub | null,   // the finger sliding a playing hold (holdRub)
+}
 
-/** @typedef {{ t0: number, method: string | null, first: number | null, last: number, shown: number, gaps: number[], detail?: string, wasm?: string, reelError?: string, rate?: number, fps?: number, sound?: string, resumed?: number, kept?: number, rubs?: number }} SlideStats */
-/** @typedef {{ v: HTMLVideoElement, helper: boolean, f: number, ready: boolean, slow: boolean, since: number, onSeeked?: () => void }} SlideView */
+export type SlideStats = { t0: number, method: string | null, first: number | null, last: number, shown: number, gaps: number[], detail?: string, wasm?: string, reelError?: string, rate?: number, fps?: number, sound?: string, resumed?: number, kept?: number, rubs?: number }
+export type SlideView = { v: HTMLVideoElement, helper: boolean, f: number, ready: boolean, slow: boolean, since: number, onSeeked?: () => void }
 
-/** @type {Scrub | null} */
-export let scrub = null
+export let scrub: Scrub | null = null
 let scrubClickUntil = 0
 
-/** @param {PointerEvent} ev */
-function onScrubDown(ev) {
+function onScrubDown(ev: PointerEvent) {
   if (scrub || insidePanel(ev) || (modal && modal.open)) return
   if (ev.pointerType === 'mouse' && ev.button !== 0) return
   // A press on a hold chip (⏮, 🔊) is a tap on it (onScrubClick), not a hold.
   if (asElement(ev.target)?.closest('[data-ibh-chip], .ibh-liked')) return
   // data-ibh-video marks cards (trackCard).
-  const card = /** @type {HTMLElement | null | undefined} */ (asElement(ev.target)?.closest('[data-ibh-video]'))
+  const card = asElement(ev.target)?.closest('[data-ibh-video]') as HTMLElement | null | undefined
   if (!card || card.dataset.ibhKind === 'gif') return
-  scrub = /** @type {Scrub} */ ({ card, id: ev.pointerId, x0: ev.clientX, y0: ev.clientY, on: false, holdTimer: 0 })
+  scrub = { card, id: ev.pointerId, x0: ev.clientX, y0: ev.clientY, on: false, holdTimer: 0 } as Scrub
   // Hold mode: a still finger for HOLD_MS starts the slideshow.
   if (CFG.scrubMode === 'hold') scrub.holdTimer = setTimeout(startSlideshow, HOLD_MS)
 }
@@ -257,13 +240,11 @@ function startSlideshow() {
 // <video> doesn't tell its fps: frames counted over the time played).
 const HOLD_FPS_SLACK = 1.04
 
-/** @param {Scrub} s */
-function holdVideoShow(s) {
+function holdVideoShow(s: Scrub) {
   const v = s.video
   // Past the decoder the slideshow is forced: from keyframes when the file
   // has an index to read (MP4), else by seeking the file.
-  /** @param {string} what */
-  const tooHeavy = what => {
+  const tooHeavy = (what: string) => {
     markPastDecoder(s.card, what)
     info(`hold: ${what} is past the hardware decoder, the slideshow instead of the video`)
     if (!(CFG.slideReel && startReelShow(s))) seekShow(s)
@@ -274,8 +255,7 @@ function holdVideoShow(s) {
     if (pastDecoder(v.videoWidth, v.videoHeight)) { tooHeavy(`${v.videoWidth}x${v.videoHeight}`); return }
     playShow(s, 1, 0)   // from 00:00, or where the last hold lifted (holdResume)
     const frames = () => (v.getVideoPlaybackQuality ? v.getVideoPlaybackQuality().totalVideoFrames : 0)
-    /** @type {{ f: number, t: number } | null} */
-    let start = null
+    let start: { f: number, t: number } | null = null
     const measure = () => {
       if (scrub !== s || s.stats.method !== 'play') { v.removeEventListener('timeupdate', measure); return }
       if (v.paused || v.seeking) { start = null; return }   // a rub (holdRub): count again once it plays
@@ -299,8 +279,7 @@ function holdVideoShow(s) {
 }
 
 // The slideshow by seeking the file itself, two videos taking turns.
-/** @param {Scrub} s */
-function seekShow(s) {
+function seekShow(s: Scrub) {
   s.stats.method = 'seek'
   const base = s.video
   // Read here, so a change in the panel applies to the next hold.
@@ -320,14 +299,8 @@ function seekShow(s) {
   s.tick = setInterval(() => tickSlide(s), SLIDE_TICK_MS)
 }
 
-/**
- * @param {Scrub} s
- * @param {HTMLVideoElement} v
- * @param {boolean} helper
- */
-function slideView(s, v, helper) {
-  /** @type {SlideView} */
-  const view = { v, helper, f: 0, ready: false, slow: false, since: 0 }
+function slideView(s: Scrub, v: HTMLVideoElement, helper: boolean) {
+  const view: SlideView = { v, helper, f: 0, ready: false, slow: false, since: 0 }
   // Ready once its own seek landed. A stale seek ending makes seekFraction
   // start the wanted one right away, so look after the other listeners ran.
   view.onSeeked = () => setTimeout(() => {
@@ -341,8 +314,7 @@ function slideView(s, v, helper) {
 }
 
 // Hand a view the next scene to fetch.
-/** @param {Scrub} s @param {SlideView} view */
-function loadSlide(s, view) {
+function loadSlide(s: Scrub, view: SlideView) {
   view.f = s.steps[s.step++ % s.steps.length]
   view.ready = false
   view.since = Date.now()
@@ -350,8 +322,7 @@ function loadSlide(s, view) {
   seekFraction(view.v, view.f, true)
 }
 
-/** @param {Scrub} s */
-function addSlideHelper(s) {
+function addSlideHelper(s: Scrub) {
   const src = s.video.currentSrc
   if (!src) return
   borrowDecoder(s.card)
@@ -373,12 +344,11 @@ function addSlideHelper(s) {
   loadSlide(s, view)
 }
 
-/** @param {Scrub} s */
-function dropSlideHelper(s) {
+function dropSlideHelper(s: Scrub) {
   const view = s.helper
   if (!view) return
   s.helper = null
-  view.v.removeEventListener('seeked', /** @type {() => void} */ (view.onSeeked))   // set by slideView
+  view.v.removeEventListener('seeked', view.onSeeked as () => void)   // set by slideView
   view.v.onerror = null
   view.v.removeAttribute('src')
   view.v.load()   // hand the decoder back
@@ -390,8 +360,7 @@ function dropSlideHelper(s) {
   if (!s.queue.length) loadSlide(s, s.views[0])
 }
 
-/** @param {Scrub} s @param {SlideView} view */
-function showSlide(s, view) {
+function showSlide(s: Scrub, view: SlideView) {
   if (s.helper) s.helper.v.style.opacity = view === s.helper ? '1' : '0'
   const d = view.v.duration
   s.bar.style.width = `${view.f * 100}%`
@@ -401,8 +370,7 @@ function showSlide(s, view) {
 
 // What a hold costs, for the log: the wait for the first scene, then
 // between scenes (the dwell is the floor).
-/** @param {Scrub} s */
-export function noteScene(s) {
+export function noteScene(s: Scrub) {
   const st = s.stats
   if (!st) return
   const now = performance.now()
@@ -412,8 +380,7 @@ export function noteScene(s) {
   st.shown++
 }
 
-/** @param {Scrub} s */
-function logSlideStats(s) {
+function logSlideStats(s: Scrub) {
   const st = s.stats
   if (!st || !st.method) return
   const dwell = (Number(CFG.slideDwell) || 0.2) * 1000
@@ -430,8 +397,7 @@ function logSlideStats(s) {
   info(`slideshow (${st.method}) post ${postId(s.card)}: ${shown}${what ? `; ${what}` : ''}${st.reelError ? `; no reel: ${st.reelError}` : ''}`)
 }
 
-/** @param {Scrub} s */
-function tickSlide(s) {
+function tickSlide(s: Scrub) {
   if (scrub !== s) return
   const now = Date.now()
   if (now - s.shownAt >= s.dwell) {
@@ -459,10 +425,9 @@ function tickSlide(s) {
   if (!s.queue.length && s.front && now - s.shownAt >= s.dwell) loadSlide(s, s.front)
 }
 
-/** @param {Scrub} s */
-function endSlideshow(s) {
+function endSlideshow(s: Scrub) {
   clearInterval(s.tick)
-  for (const view of s.views || []) view.v.removeEventListener('seeked', /** @type {() => void} */ (view.onSeeked))
+  for (const view of s.views || []) view.v.removeEventListener('seeked', view.onSeeked as () => void)
   const helper = s.helper
   if (!helper) return
   // A cover keeps the last scene shown, even one the helper was showing.
@@ -483,8 +448,7 @@ function endSlideshow(s) {
 export const PLAY_MAX_S = 30
 const PLAY_RATE = 2
 
-/** @param {Scrub} s */
-export function chooseShow(s) {
+export function chooseShow(s: Scrub) {
   const v = s.video
   const decide = () => {
     if (scrub !== s) return
@@ -497,11 +461,10 @@ export function chooseShow(s) {
 }
 
 /**
- * @param {Scrub} s
- * @param {number} [rate]   PLAY_RATE for a short clip, 1 for holdVideo
- * @param {number} [from]   s to start at; left out, where the video is (a cover keeps its last frame)
+ * @param rate   PLAY_RATE for a short clip, 1 for holdVideo
+ * @param from   s to start at; left out, where the video is (a cover keeps its last frame)
  */
-export function playShow(s, rate = PLAY_RATE, from) {
+export function playShow(s: Scrub, rate: number = PLAY_RATE, from?: number) {
   s.stats.method = 'play'
   s.stats.rate = rate
   const v = s.video
@@ -541,10 +504,9 @@ export function playShow(s, rate = PLAY_RATE, from) {
 }
 
 // The cover keeps the frame where the finger lifted, as after a scrub.
-/** @param {Scrub} s */
-function endPlayShow(s) {
+function endPlayShow(s: Scrub) {
   const v = s.video
-  v.removeEventListener('timeupdate', /** @type {() => void} */ (s.onPlayTime))   // called while it is set
+  v.removeEventListener('timeupdate', s.onPlayTime as () => void)   // called while it is set
   s.onPlayTime = null
   v.pause()
   v.playbackRate = s.played.rate
@@ -560,15 +522,12 @@ function endPlayShow(s) {
 // switches previewSound. They go a minute after the last lift, and the
 // spot and the cover's lifted frame go with them.
 const RESUME_MS = 60000
-/** @type {Map<string, { t: number, until: number }>} */
-const resumes = new Map()   // post id -> where its hold lifted, and until when that counts
+const resumes: Map<string, { t: number, until: number }> = new Map()   // post id -> where its hold lifted, and until when that counts
 
 /**
  * Where a hold on this card goes on from, if its last one lifted less than a minute ago.
- * @param {HTMLElement} card
- * @returns {number | null}
  */
-function resumePoint(card) {
+function resumePoint(card: HTMLElement): number | null {
   if (!CFG.holdResume) return null
   const id = postId(card)
   const r = resumes.get(id)
@@ -579,8 +538,7 @@ function resumePoint(card) {
 
 // Called while the hold still plays (before endPlayShow). A fallback to the
 // slideshow already ended the playing, so it keeps nothing.
-/** @param {Scrub} s */
-function keepResume(s) {
+function keepResume(s: Scrub) {
   const id = postId(s.card)
   const t = s.video.currentTime
   // A hold that never got past its first second has nothing worth going back to.
@@ -594,12 +552,9 @@ function keepResume(s) {
  * the time label sits during a hold), 🔊/🔇 top left. A press on either is
  * a tap, not a hold (onScrubDown); the tap goes to onScrubClick, ahead of
  * the modal's handler.
- * @param {HTMLElement} card
- * @param {'resume' | 'sound'} kind
- * @returns {HTMLElement}
  */
-function holdChip(card, kind) {
-  const had = /** @type {HTMLElement | null} */ (card.querySelector(`[data-ibh-chip="${kind}"]`))
+function holdChip(card: HTMLElement, kind: 'resume' | 'sound'): HTMLElement {
+  const had = card.querySelector(`[data-ibh-chip="${kind}"]`) as HTMLElement | null
   if (had) return had
   const chip = document.createElement('span')
   chip.dataset.ibhChip = kind
@@ -618,14 +573,12 @@ function holdChip(card, kind) {
   return chip
 }
 
-/** @param {HTMLElement} card */
-function soundChip(card) {
+function soundChip(card: HTMLElement) {
   holdChip(card, 'sound').textContent = CFG.previewSound ? '🔊' : '🔇'
 }
 
 // After a playing hold: the chips, for a minute from this lift.
-/** @param {HTMLElement} card */
-function lingerChips(card) {
+function lingerChips(card: HTMLElement) {
   const at = resumePoint(card)
   if (at !== null) holdChip(card, 'resume').textContent = `⏮ ${mmss(at)}`
   soundChip(card)
@@ -636,16 +589,14 @@ function lingerChips(card) {
   }, RESUME_MS))
 }
 
-/** @param {HTMLElement} card */
-function removeChips(card) {
+function removeChips(card: HTMLElement) {
   clearTimeout(Number(card.dataset.ibhChipTimer))
   delete card.dataset.ibhChipTimer
   for (const chip of card.querySelectorAll('[data-ibh-chip]')) chip.remove()
 }
 
 // The cover shows its own frame again (COVER_POINT), as before any hold.
-/** @param {HTMLElement} card */
-function coverBack(card) {
+function coverBack(card: HTMLElement) {
   const v = card.querySelector('video[data-ibh]')
   if (!v || v.readyState < 1 || !Number.isFinite(v.duration) || !(v.duration > 0)) return
   v.currentTime = v.duration * COVER_POINT
@@ -654,9 +605,8 @@ function coverBack(card) {
 
 // A tap on ⏮: the next hold on that post starts from 00:00, and its cover
 // leaves the frame where the finger lifted.
-/** @param {HTMLElement} chip */
-function forgetResume(chip) {
-  const card = /** @type {HTMLElement | null} */ (chip.closest('[data-ibh-video]'))
+function forgetResume(chip: HTMLElement) {
+  const card = chip.closest('[data-ibh-video]') as HTMLElement | null
   chip.remove()
   if (!card) return
   resumes.delete(postId(card))
@@ -684,26 +634,23 @@ function flipSound() {
 const RUB_SPAN_S = 120
 const RUB_REST_MS = 250
 
-/**
- * A finger rubbing one video; makeRub builds it.
- * @typedef {object} Rub
- * @property {(x: number) => void} move   the finger at x px
- * @property {() => void} end             the finger lifts: mid-rub, the video stays on the exact target
- * @property {() => boolean} active       moving the video now (it waits paused)
- * @property {() => number} count         rubs so far (each start after the finger rested)
- */
+// A finger rubbing one video; makeRub builds it.
+export type Rub = {
+  move: (x: number) => void,   // the finger at x px
+  end: () => void,   // the finger lifts: mid-rub, the video stays on the exact target
+  active: () => boolean,   // moving the video now (it waits paused)
+  count: () => number,   // rubs so far (each start after the finger rested)
+}
 
 /**
- * @param {HTMLVideoElement} v
- * @param {number} x0   px, where the finger went down
- * @param {() => number} width   px that span the whole video
- * @param {{ alive(): boolean, begin(): void, paint(t: number): void, rest(): void, lift?(): void }} hooks
+ * @param x0   px, where the finger went down
+ * @param width   px that span the whole video
+ * @param hooks
  *   alive: the gesture still runs; begin: a rub starts (before the pause);
  *   paint: the target changed; rest: the finger rests on the exact frame;
  *   lift: the finger lifted mid-rub, the video on the exact frame
- * @returns {Rub}
  */
-export function makeRub(v, x0, width, hooks) {
+export function makeRub(v: HTMLVideoElement, x0: number, width: () => number, hooks: { alive(): boolean, begin(): void, paint(t: number): void, rest(): void, lift?(): void }): Rub {
   let active = false
   let count = 0
   let x = x0          // where the finger was when this rub began (or rested)
@@ -725,8 +672,8 @@ export function makeRub(v, x0, width, hooks) {
     if (active && hooks.alive() && asked !== target) seek()
   }
   v.addEventListener('seeked', onSeeked)
-  /** @param {number} at  px, where the finger rests */
-  const rest = at => {
+  /** @param at  px, where the finger rests */
+  const rest = (at: number) => {
     if (!active || !hooks.alive()) return
     active = false
     x = at
@@ -768,11 +715,7 @@ export function makeRub(v, x0, width, hooks) {
 }
 
 // The thumbnail's rub, made on the first move of a playing hold.
-/**
- * @param {Scrub} s
- * @param {number} x
- */
-function rubMove(s, x) {
+function rubMove(s: Scrub, x: number) {
   const v = s.video
   if (!s.rub) {
     s.rub = makeRub(v, s.x0, () => s.card.getBoundingClientRect().width, {
@@ -797,14 +740,13 @@ function rubMove(s, x) {
 
 // Called with a scrub under way.
 function startScrub() {
-  if (!scrubSource(/** @type {Scrub} */ (scrub))) return false
-  scrubUi(/** @type {Scrub} */ (scrub))
+  if (!scrubSource(scrub as Scrub)) return false
+  scrubUi(scrub as Scrub)
   return true
 }
 
 // The video a scrub seeks: the card's cover when loaded, else the shared preview.
-/** @param {Scrub} s */
-export function scrubSource(s) {
+export function scrubSource(s: Scrub) {
   const { card } = s
   const pic = cardPicture(card)
   if (!pic) return false
@@ -834,8 +776,7 @@ export function scrubSource(s) {
 }
 
 // The progress bar and the time label over the card.
-/** @param {Scrub} s */
-export function scrubUi(s) {
+export function scrubUi(s: Scrub) {
   if (s.bar) return
   const { card } = s
   // The time label takes the ⏮ chip's place, and the chips' minute stops
@@ -860,13 +801,12 @@ export function scrubUi(s) {
 }
 
 // Called with a scrub under way, once startScrub made its bar and label.
-/** @param {number} x */
-function moveScrub(x) {
-  const r = /** @type {Scrub} */ (scrub).card.getBoundingClientRect()
+function moveScrub(x: number) {
+  const r = (scrub as Scrub).card.getBoundingClientRect()
   const f = Math.min(1, Math.max(0, (x - r.left) / r.width))
-  ;/** @type {Scrub} */ (scrub).bar.style.width = `${f * 100}%`
-  const at = seekFraction(/** @type {Scrub} */ (scrub).video, f)
-  ;/** @type {Scrub} */ (scrub).label.textContent = at ? `${mmss(at.t)} / ${mmss(at.d)}` : '…'
+  ;(scrub as Scrub).bar.style.width = `${f * 100}%`
+  const at = seekFraction((scrub as Scrub).video, f)
+  ;(scrub as Scrub).label.textContent = at ? `${mmss(at.t)} / ${mmss(at.d)}` : '…'
 }
 
 // Lets go of a scrub that never showed anything. nextGif() waits while a
@@ -890,15 +830,14 @@ export function endScrub() {
   endReel(s)
   s.bar.remove()
   s.label.remove()
-  if (s.shared) { previewStop(); /** @type {HTMLElement} */ (s.holder).remove(); returnDecoder() }   // a shared preview has one
+  if (s.shared) { previewStop(); (s.holder as HTMLElement).remove(); returnDecoder() }   // a shared preview has one
   afterPreview()
   nextGif()   // the paused ones first, then any whose turn came meanwhile
   // A cover keeps the frame where the finger stopped.
   dbg(`scrub: stopped at ${s.label.textContent}`)
 }
 
-/** @param {PointerEvent} ev */
-function onScrubMove(ev) {
+function onScrubMove(ev: PointerEvent) {
   if (!scrub || ev.pointerId !== scrub.id) return
   if (CFG.scrubMode === 'hold') {
     // Moving before the hold starts makes it a scroll. Once the hold plays
@@ -920,8 +859,7 @@ function onScrubMove(ev) {
   moveScrub(ev.clientX)
 }
 
-/** @param {PointerEvent} ev */
-function onScrubUp(ev) {
+function onScrubUp(ev: PointerEvent) {
   if (!scrub || ev.pointerId !== scrub.id) return
   // After a scrub, the click that follows must not open the post or the modal.
   if (scrub.on && ev.type === 'pointerup') scrubClickUntil = Date.now() + 400
@@ -929,10 +867,9 @@ function onScrubUp(ev) {
 }
 
 // Registered before the modal's click handler, so stopping it here wins.
-/** @param {MouseEvent} ev */
-function onScrubClick(ev) {
+function onScrubClick(ev: MouseEvent) {
   // The hold chips sit inside the card's link: a tap must not open the post.
-  const chip = /** @type {HTMLElement | null | undefined} */ (asElement(ev.target)?.closest('[data-ibh-chip]'))
+  const chip = asElement(ev.target)?.closest('[data-ibh-chip]') as HTMLElement | null | undefined
   if (chip) {
     ev.preventDefault()
     ev.stopImmediatePropagation()

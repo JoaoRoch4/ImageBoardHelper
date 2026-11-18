@@ -23,41 +23,31 @@ const FAV_SHOW = 60          // results added per step
 const FAV_GAP_MS = 250       // between page reads, one at a time
 const FAV_STALE_MS = 10 * 60 * 1000   // the index is refreshed in the background after this
 const FAV_SAVE_MS = 5000     // a long read is saved this often, so a reload goes on from there
-/** @typedef {[id: string, thumb: string, tags: string, score: number | null]} FavItem */
+export type FavItem = [id: string, thumb: string, tags: string, score: number | null]
 // next: where a read that a reload cut short goes on (a pid); absent once complete.
-/** @typedef {{ user: string | null, updated: number, items: FavItem[], next?: number }} FavIndex */
-/** @typedef {{ item: [id: string, thumb: string, tags: string], tags: string[], set: Set<string>, score: number | null, video: boolean, gif: boolean, animated: boolean }} FavEntry */
-/** @type {FavIndex | null} */
-export let favIndex = null          // { user, updated, items: [[id, thumb, tags, score]] }, newest first
-/** @type {FavEntry[] | null} */
-export let favEntries = null        // the items with their tags split, for searching
-/** @param {typeof favEntries} v */
-export function setFavEntries(v) { favEntries = v }
-/** @type {Promise<FavIndex | null> | null} */
-export let favScan = null           // the read in progress
-/** @type {ChildNode[] | null} */
-export let favPage = null           // the page's own list content, put back on Clear
-/** @type {Array<FavEntry['item']>} */
-let favResults = []
+export type FavIndex = { user: string | null, updated: number, items: FavItem[], next?: number }
+export type FavEntry = { item: [id: string, thumb: string, tags: string], tags: string[], set: Set<string>, score: number | null, video: boolean, gif: boolean, animated: boolean }
+export let favIndex: FavIndex | null = null          // { user, updated, items: [[id, thumb, tags, score]] }, newest first
+export let favEntries: FavEntry[] | null = null        // the items with their tags split, for searching
+export function setFavEntries(v: typeof favEntries) { favEntries = v }
+export let favScan: Promise<FavIndex | null> | null = null           // the read in progress
+export let favPage: ChildNode[] | null = null           // the page's own list content, put back on Clear
+let favResults: Array<FavEntry['item']> = []
 let favShown = 0
-/** @type {(() => void) | null} */
-let favBarSync = null        // refreshes the ☆ button of the favorites bar
-/** @type {(() => Promise<void>) | null} */
-let favBarReload = null      // refreshes its lists
+let favBarSync: (() => void) | null = null        // refreshes the ☆ button of the favorites bar
+let favBarReload: (() => Promise<void>) | null = null      // refreshes its lists
 
 // The favorites bar's fields: ensureFavSearch builds it with all of them.
-/** @param {HTMLElement} bar */
-const favFields = bar => ({
-  text: /** @type {HTMLInputElement} */ (bar.querySelector('input[type="search"]')),
-  or: /** @type {HTMLInputElement} */ (bar.querySelector('input.or')),
-  kind: /** @type {HTMLSelectElement} */ (bar.querySelector('select.kind')),
-  sort: /** @type {HTMLSelectElement} */ (bar.querySelector('select.sort')),
-  min: /** @type {HTMLInputElement} */ (bar.querySelector('input.min')),
+const favFields = (bar: HTMLElement) => ({
+  text: bar.querySelector('input[type="search"]') as HTMLInputElement,
+  or: bar.querySelector('input.or') as HTMLInputElement,
+  kind: bar.querySelector('select.kind') as HTMLSelectElement,
+  sort: bar.querySelector('select.sort') as HTMLSelectElement,
+  min: bar.querySelector('input.min') as HTMLInputElement,
 })
 
 // The favorites bar's search, remembered for the next visit (active: shown).
-/** @param {boolean} active */
-async function rememberFavSearch(active) {
+async function rememberFavSearch(active: boolean) {
   const bar = document.getElementById('ibh-favsearch')
   if (!bar) return
   const store = await searchStore()
@@ -73,8 +63,7 @@ async function rememberFavSearch(active) {
 // on, and an index of 6,000 favorites is ~7 MB (2026-11-14). One an older
 // version kept in GM storage moves over once. Without IndexedDB it stays
 // in GM storage (and without GM storage, storeGet is IndexedDB already).
-/** @returns {Promise<FavIndex | null>} */
-export async function favsGet() {
+export async function favsGet(): Promise<FavIndex | null> {
   const saved = await idbGet('favs')
   if (saved === undefined) return storeGet('favs')   // no IndexedDB
   if (saved || !GM_STORE) return saved
@@ -86,13 +75,11 @@ export async function favsGet() {
   return old
 }
 
-/** @param {FavIndex} idx */
-export async function favsSet(idx) {
+export async function favsSet(idx: FavIndex) {
   if (!(await idbSet('favs', idx))) await storeSet('favs', idx)
 }
 
-/** @returns {Promise<FavIndex>} */
-export async function loadFavIndex() {
+export async function loadFavIndex(): Promise<FavIndex> {
   if (favIndex && favIndex.user === userId()) return favIndex
   const saved = await favsGet()
   // Loaded twice at once (the restored search and the bar's status): the
@@ -106,22 +93,20 @@ export async function loadFavIndex() {
 // One page of favorites: ids, thumbnails and tags from the thumbnails, scores
 // from the page's inline script (posts[ID] = { … score: 'N' }).
 /**
- * @param {number} pid   the first favorite of the page
- * @returns {Promise<FavItem[]>}
+ * @param pid   the first favorite of the page
  */
-async function readFavPage(pid) {
+async function readFavPage(pid: number): Promise<FavItem[]> {
   const res = await fetch(`/index.php?page=favorites&s=view&id=${userId()}&pid=${pid}`, { credentials: 'same-origin' })
   if (!res.ok) throw new Error(`HTTP ${res.status}`)
   const html = await res.text()
-  /** @type {Map<string, number>} */
-  const scores = new Map()
+  const scores: Map<string, number> = new Map()
   for (const m of html.matchAll(/posts\[(\d+)\]\s*=\s*\{[^}]*?score['"]?\s*:\s*['"]?(-?\d+)/g)) scores.set(m[1], Number(m[2]))
   const doc = new DOMParser().parseFromString(html, 'text/html')
   return [...doc.querySelectorAll('.thumb img[src]')].map(img => {
     const a = img.closest('a')
-    const src = /** @type {string} */ (img.getAttribute('src'))   // matched img[src]
+    const src = img.getAttribute('src') as string   // matched img[src]
     const id = ((a && a.getAttribute('href')) || '').match(/id=(\d+)/)?.[1] || (src.split('?')[1] || '')
-    return /** @type {FavItem} */ ([id, src, (img.getAttribute('title') || img.getAttribute('alt') || '').trim(), scores.has(id) ? scores.get(id) : null])
+    return [id, src, (img.getAttribute('title') || img.getAttribute('alt') || '').trim(), scores.has(id) ? scores.get(id) : null] as FavItem
   }).filter(item => /^\d+$/.test(item[0]))
 }
 
@@ -131,22 +116,20 @@ async function readFavPage(pid) {
 // A long read (6,000 favorites: 123 pages, ~2 min) is saved as it goes, so
 // a reload loses only its last seconds. Favorites removed above the stop
 // meanwhile shift the rest up, and that many may be missed until a rebuild.
-/** @param {boolean} full */
-function updateFavIndex(full) {
+function updateFavIndex(full: boolean) {
   if (favScan) return favScan
   favScan = (async () => {
     const idx = await loadFavIndex()
     if (full || (!idx.items.length && idx.next === undefined)) Object.assign(idx, { items: [], next: 0, updated: 0 })
     const before = idx.items.length
     const known = new Set(idx.items.map(item => item[0]))
-    /** @param {FavItem[]} items @returns {FavItem[]} the ones not in the index yet */
-    const unknown = items => {
+    /** @returns the ones not in the index yet */
+    const unknown = (items: FavItem[]): FavItem[] => {
       const added = items.filter(item => !known.has(item[0]))
       added.forEach(item => known.add(item[0]))
       return added
     }
-    /** @param {number} pid */
-    const read = async pid => {
+    const read = async (pid: number) => {
       setFavStatus(`${t('favScanning')} ${Math.floor(pid / FAV_PAGE) + 1}…`)
       for (let tries = 0; ; tries++) {
         try { return await readFavPage(pid) } catch (e) {
@@ -158,8 +141,7 @@ function updateFavIndex(full) {
     let saved = Date.now()
     try {
       if (idx.items.length) {
-        /** @type {FavItem[]} */
-        const top = []
+        const top: FavItem[] = []
         for (let pid = 0; ; pid += FAV_PAGE) {
           const items = await read(pid)
           const added = unknown(items)
@@ -197,12 +179,8 @@ function updateFavIndex(full) {
 }
 
 // tag, -tag, tag* (wildcard), a ~ b (either), score:>10 (also >=, <, <=, =).
-/** @typedef {(e: FavEntry) => boolean} FavMatcher */
-/**
- * @param {string} word
- * @returns {FavMatcher}
- */
-function favMatcher(word) {
+export type FavMatcher = (e: FavEntry) => boolean
+function favMatcher(word: string): FavMatcher {
   const score = word.match(/^score:(>=|<=|>|<|=)?(-?\d+)$/)
   if (score) {
     const n = Number(score[2])
@@ -217,14 +195,9 @@ function favMatcher(word) {
   return e => e.set.has(word)
 }
 
-/**
- * @param {string} text
- * @returns {FavMatcher}
- */
-function favQuery(text) {
+function favQuery(text: string): FavMatcher {
   const words = text.toLowerCase().trim().split(/\s+/).filter(Boolean)
-  /** @type {Array<{ neg: boolean, any: FavMatcher[] }>} */
-  const groups = []   // every group must hold: one of `any`, or none of it when negated
+  const groups: Array<{ neg: boolean, any: FavMatcher[] }> = []   // every group must hold: one of `any`, or none of it when negated
   words.forEach((word, i) => {
     if (word === '~') return
     const neg = word.startsWith('-') && word.length > 1
@@ -272,14 +245,13 @@ async function searchFavs() {
   const match = favQuery(text)
   const kind = fields.kind.value
   // kind: the select's other values are FavEntry's flags.
-  /** @param {FavEntry} e */
-  const ofKind = e => kind === 'all' || (kind === 'image' ? !e.animated : e[/** @type {'video' | 'gif' | 'animated'} */ (kind)])
+  const ofKind = (e: FavEntry) => kind === 'all' || (kind === 'image' ? !e.animated : e[(kind as 'video' | 'gif' | 'animated')])
   const min = Number(fields.min.value) || 0
   let found = favEntries.filter(e => ofKind(e) && (!min || (e.score != null && e.score >= min)) && match(e))
   const sort = fields.sort.value
   if (sort === 'old') found = found.reverse()
   else if (sort === 'score') found = [...found].sort((a, b) => (b.score ?? -1e9) - (a.score ?? -1e9))
-  else if (sort === 'random') found = found.map(e => /** @type {[number, FavEntry]} */ ([Math.random(), e])).sort((a, b) => a[0] - b[0]).map(pair => pair[1])
+  else if (sort === 'random') found = found.map(e => ([Math.random(), e] as [number, FavEntry])).sort((a, b) => a[0] - b[0]).map(pair => pair[1])
   showFavResults(found.map(e => e.item))
   rememberFavSearch(true)
   if (favBarSync) favBarSync()
@@ -287,8 +259,7 @@ async function searchFavs() {
 }
 
 // The site's own thumbnail markup, so every feature treats it like one.
-/** @param {FavEntry['item']} item */
-function favThumb([id, thumb, tags]) {
+function favThumb([id, thumb, tags]: FavEntry['item']) {
   const span = document.createElement('span')
   span.className = 'thumb'
   span.id = `s${id}`
@@ -306,10 +277,9 @@ function favThumb([id, thumb, tags]) {
 
 // The site's own paginators, hidden while results stand in for the page:
 // divs of its HTML.
-const sitePaginators = () => /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll('#paginator, .pagination'))
+const sitePaginators = () => (document.querySelectorAll('#paginator, .pagination') as NodeListOf<HTMLElement>)
 
-/** @param {Array<FavEntry['item']>} items */
-function showFavResults(items) {
+function showFavResults(items: Array<FavEntry['item']>) {
   const list = document.querySelector(LIST)
   if (!list) return
   if (!favPage) favPage = [...list.childNodes]   // put back on Clear
@@ -329,7 +299,7 @@ function showMoreFavs() {
   favShown += next.length
   // Made with the favorites bar, which searchFavs saw still there after its
   // last await, and its own click handler.
-  const more = /** @type {HTMLElement} */ (document.getElementById('ibh-favmore'))
+  const more = document.getElementById('ibh-favmore') as HTMLElement
   more.hidden = favShown >= favResults.length
   more.textContent = `${t('favMore')} (${favResults.length - favShown})`
   setFavStatus(`${favResults.length} ${t('favResults')}`)
@@ -350,11 +320,10 @@ function clearFavSearch() {
   setFavStatus()
 }
 
-/** @param {string} [text] */
-function setFavStatus(text) {
+function setFavStatus(text?: string) {
   const st = document.querySelector('#ibh-favsearch .st')
   if (!st) return
-  const line = /** @type {Text} */ (st.firstChild)   // ensureFavSearch puts a text node first
+  const line = st.firstChild as Text   // ensureFavSearch puts a text node first
   if (text) { line.textContent = text; return }
   const idx = favIndex
   line.textContent = idx && idx.items.length
@@ -368,7 +337,7 @@ export function ensureFavSearch() {
   const want = CFG.favSearch && SITE === 'rule34.xxx' && onOwnFavorites() && !!document.querySelector(LIST)
   if (!want) { if (bar) { clearFavSearch(); bar.remove(); document.getElementById('ibh-favmore')?.remove() } return }
   if (bar) return
-  const list = /** @type {Element} */ (document.querySelector(LIST))   // want found it
+  const list = document.querySelector(LIST) as Element   // want found it
   const input = el('input', { type: 'search', placeholder: t('favPlaceholder'), enterkeyhint: 'search' })
   input.setAttribute('autocapitalize', 'off')
   input.setAttribute('autocomplete', 'off')

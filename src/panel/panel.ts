@@ -1,6 +1,6 @@
-/** @import { Config } from '../core/config' */
-/** @import { Lang } from '../core/i18n' */
-/** @import { LogEntry } from '../core/log' */
+import type { Config } from '../core/config'
+import type { Lang } from '../core/i18n'
+import type { LogEntry } from '../core/log'
 import { ACCENT, SITE, VERSION } from '../core/site'
 import { CFG } from '../core/config'
 import { LANG, resolveLang, setLang, t } from '../core/i18n'
@@ -26,35 +26,22 @@ import { applySiteTheme } from '../page/theme'
 // ═══════════════════════════════════════════════════════════
 
 // Set and cleared together: shadow is panelHost's shadow root.
-/** @type {HTMLDivElement | null} */
-export let panelHost = null
-/** @param {typeof panelHost} v */
-export function setPanelHost(v) { panelHost = v }
-/** @type {ShadowRoot | null} */
-export let shadow = null
-/** @param {typeof shadow} v */
-export function setShadow(v) { shadow = v }
-/** @type {HTMLDivElement | null} */
-let logBox = null
+export let panelHost: HTMLDivElement | null = null
+export function setPanelHost(v: typeof panelHost) { panelHost = v }
+export let shadow: ShadowRoot | null = null
+export function setShadow(v: typeof shadow) { shadow = v }
+let logBox: HTMLDivElement | null = null
 
 // The panel's own elements, found again by class in its shadow root. The
 // script makes each of them (mountPanel, ensureFeedNav, pageToast), so a
 // lookup is typed as what it made.
-/**
- * @typedef {{ '.fab': HTMLButtonElement, '.panel': HTMLDivElement, '.feednav:not(.pagenav)': HTMLDivElement,
- *   '.pagenav': HTMLDivElement, '.pagetoast': HTMLDivElement, '.favsfab': HTMLButtonElement,
- *   '.bulkfab': HTMLButtonElement, '.clockfab': HTMLButtonElement, '.eyefab': HTMLButtonElement }} Controls
- */
-/**
- * @template {keyof Controls} K
- * @param {K} sel
- * @returns {Controls[K] | null}
- */
-export function control(sel) {
-  return shadow && /** @type {Controls[K] | null} */ (shadow.querySelector(sel))
+export type Controls = { '.fab': HTMLButtonElement, '.panel': HTMLDivElement, '.feednav:not(.pagenav)': HTMLDivElement,
+  '.pagenav': HTMLDivElement, '.pagetoast': HTMLDivElement, '.favsfab': HTMLButtonElement,
+  '.bulkfab': HTMLButtonElement, '.clockfab': HTMLButtonElement, '.eyefab': HTMLButtonElement }
+export function control<K extends keyof Controls>(sel: K): Controls[K] | null {
+  return shadow && (shadow.querySelector(sel) as Controls[K] | null)
 }
-/** @type {HTMLDivElement | null} */
-let statusBox = null
+let statusBox: HTMLDivElement | null = null
 export let panelOpen = false
 
 const PANEL_CSS = `
@@ -199,13 +186,9 @@ const PANEL_CSS = `
   `
 
 /**
- * @template {keyof HTMLElementTagNameMap} K
- * @param {K} tag
- * @param {Record<string, string> | null} [attrs]   text and class set those; the rest are attributes
- * @param {Array<Node | string>} [children]
- * @returns {HTMLElementTagNameMap[K]}
+ * @param attrs   text and class set those; the rest are attributes
  */
-export function el(tag, attrs, children) {
+export function el<K extends keyof HTMLElementTagNameMap>(tag: K, attrs?: Record<string, string> | null, children?: Array<Node | string>): HTMLElementTagNameMap[K] {
   const node = document.createElement(tag)
   if (attrs) for (const [k, v] of Object.entries(attrs)) {
     if (k === 'text') node.textContent = v
@@ -217,8 +200,7 @@ export function el(tag, attrs, children) {
   return node
 }
 
-/** @param {string} key @param {string} value @param {'ok' | 'warn' | 'idle'} tone */
-const statusRow = (key, value, tone) => el('div', { class: 'row' }, [
+const statusRow = (key: string, value: string, tone: 'ok' | 'warn' | 'idle') => el('div', { class: 'row' }, [
   el('span', { class: `dot ${tone}` }),
   el('span', { class: 'k', text: key }),
   el('span', { class: 'v', text: String(value) }),
@@ -234,7 +216,7 @@ export function renderStatus() {
 
 // Called by renderStatus, with the status box there.
 function drawStatus() {
-  /** @type {HTMLDivElement} */ (statusBox).textContent = ''
+  (statusBox as HTMLDivElement).textContent = ''
 
   const c = STATE.covers
   const coverTone = c.tracked === 0 ? 'idle' : c.failed > 0 ? 'warn' : c.ok > 0 ? 'ok' : 'idle'
@@ -247,18 +229,17 @@ function drawStatus() {
     statusRow(t('host'), hostLabel, STATE.imageBase ? 'ok' : 'warn'),
     statusRow(t('covers'), t('coversFmt')(c.ok, c.failed, c.tracked), coverTone),
   ]
-  rows.forEach(r => /** @type {HTMLDivElement} */ (statusBox).appendChild(r))
+  rows.forEach(r => (statusBox as HTMLDivElement).appendChild(r))
 }
 
-/** @param {LogEntry} entry */
-function appendLogLine(entry) {
+function appendLogLine(entry: LogEntry) {
   if (!logBox) return
   const time = new Date(entry.t).toTimeString().slice(0, 8)
   logBox.appendChild(el('div', null, [
     el('span', { class: 'ts', text: time }),
     el('span', { class: entry.level, text: entry.msg }),
   ]))
-  while (logBox.childElementCount > LOG_MAX) /** @type {Element} */ (logBox.firstElementChild).remove()   // past LOG_MAX: there is one
+  while (logBox.childElementCount > LOG_MAX) (logBox.firstElementChild as Element).remove()   // past LOG_MAX: there is one
   logBox.scrollTop = logBox.scrollHeight
   if (entry.level === 'error' && shadow) {
     const fab = control('.fab')
@@ -267,14 +248,8 @@ function appendLogLine(entry) {
 }
 
 // `then` runs after the change, for options that apply at once.
-/** @typedef {{ [K in keyof Config]: Config[K] extends boolean ? K : never }[keyof Config]} BoolKey */
-/**
- * @param {BoolKey} key
- * @param {string} label
- * @param {string | null} [note]
- * @param {() => void} [then]
- */
-export function toggle(key, label, note, then) {
+export type BoolKey = { [K in keyof Config]: Config[K] extends boolean ? K : never }[keyof Config]
+export function toggle(key: BoolKey, label: string, note?: string | null, then?: () => void) {
   const input = el('input', { type: 'checkbox' })
   input.checked = !!CFG[key]
   input.addEventListener('change', () => {
@@ -290,12 +265,9 @@ export function toggle(key, label, note, then) {
 // Gesture for the scene preview on thumbnails: drag sideways, or hold.
 // A labelled select bound to a config key; `then` runs after the change.
 /**
- * @param {keyof Config} key
- * @param {string} title
- * @param {Array<[string | number, string]>} choices   value and label
- * @param {() => void} [then]
+ * @param choices   value and label
  */
-function choiceSelect(key, title, choices, then) {
+function choiceSelect(key: keyof Config, title: string, choices: Array<[string | number, string]>, then?: () => void) {
   const sel = el('select')
   for (const [value, label] of choices) {
     const option = el('option', { value: String(value), text: label })
@@ -304,8 +276,8 @@ function choiceSelect(key, title, choices, then) {
   }
   sel.addEventListener('change', () => {
     // One of the options above; its value fits the key, which is the caller's to match.
-    const picked = /** @type {[string | number, string]} */ (choices.find(([value]) => String(value) === sel.value))
-    setCfg(key, /** @type {any} */ (picked[0]))   // keeps numbers as numbers
+    const picked = choices.find(([value]) => String(value) === sel.value) as [string | number, string]
+    setCfg(key, picked[0] as any)   // keeps numbers as numbers
     if (then) then()
   })
   return el('div', { class: 'lang' }, [el('div', { class: 'lbl', text: title }), sel])
@@ -313,8 +285,7 @@ function choiceSelect(key, title, choices, then) {
 
 // Gesture for the scene preview on thumbnails; the slideshow's jump and
 // seconds only show in hold mode, so switching modes redraws the panel.
-/** @param {HTMLElement} body */
-function scrubModeControls(body) {
+function scrubModeControls(body: HTMLElement) {
   body.appendChild(choiceSelect('scrubMode', t('tScrubMode'),
     [['drag', t('modeDrag')], ['hold', t('modeHold')]], rebuildPanel))
   body.appendChild(toggle('holdRub', t('tHoldRub')))   // also the post's player, whatever the mode
@@ -324,8 +295,7 @@ function scrubModeControls(body) {
   body.appendChild(toggle('previewSound', t('tPreviewSound')))
   body.appendChild(toggle('holdResume', t('tHoldResume')))
   if (CFG.holdVideo) return
-  /** @param {number} n */
-  const num = n => n.toLocaleString(LANG)
+  const num = (n: number) => n.toLocaleString(LANG)
   body.appendChild(choiceSelect('slideStep', t('tSlideStep'),
     [5, 10, 20, 25].map(p => [p, `${num(p)}% · ${Math.round(100 / p)} ${t('scenes')}`])))
   body.appendChild(choiceSelect('slideDwell', t('tSlideDwell'),
@@ -342,15 +312,14 @@ function languageSelect() {
     sel.appendChild(option)
   }
   sel.addEventListener('change', () => {
-    setCfg('lang', /** @type {Lang | ''} */ (sel.value) || null)   // the options are the languages, or '' for automatic
+    setCfg('lang', (sel.value as Lang | '') || null)   // the options are the languages, or '' for automatic
     setLang(resolveLang())
     rebuildPanel()   // labels are baked at build time, so rebuild
   })
   return el('div', { class: 'lang' }, [sel])
 }
 
-/** @param {string} label @param {() => void} fn */
-const actionButton = (label, fn) => {
+const actionButton = (label: string, fn: () => void) => {
   const b = el('button', { text: label })
   b.addEventListener('click', fn)
   return b
@@ -457,8 +426,8 @@ function copyLog() {
     .catch(e => error(`could not copy the log — ${describeError(e)}`))
 }
 
-/** @param {boolean} [open]   leave it out to switch */
-export function togglePanel(open) {
+/** @param open   leave it out to switch */
+export function togglePanel(open?: boolean) {
   panelOpen = open == null ? !panelOpen : open
   const panel = control('.panel')
   if (!panel) return

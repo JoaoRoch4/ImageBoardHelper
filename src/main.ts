@@ -62,7 +62,7 @@ if (tabChannel) {
   tabChannel.onmessage = ev => {
     const msg = ev.data || {}
     if (msg.type === 'free-memory') {
-      freeMemory('tab').then(n => /** @type {BroadcastChannel} */ (tabChannel).postMessage({ type: 'freed', n, page: location.pathname }))   // this very channel
+      freeMemory('tab').then(n => (tabChannel as BroadcastChannel).postMessage({ type: 'freed', n, page: location.pathname }))   // this very channel
     } else if (msg.type === 'freed') {
       const { n } = msg
       info(`another tab (${msg.page}) freed ${n.covers} covers, ${n.gifs} GIFs, ${n.images} upgraded images`)
@@ -187,8 +187,7 @@ const CONSOLE_HELP = [
   // download slots and who waits for one, the turn queue, each card's state,
   // and what makes nextGif() wait.
   gifs: () => {
-    /** @type {Record<string, number>} */
-    const cards = {}
+    const cards: Record<string, number> = {}
     markedCards('[data-ibh-gif]').forEach(c => {
       const k = `${c.dataset.ibhGif}${c.dataset.ibhSeen ? ' on screen' : ''}`
       cards[k] = (cards[k] || 0) + 1

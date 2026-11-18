@@ -19,60 +19,43 @@ import { resetUpgrade } from '../diag'
 // ═══════════════════════════════════════════════════════════
 
 
-/** @type {WeakSet<HTMLElement>} */
-const tracked = new WeakSet()
+const tracked: WeakSet<HTMLElement> = new WeakSet()
 
 // The elements carrying one of this script's own data-ibh-* marks, typed as
 // what it marks: cards (a thumbnail's link) and, for data-ibh-orig, their
 // <img>. Only the selectors below are accepted, so a lookup can't claim a
 // type for a mark the script puts elsewhere.
-/**
- * @param {'[data-ibh-cover]' | '[data-ibh-seen]' | '[data-ibh-kind]' | '[data-ibh-gif]' | '[data-ibh-gif="playing"]' | '[data-ibh-gif="playing"], [data-ibh-gif="loading"]'} selector
- * @returns {NodeListOf<HTMLElement>}
- */
-export function markedCards(selector) {
-  return /** @type {NodeListOf<HTMLElement>} */ (document.querySelectorAll(selector))
+export function markedCards(selector: '[data-ibh-cover]' | '[data-ibh-seen]' | '[data-ibh-kind]' | '[data-ibh-gif]' | '[data-ibh-gif="playing"]' | '[data-ibh-gif="playing"], [data-ibh-gif="loading"]'): NodeListOf<HTMLElement> {
+  return document.querySelectorAll(selector) as NodeListOf<HTMLElement>
 }
-/**
- * @param {'[data-ibh-orig]' | '[data-ibh-orig="done"]'} selector
- * @returns {NodeListOf<HTMLImageElement>}
- */
-export function markedImages(selector) {
-  return /** @type {NodeListOf<HTMLImageElement>} */ (document.querySelectorAll(selector))
+export function markedImages(selector: '[data-ibh-orig]' | '[data-ibh-orig="done"]'): NodeListOf<HTMLImageElement> {
+  return document.querySelectorAll(selector) as NodeListOf<HTMLImageElement>
 }
 
 // A card is the link around a thumbnail (Gelbooru 0.2 markup). The kind
 // comes from the tags in the thumbnail's title or alt, or the site's own
 // .webm-thumb mark. "animated" alone may be either kind: it counts as video,
 // and the cover falls back to the GIF when no video host answers.
-/** @param {HTMLElement} card */
-export const nativeTags = card => {
+export const nativeTags = (card: HTMLElement) => {
   const img = card.querySelector('img')
   return ` ${(img && (img.title || img.alt)) || ''} `
 }
 export const NATIVE_GIF = /\s(gif|animated_gif)\s/i
 const NATIVE_VIDEO = /\s(video|mp4|webm|animated)\s/i
 export const NATIVE_REAL_VIDEO = /\s(video|mp4|webm)\s/i   // "animated" alone may be a GIF
-/** @param {HTMLElement} card */
-export const isVideoCard = card => !!card.querySelector('img.webm-thumb') ||   // the site's own video mark
+export const isVideoCard = (card: HTMLElement) => !!card.querySelector('img.webm-thumb') ||   // the site's own video mark
   (NATIVE_VIDEO.test(nativeTags(card)) && !NATIVE_GIF.test(nativeTags(card)))
-/** @param {HTMLElement} card */
-export const isGifCard = card => card.dataset.ibhKind === 'gif' || NATIVE_GIF.test(nativeTags(card))
+export const isGifCard = (card: HTMLElement) => card.dataset.ibhKind === 'gif' || NATIVE_GIF.test(nativeTags(card))
 
-/** @param {HTMLElement} card */
-export const cardPicture = card => { const img = card.querySelector('img'); return img ? imgPicture(img) : null }
+export const cardPicture = (card: HTMLElement) => { const img = card.querySelector('img'); return img ? imgPicture(img) : null }
 
 // On an <img>, the better file goes in srcset and src is left alone: the
 // browser paints the srcset candidate, while src keeps the site's thumbnail
 // URL for everything that reads it (Imagus and other hover-zoom tools match
 // on the thumbnail_ pattern). Setting the thumbnail back (or nothing) clears
 // srcset.
-/** @typedef {{ src: string, set: (url: string | null | undefined) => void }} Picture */
-/**
- * @param {HTMLImageElement} img
- * @returns {Picture | null}
- */
-export function imgPicture(img) {
+export type Picture = { src: string, set: (url: string | null | undefined) => void }
+export function imgPicture(img: HTMLImageElement): Picture | null {
   if (!img.src) return null
   return {
     src: img.src,
@@ -90,15 +73,12 @@ export function imgPicture(img) {
 export const COVER_MAX_LIVE = 3
 export const COVER_POINT = 0.35   // where in the video the cover frame is taken
 export let liveCovers = 0
-/** @param {typeof liveCovers} v */
-export function setLiveCovers(v) { liveCovers = v }
-/** @type {Set<HTMLElement>} */
-export const coverQueue = new Set()
+export function setLiveCovers(v: typeof liveCovers) { liveCovers = v }
+export const coverQueue: Set<HTMLElement> = new Set()
 
 // A card element can be rebuilt (the autopager, a page restored from the
 // back button), so "this is a GIF" is remembered by file hash, not on it.
-/** @type {Set<string>} */
-export const knownGifs = new Set()
+export const knownGifs: Set<string> = new Set()
 
 export function releaseCover() {
   liveCovers = Math.max(0, liveCovers - 1)
@@ -109,8 +89,7 @@ export function releaseCover() {
   }
 }
 
-/** @param {HTMLElement} card */
-export function mountCover(card) {
+export function mountCover(card: HTMLElement) {
   if (card.dataset.ibhCover || card.dataset.ibhBigVideo) return
   const pic = cardPicture(card)
   if (!pic) return
@@ -232,8 +211,7 @@ export function mountCover(card) {
   else card.appendChild(v)
 }
 
-/** @param {HTMLElement} card */
-export function unmountCover(card) {
+export function unmountCover(card: HTMLElement) {
   coverQueue.delete(card)
   const v = card.querySelector('video[data-ibh]')
   if (!v) return
@@ -249,13 +227,10 @@ export function unmountCover(card) {
 // slow connection. A GIF waiting for a slot goes before queued upgrades.
 export const IMAGE_MAX_INFLIGHT = 3
 export let imagesInflight = 0
-/** @param {typeof imagesInflight} v */
-export function setImagesInflight(v) { imagesInflight = v }
-/** @type {Array<() => void>} */
-export const imageWaiters = []
+export function setImagesInflight(v: typeof imagesInflight) { imagesInflight = v }
+export const imageWaiters: Array<() => void> = []
 
-/** @param {() => void} start */
-export function takeImageSlot(start) {
+export function takeImageSlot(start: () => void) {
   if (imagesInflight < IMAGE_MAX_INFLIGHT) { imagesInflight++; start() }
   else imageWaiters.push(start)
 }
@@ -274,13 +249,11 @@ export function giveImageSlot() {
 // phone runs out of memory and Firefox drops them (the broken-GIF rebuild,
 // see watchGif). Cards past the limit wait as stills, nearest the middle of
 // the screen first, and take the place of one that scrolls away.
-/** @type {Set<HTMLElement>} */
-export const gifQueue = new Set()
+export const gifQueue: Set<HTMLElement> = new Set()
 export const gifsLive = () => markedCards('[data-ibh-gif="playing"], [data-ibh-gif="loading"]').length
 
 // How far a card's middle sits from the middle of the screen, in px.
-/** @param {HTMLElement} card */
-export const fromMiddle = card => Math.abs(card.getBoundingClientRect().top + card.offsetHeight / 2 - window.innerHeight / 2)
+export const fromMiddle = (card: HTMLElement) => Math.abs(card.getBoundingClientRect().top + card.offsetHeight / 2 - window.innerHeight / 2)
 
 export function nextGif() {
   // Stopped to free memory (the modal, a scene preview, a hidden tab): those
@@ -319,11 +292,9 @@ export function applyGifLimit() {
 // download slot on at once. A GIF scrolled past used to keep its slot until
 // the whole file came (forever when the download stalled), and with all
 // three held no other GIF started.
-/** @type {WeakMap<HTMLElement, () => void>} */
-const gifLoads = new WeakMap()
+const gifLoads: WeakMap<HTMLElement, () => void> = new WeakMap()
 
-/** @param {HTMLElement} card */
-export function playGif(card) {
+export function playGif(card: HTMLElement) {
   if (card.dataset.ibhGif) return   // loading, playing or failed
   if (gifRebuild && gifRebuild !== card) { gifQueue.add(card); return }   // after the held one
   if (gifsLive() >= (Number(CFG.gifMaxLive) || 3)) { gifQueue.add(card); return }   // waits its turn
@@ -373,7 +344,7 @@ export function playGif(card) {
     card.dataset.ibhStill = pic.src
     // The card's <img> had a src when the probe started, and nothing in the
     // script takes either away (resets change srcset only).
-    ;/** @type {Picture} */ (cardPicture(card)).set(probe.src)
+    ;(cardPicture(card) as Picture).set(probe.src)
     card.dataset.ibhGif = 'playing'
     watchGif(card)
     endGifRebuild(card, GIF_REBUILD_GRACE_MS)
@@ -393,13 +364,11 @@ export function playGif(card) {
 // when it breaks, free more memory and build the GIF again, twice at most.
 export const GIF_RETRIES = 2
 
-/** @param {HTMLElement} card */
-function watchGif(card) {
+function watchGif(card: HTMLElement) {
   const img = card.querySelector('img')
   if (!img || img.dataset.ibhGifWatch) return
   img.dataset.ibhGifWatch = '1'
-  /** @param {Event} ev */
-  const check = ev => {
+  const check = (ev: Event) => {
     if (card.dataset.ibhGif !== 'playing' || !img.srcset) return   // stopped or back to the still
     // "load" with no width is how a broken decode shows up.
     if (ev.type === 'error' || img.naturalWidth === 0) gifBroken(card)
@@ -408,8 +377,7 @@ function watchGif(card) {
   img.addEventListener('load', check)
 }
 
-/** @param {HTMLElement} card */
-function gifBroken(card) {
+function gifBroken(card: HTMLElement) {
   const tries = Number(card.dataset.ibhGifRetries || 0)
   if (tries >= GIF_RETRIES) {
     stopGif(card)
@@ -433,12 +401,10 @@ function gifBroken(card) {
 // start over.
 const GIF_REBUILD_GRACE_MS = 1000
 const GIF_REBUILD_MAX_MS = 10000
-/** @type {HTMLElement | null} */
-export let gifRebuild = null   // the held GIF, while the others wait for it
+export let gifRebuild: HTMLElement | null = null   // the held GIF, while the others wait for it
 let gifRebuildTimer = 0
 
-/** @param {HTMLElement} card */
-export function rebuildGif(card) {
+export function rebuildGif(card: HTMLElement) {
   const pic = cardPicture(card)
   if (!pic) return
   const freed = freeOffscreen(card)
@@ -463,8 +429,7 @@ export function rebuildGif(card) {
 
 // The others' turn, `after` ms from now. Called when the held GIF plays,
 // fails or stops; a call for another card changes nothing.
-/** @param {HTMLElement} card @param {number} [after] */
-function endGifRebuild(card, after = 0) {
+function endGifRebuild(card: HTMLElement, after: number = 0) {
   if (gifRebuild !== card) return
   clearTimeout(gifRebuildTimer)
   gifRebuildTimer = setTimeout(() => {
@@ -477,11 +442,9 @@ function endGifRebuild(card, after = 0) {
 // Release what is not on screen: upgraded images back to the thumbnail
 // (heights held), other GIFs stilled, covers closed. On screen means within
 // one screen of the viewport.
-/** @param {HTMLElement | null} keep */
-export function freeOffscreen(keep) {
+export function freeOffscreen(keep: HTMLElement | null) {
   const n = { images: 0, gifs: 0, covers: 0 }
-  /** @param {Element} el */
-  const far = el => {
+  const far = (el: Element) => {
     const r = el.getBoundingClientRect()
     return r.bottom < -window.innerHeight || r.top > window.innerHeight * 2
   }
@@ -502,8 +465,7 @@ export function freeOffscreen(keep) {
   return n
 }
 
-/** @param {HTMLElement} card */
-export function stopGif(card) {
+export function stopGif(card: HTMLElement) {
   endGifRebuild(card)
   gifQueue.delete(card)
   const cancel = gifLoads.get(card)
@@ -523,7 +485,7 @@ export function stopGif(card) {
 const viewport = 'IntersectionObserver' in window
   ? new IntersectionObserver(entries => {
       for (const e of entries) {
-        const card = /** @type {HTMLElement} */ (e.target)   // what trackCard observes
+        const card = e.target as HTMLElement   // what trackCard observes
         if (e.isIntersecting) card.dataset.ibhSeen = '1'
         else delete card.dataset.ibhSeen
         // The page scrolls under the modal as it steps (H): keep it unloaded;
@@ -540,8 +502,7 @@ const viewport = 'IntersectionObserver' in window
     }, { rootMargin: '200px' })
   : null
 
-/** @param {HTMLElement} card */
-function trackCard(card) {
+function trackCard(card: HTMLElement) {
   if (tracked.has(card)) return
   tracked.add(card)
   urlPrefetch(card.querySelector('img')?.getAttribute('src'))
@@ -566,17 +527,16 @@ const NATIVE_THUMB = `${THUMB} img`
 
 // A node of any kind, as a mutation brings it: only elements and documents
 // have these, checked before they are called.
-/** @typedef {Node & Partial<Pick<Element, 'querySelectorAll' | 'matches'>>} AnyNode */
+export type AnyNode = Node & Partial<Pick<Element, 'querySelectorAll' | 'matches'>>
 
-/** @param {AnyNode} root */
-export function scanCards(root) {
+export function scanCards(root: AnyNode) {
   if (!root || !root.querySelectorAll) return
   // The selector ends in img: these are images.
-  const imgs = /** @type {HTMLImageElement[]} */ ([...root.querySelectorAll(NATIVE_THUMB)])
-  if (root.matches && root.matches(NATIVE_THUMB)) imgs.push(/** @type {HTMLImageElement} */ (root))
+  const imgs = [...root.querySelectorAll(NATIVE_THUMB)] as HTMLImageElement[]
+  if (root.matches && root.matches(NATIVE_THUMB)) imgs.push(root as HTMLImageElement)
   for (const img of imgs) {
     // Inside a card (the selector's THUMB), so it has a parent.
-    const link = /** @type {HTMLElement} */ (img.closest('a') || img.parentElement)
+    const link = (img.closest('a') || img.parentElement) as HTMLElement
     // The search list marks videos with .webm-thumb (a blue frame), but
     // favorites leave it out. Put the site's own mark back on real videos.
     const tags = nativeTags(link)

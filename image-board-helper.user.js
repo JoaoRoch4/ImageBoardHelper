@@ -73,7 +73,7 @@
   var __defProp = Object.defineProperty;
   var __name = (target, value) => __defProp(target, "name", { value, configurable: true });
 
-  // src/core/site.js
+  // src/core/site.ts
   var VERSION = "1.20.0-snapshot.4";
   var SITE = location.hostname.replace(/^www\./, "");
   var TEAL = { accent: "#5eead4", line: "#39ff14", dark: "#1d3b38", mid: "#2f7d72" };
@@ -107,7 +107,7 @@
   var THUMB = `${LIST} ${CARD}`;
   var ITEM = `${LIST} > ${PROFILE.item}`;
 
-  // src/core/config.js
+  // src/core/config.ts
   var CFG_KEY = "IBH_CFG";
   var DEFAULTS = {
     lang: null,
@@ -249,7 +249,7 @@
   }
   __name(writeJSON, "writeJSON");
 
-  // src/core/strings.js
+  // src/core/strings.ts
   var I18N = {
     en: {
       fixes: "fixes",
@@ -263,7 +263,6 @@
       failed: "failed",
       notResolved: "not resolved",
       cached: "cached",
-      /** @param {number} ok @param {number} bad @param {number} all */
       coversFmt: /* @__PURE__ */ __name((ok, bad, all) => `${ok} ok · ${bad} failed · ${all} videos`, "coversFmt"),
       tCovers: "Video covers",
       tBadges: "Duration and ⚠️ on video thumbnails",
@@ -495,7 +494,6 @@
       failed: "falhou",
       notResolved: "não resolvido",
       cached: "cache",
-      /** @param {number} ok @param {number} bad @param {number} all */
       coversFmt: /* @__PURE__ */ __name((ok, bad, all) => `${ok} ok · ${bad} falha · ${all} vídeos`, "coversFmt"),
       tCovers: "Capa de vídeo",
       tBadges: "Duração e ⚠️ nas miniaturas de vídeo",
@@ -2578,7 +2576,7 @@
   }
   __name(logSnapshot, "logSnapshot");
 
-  // src/page/bulk.js
+  // src/page/bulk.ts
   var HEART_ICON = "M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z";
   var bulkMode = false;
   var wantsBulkButton = /* @__PURE__ */ __name(() => !!CFG.bulkFavButton && SITE === "rule34.xxx" && !!userId() && !!document.querySelector(SITE_LINK), "wantsBulkButton");
@@ -2607,10 +2605,7 @@
   }
   __name(pageToast, "pageToast");
   function bulkBadge(link, text, tone, cls = "ibh-bulkbadge") {
-    let badge = (
-      /** @type {HTMLSpanElement | null} */
-      link.querySelector(`.${cls}`)
-    );
+    let badge = link.querySelector(`.${cls}`);
     if (!badge) {
       badge = document.createElement("span");
       badge.className = cls;
@@ -2649,10 +2644,7 @@
   __name(bulkFavorite, "bulkFavorite");
   function onBulkClick(ev) {
     if (!bulkMode || ev.button !== 0) return;
-    const link = (
-      /** @type {HTMLAnchorElement | null | undefined} */
-      asElement(ev.target)?.closest(SITE_LINK)
-    );
+    const link = asElement(ev.target)?.closest(SITE_LINK);
     if (!link) return;
     ev.preventDefault();
     ev.stopImmediatePropagation();
@@ -3026,7 +3018,7 @@
   }
   __name(applySiteTheme, "applySiteTheme");
 
-  // src/panel/panel.js
+  // src/panel/panel.ts
   var panelHost = null;
   function setPanelHost(v) {
     panelHost = v;
@@ -3039,8 +3031,7 @@
   __name(setShadow, "setShadow");
   var logBox = null;
   function control(sel) {
-    return shadow && /** @type {Controls[K] | null} */
-    shadow.querySelector(sel);
+    return shadow && shadow.querySelector(sel);
   }
   __name(control, "control");
   var statusBox = null;
@@ -3222,10 +3213,7 @@
       statusRow(t("host"), hostLabel, STATE.imageBase ? "ok" : "warn"),
       statusRow(t("covers"), t("coversFmt")(c.ok, c.failed, c.tracked), coverTone)
     ];
-    rows.forEach((r) => (
-      /** @type {HTMLDivElement} */
-      statusBox.appendChild(r)
-    ));
+    rows.forEach((r) => statusBox.appendChild(r));
   }
   __name(drawStatus, "drawStatus");
   function appendLogLine(entry) {
@@ -3264,15 +3252,8 @@
       sel.appendChild(option);
     }
     sel.addEventListener("change", () => {
-      const picked = (
-        /** @type {[string | number, string]} */
-        choices.find(([value]) => String(value) === sel.value)
-      );
-      setCfg(
-        key,
-        /** @type {any} */
-        picked[0]
-      );
+      const picked = choices.find(([value]) => String(value) === sel.value);
+      setCfg(key, picked[0]);
       if (then) then();
     });
     return el("div", { class: "lang" }, [el("div", { class: "lbl", text: title }), sel]);
@@ -3314,11 +3295,7 @@
       sel.appendChild(option);
     }
     sel.addEventListener("change", () => {
-      setCfg(
-        "lang",
-        /** @type {Lang | ''} */
-        sel.value || null
-      );
+      setCfg("lang", sel.value || null);
       setLang(resolveLang());
       rebuildPanel();
     });
@@ -3496,7 +3473,7 @@ host: ${STATE.imageBase}
   }
   __name(rebuildPanel, "rebuildPanel");
 
-  // src/post/votes.js
+  // src/post/votes.ts
   async function favoritePost(id, remove) {
     const res = await fetch(`/public/addfav.php?id=${encodeURIComponent(id)}${remove ? "&toggle=1" : ""}`, { credentials: "same-origin" });
     const code = (await res.text()).trim().replace(/"/g, "");
@@ -4531,7 +4508,7 @@ host: ${STATE.imageBase}
   }
   __name(kindSelect, "kindSelect");
 
-  // src/lists/favorites.js
+  // src/lists/favorites.ts
   var FAV_PAGE = 50;
   var FAV_SHOW = 60;
   var FAV_GAP_MS = 250;
@@ -4550,26 +4527,11 @@ host: ${STATE.imageBase}
   var favBarSync = null;
   var favBarReload = null;
   var favFields = /* @__PURE__ */ __name((bar) => ({
-    text: (
-      /** @type {HTMLInputElement} */
-      bar.querySelector('input[type="search"]')
-    ),
-    or: (
-      /** @type {HTMLInputElement} */
-      bar.querySelector("input.or")
-    ),
-    kind: (
-      /** @type {HTMLSelectElement} */
-      bar.querySelector("select.kind")
-    ),
-    sort: (
-      /** @type {HTMLSelectElement} */
-      bar.querySelector("select.sort")
-    ),
-    min: (
-      /** @type {HTMLInputElement} */
-      bar.querySelector("input.min")
-    )
+    text: bar.querySelector('input[type="search"]'),
+    or: bar.querySelector("input.or"),
+    kind: bar.querySelector("select.kind"),
+    sort: bar.querySelector("select.sort"),
+    min: bar.querySelector("input.min")
   }), "favFields");
   async function rememberFavSearch(active) {
     const bar = document.getElementById("ibh-favsearch");
@@ -4616,15 +4578,9 @@ host: ${STATE.imageBase}
     const doc = new DOMParser().parseFromString(html, "text/html");
     return [...doc.querySelectorAll(".thumb img[src]")].map((img) => {
       const a = img.closest("a");
-      const src = (
-        /** @type {string} */
-        img.getAttribute("src")
-      );
+      const src = img.getAttribute("src");
       const id = (a && a.getAttribute("href") || "").match(/id=(\d+)/)?.[1] || (src.split("?")[1] || "");
-      return (
-        /** @type {FavItem} */
-        [id, src, (img.getAttribute("title") || img.getAttribute("alt") || "").trim(), scores.has(id) ? scores.get(id) : null]
-      );
+      return [id, src, (img.getAttribute("title") || img.getAttribute("alt") || "").trim(), scores.has(id) ? scores.get(id) : null];
     }).filter((item) => /^\d+$/.test(item[0]));
   }
   __name(readFavPage, "readFavPage");
@@ -4755,19 +4711,13 @@ host: ${STATE.imageBase}
     }
     const match = favQuery(text);
     const kind = fields.kind.value;
-    const ofKind = /* @__PURE__ */ __name((e) => kind === "all" || (kind === "image" ? !e.animated : e[
-      /** @type {'video' | 'gif' | 'animated'} */
-      kind
-    ]), "ofKind");
+    const ofKind = /* @__PURE__ */ __name((e) => kind === "all" || (kind === "image" ? !e.animated : e[kind]), "ofKind");
     const min = Number(fields.min.value) || 0;
     let found = favEntries.filter((e) => ofKind(e) && (!min || e.score != null && e.score >= min) && match(e));
     const sort = fields.sort.value;
     if (sort === "old") found = found.reverse();
     else if (sort === "score") found = [...found].sort((a, b) => (b.score ?? -1e9) - (a.score ?? -1e9));
-    else if (sort === "random") found = found.map((e) => (
-      /** @type {[number, FavEntry]} */
-      [Math.random(), e]
-    )).sort((a, b) => a[0] - b[0]).map((pair) => pair[1]);
+    else if (sort === "random") found = found.map((e) => [Math.random(), e]).sort((a, b) => a[0] - b[0]).map((pair) => pair[1]);
     showFavResults(found.map((e) => e.item));
     rememberFavSearch(true);
     if (favBarSync) favBarSync();
@@ -4790,10 +4740,7 @@ host: ${STATE.imageBase}
     return span;
   }
   __name(favThumb, "favThumb");
-  var sitePaginators = /* @__PURE__ */ __name(() => (
-    /** @type {NodeListOf<HTMLElement>} */
-    document.querySelectorAll("#paginator, .pagination")
-  ), "sitePaginators");
+  var sitePaginators = /* @__PURE__ */ __name(() => document.querySelectorAll("#paginator, .pagination"), "sitePaginators");
   function showFavResults(items) {
     const list = document.querySelector(LIST);
     if (!list) return;
@@ -4814,10 +4761,7 @@ host: ${STATE.imageBase}
     const next = favResults.slice(favShown, favShown + FAV_SHOW);
     list.append(...next.map(favThumb));
     favShown += next.length;
-    const more = (
-      /** @type {HTMLElement} */
-      document.getElementById("ibh-favmore")
-    );
+    const more = document.getElementById("ibh-favmore");
     more.hidden = favShown >= favResults.length;
     more.textContent = `${t("favMore")} (${favResults.length - favShown})`;
     setFavStatus(`${favResults.length} ${t("favResults")}`);
@@ -4847,10 +4791,7 @@ host: ${STATE.imageBase}
   function setFavStatus(text) {
     const st = document.querySelector("#ibh-favsearch .st");
     if (!st) return;
-    const line = (
-      /** @type {Text} */
-      st.firstChild
-    );
+    const line = st.firstChild;
     if (text) {
       line.textContent = text;
       return;
@@ -4871,10 +4812,7 @@ host: ${STATE.imageBase}
       return;
     }
     if (bar) return;
-    const list = (
-      /** @type {Element} */
-      document.querySelector(LIST)
-    );
+    const list = document.querySelector(LIST);
     const input = el("input", { type: "search", placeholder: t("favPlaceholder"), enterkeyhint: "search" });
     input.setAttribute("autocapitalize", "off");
     input.setAttribute("autocomplete", "off");
@@ -5396,7 +5334,7 @@ host: ${STATE.imageBase}
   }
   __name(storeSet, "storeSet");
 
-  // src/thumbs/marks.js
+  // src/thumbs/marks.ts
   var UNLIKE_HOLD_MS = 500;
   var likedIds = null;
   var unliked = /* @__PURE__ */ new Set();
@@ -5497,10 +5435,7 @@ host: ${STATE.imageBase}
   var heartHold = null;
   function onHeartTouchStart(ev) {
     const badge = asElement(ev.target)?.closest(".ibh-liked");
-    const link = (
-      /** @type {HTMLAnchorElement | null | undefined} */
-      badge && badge.closest(SITE_LINK)
-    );
+    const link = badge && badge.closest(SITE_LINK);
     if (!link || ev.touches.length !== 1) return;
     const finger = ev.touches[0];
     const hold = { link, x: finger.clientX, y: finger.clientY, fired: false, timer: 0 };
@@ -5553,10 +5488,7 @@ host: ${STATE.imageBase}
     if (map.get(id) === size) return;
     map.delete(id);
     map.set(id, size);
-    while (map.size > DIMS_MAX) map.delete(
-      /** @type {string} */
-      map.keys().next().value
-    );
+    while (map.size > DIMS_MAX) map.delete(map.keys().next().value);
     clearTimeout(dimsSaveTimer);
     dimsSaveTimer = setTimeout(() => writeJSON(DIMS_KEY, Object.fromEntries(loadDims())), 2e3);
     for (const link of cardsOf(id)) paintRes(link);
@@ -5564,10 +5496,7 @@ host: ${STATE.imageBase}
   __name(setDims, "setDims");
   function paintRes(link) {
     const size = CFG.resBadge ? loadDims().get(postId(link)) : void 0;
-    let badge = (
-      /** @type {HTMLElement | null} */
-      link.querySelector(".ibh-res")
-    );
+    let badge = link.querySelector(".ibh-res");
     if (!size) {
       badge?.remove();
       return;
@@ -5625,10 +5554,7 @@ host: ${STATE.imageBase}
   __name(r34Api, "r34Api");
   function pumpDims() {
     while (dimsLive < DIMS_INFLIGHT && dimsQueue.length) {
-      const id = (
-        /** @type {string} */
-        dimsQueue.shift()
-      );
+      const id = dimsQueue.shift();
       const sent = r34Api(`&id=${encodeURIComponent(id)}`, (json) => {
         dimsLive--;
         const post = Array.isArray(json) ? json[0] : null;
@@ -5683,7 +5609,7 @@ host: ${STATE.imageBase}
   }
   __name(apiKeyControls, "apiKeyControls");
 
-  // src/post/post.js
+  // src/post/post.ts
   var pageUser = null;
   var userId = /* @__PURE__ */ __name(() => (document.cookie.match(/(?:^|; )user_id=(\d+)/) || [])[1] || pageUser || (pageUser = userFromPage()), "userId");
   function userFromPage() {
@@ -5724,11 +5650,7 @@ host: ${STATE.imageBase}
         id: d.id.slice(1),
         // c22197352 -> 22197352, for the vote
         user: (author && author.textContent || "").trim(),
-        profile: author ? new URL(
-          /** @type {string} */
-          author.getAttribute("href"),
-          base
-        ).href : null,
+        profile: author ? new URL(author.getAttribute("href"), base).href : null,
         // matched a[href…]
         date: (headText.match(/Posted on (\S+ \S+)/) || [])[1] || "",
         score: Number((head && head.querySelector('[id^="sc"]') || {}).textContent) || 0,
@@ -5748,8 +5670,7 @@ host: ${STATE.imageBase}
     for (const li of doc.querySelectorAll('li[class*="tag-type-"]')) {
       const type = (li.className.match(/tag-type-([a-z]+)/) || [])[1] || "general";
       const a = [...li.querySelectorAll('a[href*="tags="]')].pop();
-      const q = a && /** @type {string} */
-      a.getAttribute("href").match(/[?&]tags=([^&]+)/);
+      const q = a && a.getAttribute("href").match(/[?&]tags=([^&]+)/);
       if (q) tags.push({ name: decodeURIComponent(q[1].replace(/\+/g, " ")), type });
     }
     const stats = [...doc.querySelectorAll("#stats li")].map((li) => {
@@ -5759,10 +5680,7 @@ host: ${STATE.imageBase}
     }).filter((st) => st.text);
     const comments = readComments(doc);
     const orig = [...doc.querySelectorAll('a[href*="/images/"]')].find((a) => /original/i.test(a.textContent || ""));
-    const original = orig ? (
-      /** @type {string} */
-      orig.getAttribute("href").replace(/([^:])\/\/+/g, "$1/").replace("//api-cdn-mp4.", "//api-cdn.")
-    ) : null;
+    const original = orig ? orig.getAttribute("href").replace(/([^:])\/\/+/g, "$1/").replace("//api-cdn-mp4.", "//api-cdn.") : null;
     return { fav: heart ? heart[1] === "heart-added" : null, tags, stats, original, comments };
   }
   __name(readPostPage, "readPostPage");
@@ -6681,20 +6599,14 @@ host: ${STATE.imageBase}
   }
   __name(scanThumbs, "scanThumbs");
 
-  // src/thumbs/covers.js
+  // src/thumbs/covers.ts
   var tracked = /* @__PURE__ */ new WeakSet();
   function markedCards(selector) {
-    return (
-      /** @type {NodeListOf<HTMLElement>} */
-      document.querySelectorAll(selector)
-    );
+    return document.querySelectorAll(selector);
   }
   __name(markedCards, "markedCards");
   function markedImages(selector) {
-    return (
-      /** @type {NodeListOf<HTMLImageElement>} */
-      document.querySelectorAll(selector)
-    );
+    return document.querySelectorAll(selector);
   }
   __name(markedImages, "markedImages");
   var nativeTags = /* @__PURE__ */ __name((card) => {
@@ -7131,10 +7043,7 @@ host: ${STATE.imageBase}
   __name(stopGif, "stopGif");
   var viewport = "IntersectionObserver" in window ? new IntersectionObserver((entries) => {
     for (const e of entries) {
-      const card = (
-        /** @type {HTMLElement} */
-        e.target
-      );
+      const card = e.target;
       if (e.isIntersecting) card.dataset.ibhSeen = "1";
       else delete card.dataset.ibhSeen;
       if (modal && modal.open) continue;
@@ -7174,19 +7083,10 @@ host: ${STATE.imageBase}
   var NATIVE_THUMB = `${THUMB} img`;
   function scanCards(root) {
     if (!root || !root.querySelectorAll) return;
-    const imgs = (
-      /** @type {HTMLImageElement[]} */
-      [...root.querySelectorAll(NATIVE_THUMB)]
-    );
-    if (root.matches && root.matches(NATIVE_THUMB)) imgs.push(
-      /** @type {HTMLImageElement} */
-      root
-    );
+    const imgs = [...root.querySelectorAll(NATIVE_THUMB)];
+    if (root.matches && root.matches(NATIVE_THUMB)) imgs.push(root);
     for (const img of imgs) {
-      const link = (
-        /** @type {HTMLElement} */
-        img.closest("a") || img.parentElement
-      );
+      const link = img.closest("a") || img.parentElement;
       const tags = nativeTags(link);
       if (!img.classList.contains("webm-thumb") && NATIVE_REAL_VIDEO.test(tags) && !NATIVE_GIF.test(tags)) {
         img.classList.add("webm-thumb");
@@ -7199,7 +7099,7 @@ host: ${STATE.imageBase}
   }
   __name(scanCards, "scanCards");
 
-  // src/scrub/scrub.js
+  // src/scrub/scrub.ts
   var EXACT_SEEK_MAX_S = 60;
   var REST_MS = 180;
   var seekState = /* @__PURE__ */ new WeakMap();
@@ -7213,28 +7113,14 @@ host: ${STATE.imageBase}
       st = { wanted: null, pending: null, rest: 0 };
       seekState.set(v, st);
       v.addEventListener("seeked", () => {
-        if (
-          /** @type {SeekState} */
-          st.wanted === null
-        ) return;
-        const t3 = (
-          /** @type {number} */
-          /** @type {SeekState} */
-          st.wanted
-        );
+        if (st.wanted === null) return;
+        const t3 = st.wanted;
         st.wanted = null;
         seekTo(v, t3);
       });
       v.addEventListener("loadedmetadata", () => {
-        if (
-          /** @type {SeekState} */
-          st.pending === null
-        ) return;
-        const p = (
-          /** @type {number} */
-          /** @type {SeekState} */
-          st.pending
-        );
+        if (st.pending === null) return;
+        const p = st.pending;
         st.pending = null;
         seekFraction(v, p, true);
       });
@@ -7325,13 +7211,9 @@ host: ${STATE.imageBase}
     if (scrub || insidePanel(ev) || modal && modal.open) return;
     if (ev.pointerType === "mouse" && ev.button !== 0) return;
     if (asElement(ev.target)?.closest("[data-ibh-chip], .ibh-liked")) return;
-    const card = (
-      /** @type {HTMLElement | null | undefined} */
-      asElement(ev.target)?.closest("[data-ibh-video]")
-    );
+    const card = asElement(ev.target)?.closest("[data-ibh-video]");
     if (!card || card.dataset.ibhKind === "gif") return;
-    scrub = /** @type {Scrub} */
-    { card, id: ev.pointerId, x0: ev.clientX, y0: ev.clientY, on: false, holdTimer: 0 };
+    scrub = { card, id: ev.pointerId, x0: ev.clientX, y0: ev.clientY, on: false, holdTimer: 0 };
     if (CFG.scrubMode === "hold") scrub.holdTimer = setTimeout(startSlideshow, HOLD_MS);
   }
   __name(onScrubDown, "onScrubDown");
@@ -7477,11 +7359,7 @@ host: ${STATE.imageBase}
     const view = s.helper;
     if (!view) return;
     s.helper = null;
-    view.v.removeEventListener(
-      "seeked",
-      /** @type {() => void} */
-      view.onSeeked
-    );
+    view.v.removeEventListener("seeked", view.onSeeked);
     view.v.onerror = null;
     view.v.removeAttribute("src");
     view.v.load();
@@ -7549,11 +7427,7 @@ host: ${STATE.imageBase}
   __name(tickSlide, "tickSlide");
   function endSlideshow(s) {
     clearInterval(s.tick);
-    for (const view of s.views || []) view.v.removeEventListener(
-      "seeked",
-      /** @type {() => void} */
-      view.onSeeked
-    );
+    for (const view of s.views || []) view.v.removeEventListener("seeked", view.onSeeked);
     const helper = s.helper;
     if (!helper) return;
     if (s.front === helper && !s.shared) seekFraction(s.video, helper.f, true);
@@ -7621,11 +7495,7 @@ host: ${STATE.imageBase}
   __name(playShow, "playShow");
   function endPlayShow(s) {
     const v = s.video;
-    v.removeEventListener(
-      "timeupdate",
-      /** @type {() => void} */
-      s.onPlayTime
-    );
+    v.removeEventListener("timeupdate", s.onPlayTime);
     s.onPlayTime = null;
     v.pause();
     v.playbackRate = s.played.rate;
@@ -7656,10 +7526,7 @@ host: ${STATE.imageBase}
   }
   __name(keepResume, "keepResume");
   function holdChip(card, kind) {
-    const had = (
-      /** @type {HTMLElement | null} */
-      card.querySelector(`[data-ibh-chip="${kind}"]`)
-    );
+    const had = card.querySelector(`[data-ibh-chip="${kind}"]`);
     if (had) return had;
     const chip = document.createElement("span");
     chip.dataset.ibhChip = kind;
@@ -7703,10 +7570,7 @@ host: ${STATE.imageBase}
   }
   __name(coverBack, "coverBack");
   function forgetResume(chip) {
-    const card = (
-      /** @type {HTMLElement | null} */
-      chip.closest("[data-ibh-video]")
-    );
+    const card = chip.closest("[data-ibh-video]");
     chip.remove();
     if (!card) return;
     resumes.delete(postId(card));
@@ -7811,14 +7675,8 @@ host: ${STATE.imageBase}
   }
   __name(rubMove, "rubMove");
   function startScrub() {
-    if (!scrubSource(
-      /** @type {Scrub} */
-      scrub
-    )) return false;
-    scrubUi(
-      /** @type {Scrub} */
-      scrub
-    );
+    if (!scrubSource(scrub)) return false;
+    scrubUi(scrub);
     return true;
   }
   __name(startScrub, "startScrub");
@@ -7864,17 +7722,10 @@ host: ${STATE.imageBase}
   }
   __name(scrubUi, "scrubUi");
   function moveScrub(x) {
-    const r = (
-      /** @type {Scrub} */
-      scrub.card.getBoundingClientRect()
-    );
+    const r = scrub.card.getBoundingClientRect();
     const f = Math.min(1, Math.max(0, (x - r.left) / r.width));
     scrub.bar.style.width = `${f * 100}%`;
-    const at = seekFraction(
-      /** @type {Scrub} */
-      scrub.video,
-      f
-    );
+    const at = seekFraction(scrub.video, f);
     scrub.label.textContent = at ? `${mmss(at.t)} / ${mmss(at.d)}` : "…";
   }
   __name(moveScrub, "moveScrub");
@@ -7949,10 +7800,7 @@ host: ${STATE.imageBase}
   }
   __name(onScrubUp, "onScrubUp");
   function onScrubClick(ev) {
-    const chip = (
-      /** @type {HTMLElement | null | undefined} */
-      asElement(ev.target)?.closest("[data-ibh-chip]")
-    );
+    const chip = asElement(ev.target)?.closest("[data-ibh-chip]");
     if (chip) {
       ev.preventDefault();
       ev.stopImmediatePropagation();
@@ -8721,7 +8569,7 @@ host: ${STATE.imageBase}
   }
   __name(installAdBlock, "installAdBlock");
 
-  // src/page/page-css.js
+  // src/page/page-css.ts
   var NATIVE_MARK_CSS = `${LIST} img.webm-thumb { border: 3px solid rgb(0, 0, 255); box-sizing: border-box; }`;
   var FAVSEARCH_CSS = `
     .ibh-search { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0 12px; position: relative; }
@@ -8770,17 +8618,14 @@ host: ${STATE.imageBase}
   }
   __name(injectPageCSS, "injectPageCSS");
 
-  // src/main.js
+  // src/main.ts
   window.addEventListener("pagehide", flushUrlCache);
   if (CFG.urlCache) urlDb();
   if (tabChannel) {
     tabChannel.onmessage = (ev) => {
       const msg = ev.data || {};
       if (msg.type === "free-memory") {
-        freeMemory("tab").then((n) => (
-          /** @type {BroadcastChannel} */
-          tabChannel.postMessage({ type: "freed", n, page: location.pathname })
-        ));
+        freeMemory("tab").then((n) => tabChannel.postMessage({ type: "freed", n, page: location.pathname }));
       } else if (msg.type === "freed") {
         const { n } = msg;
         info(`another tab (${msg.page}) freed ${n.covers} covers, ${n.gifs} GIFs, ${n.images} upgraded images`);

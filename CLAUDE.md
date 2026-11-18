@@ -32,7 +32,7 @@ Cada uma tem um motivo concreto. Não mude sem entender o custo.
 - **Código-fonte:** em `src/`, em módulos TypeScript (`.ts`) e, enquanto a conversão não termina, JavaScript com JSDoc (`.js`), todos checados pelo `tsc` estrito. Os imports não levam extensão. O repositório continua auditável: os comentários estão em `src/`.
 - **O arquivo gerado:** `npm run build` (`tools/build.mts`) junta tudo com o esbuild num IIFE com o `"use strict"` dentro, sem minificar (`keepNames`, sem tree shaking, UTF-8 mantido), com `src/header.txt` (o bloco de metadados) no topo. O resultado continua sendo o `image-board-helper.user.js` commitado, porque o deploy instala pelo link do commit. **Nunca edite o gerado:** o `npm run check` falha se ele não for o que `src/` gera; `smoke`, `test:*` e o `smoke` do MCP fazem o build antes, e o `deploy` roda o `check`.
 - **O que o esbuild muda, e o build confere:** ele não guarda os comentários de instrução (só os de dentro de objetos e listas); ele renomeia um nome de topo que dois módulos declaram, e também um local com o mesmo nome de um nome de topo de outro módulo (`touch` → `touch2`), e o build recusa qualquer nome que não esteja em `src/`; e ele troca os `const`/`let` de topo por `var`, então um valor lido no carregamento antes de o módulo dele rodar vira `undefined` em silêncio, em vez de `ReferenceError`, e o build recusa essa leitura (`checkLoadOrder`; testes em `tools/build.test.mts`).
-- **Carregamento:** os módulos só montam as próprias constantes e estado; o resto do que roda no carregamento fica no `main.js`, na ordem do arquivo único. O esbuild ordena os módulos pelos imports, não pela lista do `main.js`: um valor de topo lido no carregamento só pode vir de um módulo que já rodou. Um `let` que outro módulo reatribui ganha um setter no próprio módulo (`setLiveCovers(…)`), porque um import não pode ser reatribuído.
+- **Carregamento:** os módulos só montam as próprias constantes e estado; o resto do que roda no carregamento fica no `main.ts`, na ordem do arquivo único. O esbuild ordena os módulos pelos imports, não pela lista do `main.ts`: um valor de topo lido no carregamento só pode vir de um módulo que já rodou. Um `let` que outro módulo reatribui ganha um setter no próprio módulo (`setLiveCovers(…)`), porque um import não pode ser reatribuído.
 - **Greasy Fork:** as regras dele (conferidas em 2026-11-14) aceitam código juntado por build sem minificar, com espaços e nomes mantidos. O que proíbem é minificar e carregar o grosso do script de fora por `@require`, então os módulos não vão por `@require`.
 - **Ordem:** primeiro separar sem mudar comportamento (feito na branch `modules`, 2026-11-15); depois converter o resto para TypeScript, módulo a módulo; depois refatorar, com classes onde há estado com ciclo de vida (a fila de GIFs, o índice de URLs, o modal, o scrub).
 
@@ -100,12 +100,12 @@ O usuário quer trazer vários recursos do app para o script no futuro (2026-11-
 
 ## Mapa do código
 
-`src/`, um módulo por assunto, na ordem do antigo arquivo único (é a ordem dos imports do `main.js`). Os `.ts` já foram convertidos; os `.js` são JavaScript com JSDoc, checado pelo mesmo `tsc`.
+`src/`, um módulo por assunto, na ordem do antigo arquivo único (é a ordem dos imports do `main.ts`). Os `.ts` já foram convertidos; os `.js` são JavaScript com JSDoc, checado pelo mesmo `tsc`.
 
 - `header.txt` — o bloco `// ==UserScript==` (com o `@version`), o aviso de arquivo gerado e o comentário de abertura: o topo do arquivo gerado.
-- `core/site.js` — `VERSION`, `SITE`, `SITE_PROFILES`/`PROFILE` (lista, card, cores, sugestões) e os seletores `LIST`, `THUMB`, `ITEM`
-- `core/config.js` — configuração persistida (`IBH_CFG`, `DEFAULTS`, `NEEDS_RELOAD`, `CFG`, `readJSON`/`writeJSON`); o `setCfg` fica em `storage/storage.ts`, junto do `backupCfg` que ele chama
-- `core/strings.js` — as duas tabelas de `I18N` (não importa nada: o `check-i18n` o carrega)
+- `core/site.ts` — `VERSION`, `SITE`, `SITE_PROFILES`/`PROFILE` (lista, card, cores, sugestões) e os seletores `LIST`, `THUMB`, `ITEM`
+- `core/config.ts` — configuração persistida (`IBH_CFG`, `DEFAULTS`, `NEEDS_RELOAD`, `CFG`, `readJSON`/`writeJSON`); o `setCfg` fica em `storage/storage.ts`, junto do `backupCfg` que ele chama
+- `core/strings.ts` — as duas tabelas de `I18N` (não importa nada: o `check-i18n` o carrega)
 - `core/i18n.ts` — `resolveLang`, `LANG`, `t`
 - `core/log.ts` — buffer de 250, níveis, espelho no console sob `debug`
 - `core/state.ts` — `STATE` observável pelo painel, `touch`
@@ -114,11 +114,11 @@ O usuário quer trazer vários recursos do app para o script no futuro (2026-11-
 - `video/limits.ts` — `pastDecoder`, a mesma regra do `vreduce::fits` do app (não importa nada: o MCP o carrega)
 - `video/mp4.ts` — o leitor de MP4: `mp4Boxes`, `mp4Child`, `mp4VideoTrack`, `avcConfig` (não importa nada: o `wasm-test` e o MCP o carregam)
 - `thumbs/badges.ts` — ⚠️ e duração no cartão (`markPastDecoder`, `markDuration`, `cardBadge`)
-- `thumbs/marks.js` — as marcas do cartão (1.20.0): ❤️ num favorito (`likedBadge`; segurar desfavorita, `onHeartTouchStart`) e a resolução (`resBadge`: `setDims`, `paintRes`, `pumpDims`), `paintCardMarks`/`repaintCards`; a API do rule34 com a chave do usuário (`apiKey`, `parseApiKey`, a porta única `r34Api`) e a seção dela no painel (`apiSection`)
-- `thumbs/covers.js` — **A.** capa de vídeo e GIF: `mountCover`, `unmountCover`, `COVER_MAX_LIVE` e a fila, `playGif`, `stopGif`, as vagas de download (`takeImageSlot`), `IntersectionObserver`, `scanCards`
+- `thumbs/marks.ts` — as marcas do cartão (1.20.0): ❤️ num favorito (`likedBadge`; segurar desfavorita, `onHeartTouchStart`) e a resolução (`resBadge`: `setDims`, `paintRes`, `pumpDims`), `paintCardMarks`/`repaintCards`; a API do rule34 com a chave do usuário (`apiKey`, `parseApiKey`, a porta única `r34Api`) e a seção dela no painel (`apiSection`)
+- `thumbs/covers.ts` — **A.** capa de vídeo e GIF: `mountCover`, `unmountCover`, `COVER_MAX_LIVE` e a fila, `playGif`, `stopGif`, as vagas de download (`takeImageSlot`), `IntersectionObserver`, `scanCards`
 - `thumbs/feed.ts` — **B.** miniatura nítida e feed: `upgradeToOriginal`, `upgradePlan`, `sampleCandidates`, `probeOriginal`, `scanThumbs`
 - `thumbs/memory.ts` — **D.** gerenciamento de memória: `farViewport`, `releaseFar`, `pinHeight`, `onNodesRemoved`, `releaseAll`, varredura a cada 15 s
-- `scrub/scrub.js` — **C.** prévia de cenas: arraste na miniatura (ou segurar, `scrubMode`): `seekFraction`, `previewLoad`, `previewStop`, `borrowDecoder`, `onScrubDown/Move/Up`; o slideshow por seek (`seekShow`, dois vídeos em revezamento, `tickSlide`), `holdVideoShow`, `playShow`; o segurar que toca e continua de onde parou (`holdResume`: `resumePoint`, `keepResume`, `forgetResume`), os chips do cartão (`holdChip`, `soundChip`, `lingerChips`, `removeChips`, `coverBack`, `flipSound`), deslizar para mover o vídeo (`holdRub`: `makeRub`, `rubMove`, também usados pelo player); `logSlideStats`, `installVideoScrub`
+- `scrub/scrub.ts` — **C.** prévia de cenas: arraste na miniatura (ou segurar, `scrubMode`): `seekFraction`, `previewLoad`, `previewStop`, `borrowDecoder`, `onScrubDown/Move/Up`; o slideshow por seek (`seekShow`, dois vídeos em revezamento, `tickSlide`), `holdVideoShow`, `playShow`; o segurar que toca e continua de onde parou (`holdResume`: `resumePoint`, `keepResume`, `forgetResume`), os chips do cartão (`holdChip`, `soundChip`, `lingerChips`, `removeChips`, `coverBack`, `flipSound`), deslizar para mover o vídeo (`holdRub`: `makeRub`, `rubMove`, também usados pelo player); `logSlideStats`, `installVideoScrub`
 - `scrub/reel.ts` — a fita de keyframes do segurar (`slideReel`): `buildReel` lê o `moov` e os keyframes com Range pelo `GM_xmlhttpRequest`; `showReelWasm` decodifica cada keyframe e desenha num canvas; sem ele, `showReelVideo` toca o MP4 montado por `reelBlob`; se a fita falha, `reelFailed` cai no slideshow por seek
 - `scrub/h264.ts` — o decodificador em WebAssembly: `h264Decoder`, `decodeKeyframe`, `dropH264`
 - `modal/modal.ts` — **E.** o modal de post: `MODAL_CSS`, `LIKE_CSS`, `buildModal`, `flash`, as marcas de ♥/▲, `readCookie`, `insidePanel`
@@ -127,25 +127,25 @@ O usuário quer trazer vários recursos do app para o script no futuro (2026-11-
 - `modal/player.ts` — gestos e controles do vídeo (`installVideoGestures`, `installVideoControls`, `installGearMenu`), a prévia na barra (`seekReel`, `drawKeyframe`), o arraste lateral que move o vídeo (`playerRub`, com o `makeRub` do scrub), tela cheia
 - `modal/gestures.ts` — `installModalSwipe`, `installImageHold`, `installImageZoom`
 - `modal/tags.ts` — menu de tags e abas Info/Comentários (`renderTags`, `renderInfo`, `renderComments`, `voteComment`), `chipGestures`, `copyText`, `applyMarks`
-- `post/post.js` — `userId`, `onOwnFavorites`, `postInfo`, `readComments`, `readPostPage`, `lookUpFavorite`
-- `post/votes.js` — `favoritePost`, `upvotePost`, `modalFavorite`, `modalUpvote`; o curtir com toque duplo no meio (`modalLike`, `popHeart`, `centerDoubleTap`)
+- `post/post.ts` — `userId`, `onOwnFavorites`, `postInfo`, `readComments`, `readPostPage`, `lookUpFavorite`
+- `post/votes.ts` — `favoritePost`, `upvotePost`, `modalFavorite`, `modalUpvote`; o curtir com toque duplo no meio (`modalLike`, `popHeart`, `centerDoubleTap`)
 - `post/download.ts` — Baixar: `saveFile`, `modalDownload`, `rawFileUrl`, `copyRawLink`
 - `post/app.ts` — o app QtMediaPlayer: `sendToApp`, `APP`, o servidor (`appCall`, `appDownload`, `followAppDownload`)
 - `storage/storage.ts` — `setCfg` e as cópias (`backupCfg`, `restoreCfg`), IndexedDB `idbGet/idbSet`, `storeGet/storeSet`, `storeReady`/`moveIn`, `GM_STORE`, `STORE_KEYS`
 - `lists/later.ts` — Ver depois (`showLater`, `toggleLaterHere`)
-- `lists/favorites.js` — busca nos favoritos (`searchFavs`, `updateFavIndex`, `ensureFavSearch`, `orInput`)
+- `lists/favorites.ts` — busca nos favoritos (`searchFavs`, `updateFavIndex`, `ensureFavSearch`, `orInput`)
 - `lists/autopager.ts` — autopager (`ensureFavPager`, `favPagerNext`), `sharpenTile`
 - `search/suggest.ts` — sugestões de tags (`attachSuggest`), `orTags`, `orGroups`, `minScoreInput`, `kindSelect`
 - `search/site-search.ts` — buscas salvas (`savedControls`), barra de busca do site (`ensureSiteSearch`, `homeSearchForm`)
-- `page/bulk.js` — favoritar em massa (`setBulkMode`, `bulkFavorite`, `onBulkClick`), `pageToast`
+- `page/bulk.ts` — favoritar em massa (`setBulkMode`, `bulkFavorite`, `onBulkClick`), `pageToast`
 - `page/raw-hold.ts` — segurar para o raw (`holdRaw`) e para refazer um GIF (`onRawTouchStart`, `loadRaw`, `undoRaw`)
 - `page/double-tap.ts` — toque duplo favorita (`onDoubleTapClick`)
-- `page/feed-css.ts`, `page/theme.ts`, `page/page-css.js` — `feedCss`/`applyFeed`, `THEME_CSS`/`applySiteTheme`, `injectPageCSS`
+- `page/feed-css.ts`, `page/theme.ts`, `page/page-css.ts` — `feedCss`/`applyFeed`, `THEME_CSS`/`applySiteTheme`, `injectPageCSS`
 - `page/ads.ts` — `blockAds`: `AD_POLICY`, `applyAdBlock`, `installAdBlock`
 - `diag.ts` — diagnóstico: `probeVideoUrls`, `logSnapshot`, `freeMemory`, `redoThumbs`, `tabChannel`
-- `panel/panel.js` — painel em Shadow DOM, `el`, `renderStatus`, `copyLog`, `mountPanel`, `rebuildPanel`
+- `panel/panel.ts` — painel em Shadow DOM, `el`, `renderStatus`, `copyLog`, `mountPanel`, `rebuildPanel`
 - `panel/nav.ts` — botões flutuantes (`ensureFeedNav`, `buildFeedNav`, `jumpPost`, `pageTarget`)
-- `main.js` — o arranque: o que rodava entre as seções (o `pagehide`, o `urlDb()`, o `tabChannel`, o `pointerdown` do painel) e depois o `MutationObserver`, os listeners, `boot` e `__ibh` (na `unsafeWindow`)
+- `main.ts` — o arranque: o que rodava entre as seções (o `pagehide`, o `urlDb()`, o `tabChannel`, o `pointerdown` do painel) e depois o `MutationObserver`, os listeners, `boot` e `__ibh` (na `unsafeWindow`)
 
 ---
 
@@ -198,9 +198,9 @@ Não sugira estas de novo sem um motivo novo.
 - Nada de parede de texto. Direto ao ponto.
 - Toda função nova que mexe no DOM da página precisa ser idempotente: o `MutationObserver` reprocessa o mesmo nó várias vezes. Use `WeakSet` ou `dataset`.
 - Todo recurso novo entra com uma chave em `DEFAULTS`, uma entrada no painel, uma linha de log e uma linha na tabela de opções dos dois READMEs. Se só vale no carregamento da página, a chave entra também em `NEEDS_RELOAD`.
-- A versão vive em dois lugares — `@version` em `src/header.txt` e `VERSION` em `src/core/site.js` — e os dois sobem junto com uma entrada no `CHANGELOG.md` (o build recusa os dois diferentes); depois, `npm run build`.
-- Site novo precisa de uma linha `@match` em `src/header.txt` e da marcação Gelbooru (o card `<a>` com `<img>` e as tags no `title`/`alt`, o `a[alt="next"]`, os arquivos em `thumbnails/`, `samples/`, `images/`). Se a lista não for `.image-list > span.thumb`, o site ganha uma linha em `SITE_PROFILES` (`src/core/site.js`; `list`, `card`, `item` — o filho direto da lista — e, se os scripts legítimos dele vierem de outro host, `scriptHosts` para o `blockAds`), e uma linha igual em `PROFILES` no `tools/smoke.js`, que precisa passar com `node tools/smoke.js '<listagem>'`.
-- Todo texto novo de painel ou modal entra nas duas tabelas de `I18N` (`src/core/strings.js`). Texto de log é escrito direto, em inglês.
+- A versão vive em dois lugares — `@version` em `src/header.txt` e `VERSION` em `src/core/site.ts` — e os dois sobem junto com uma entrada no `CHANGELOG.md` (o build recusa os dois diferentes); depois, `npm run build`.
+- Site novo precisa de uma linha `@match` em `src/header.txt` e da marcação Gelbooru (o card `<a>` com `<img>` e as tags no `title`/`alt`, o `a[alt="next"]`, os arquivos em `thumbnails/`, `samples/`, `images/`). Se a lista não for `.image-list > span.thumb`, o site ganha uma linha em `SITE_PROFILES` (`src/core/site.ts`; `list`, `card`, `item` — o filho direto da lista — e, se os scripts legítimos dele vierem de outro host, `scriptHosts` para o `blockAds`), e uma linha igual em `PROFILES` no `tools/smoke.js`, que precisa passar com `node tools/smoke.js '<listagem>'`.
+- Todo texto novo de painel ou modal entra nas duas tabelas de `I18N` (`src/core/strings.ts`). Texto de log é escrito direto, em inglês.
 - Código e comentários em inglês no repositório. Comigo, no chat, fale português.
 - Erro e aviso sempre vão ao console; `debug` só espelha o resto.
 

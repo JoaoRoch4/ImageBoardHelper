@@ -18,8 +18,7 @@ export let bulkMode = false
 
 export const wantsBulkButton = () => !!CFG.bulkFavButton && SITE === 'rule34.xxx' && !!userId() && !!document.querySelector(SITE_LINK)
 
-/** @param {boolean} on */
-export function setBulkMode(on) {
+export function setBulkMode(on: boolean) {
   bulkMode = on
   const heart = control('.bulkfab')
   if (heart) heart.classList.toggle('on', on)
@@ -28,8 +27,7 @@ export function setBulkMode(on) {
 }
 
 let pageToastTimer = 0
-/** @param {string} text */
-export function pageToast(text) {
+export function pageToast(text: string) {
   if (!shadow) return
   let toast = control('.pagetoast')
   if (!toast) { toast = el('div', { class: 'pagetoast' }); shadow.appendChild(toast) }
@@ -41,13 +39,10 @@ export function pageToast(text) {
 
 // A mark on the thumbnail: ♥ done, … working, ✕ failed.
 /**
- * @param {HTMLElement} link
- * @param {string} text
- * @param {string} tone    its background
- * @param {string} [cls]
+ * @param tone    its background
  */
-export function bulkBadge(link, text, tone, cls = 'ibh-bulkbadge') {
-  let badge = /** @type {HTMLSpanElement | null} */ (link.querySelector(`.${cls}`))   // made below
+export function bulkBadge(link: HTMLElement, text: string, tone: string, cls: string = 'ibh-bulkbadge') {
+  let badge = link.querySelector(`.${cls}`) as HTMLSpanElement | null   // made below
   if (!badge) {
     badge = document.createElement('span')
     badge.className = cls
@@ -59,8 +54,8 @@ export function bulkBadge(link, text, tone, cls = 'ibh-bulkbadge') {
   badge.style.background = tone
 }
 
-/** @param {HTMLAnchorElement} link @param {string} [via]  for the log */
-export async function bulkFavorite(link, via = 'mass favorite') {
+/** @param via  for the log */
+export async function bulkFavorite(link: HTMLAnchorElement, via: string = 'mass favorite') {
   const id = postId(link)
   if (link.dataset.ibhBulk) return   // done or in progress
   link.dataset.ibhBulk = '1'
@@ -82,11 +77,10 @@ export async function bulkFavorite(link, via = 'mass favorite') {
 }
 
 // Registered before the modal's click handler, so a tap favorites instead.
-/** @param {MouseEvent} ev */
-export function onBulkClick(ev) {
+export function onBulkClick(ev: MouseEvent) {
   if (!bulkMode || ev.button !== 0) return
   // SITE_LINK ends in a: the link.
-  const link = /** @type {HTMLAnchorElement | null | undefined} */ (asElement(ev.target)?.closest(SITE_LINK))
+  const link = asElement(ev.target)?.closest(SITE_LINK) as HTMLAnchorElement | null | undefined
   if (!link) return
   ev.preventDefault()
   ev.stopImmediatePropagation()

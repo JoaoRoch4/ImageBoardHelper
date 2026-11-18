@@ -9,8 +9,7 @@ import { setDims } from '../thumbs/marks'
 // listing's My Favorites link, or one's own favorites page, whose Remove
 // links only its owner gets. Once seen it is kept for the page's life:
 // search results replace those links. A post page shows neither.
-/** @type {string | null} */
-let pageUser = null
+let pageUser: string | null = null
 export const userId = () => (document.cookie.match(/(?:^|; )user_id=(\d+)/) || [])[1] || pageUser || (pageUser = userFromPage())
 
 function userFromPage() {
@@ -31,12 +30,10 @@ export const onOwnFavorites = () => {
 // The post page, fetched once per post while the page lives (the swipe
 // ahead warms it), gives the favorite state (its heart icon) and the tags
 // with their kind (its sidebar). Only the parsed facts are kept.
-/** @typedef {ReturnType<typeof readPostPage>} PostPage */
-/** @type {Map<string, Promise<PostPage | null>>} */
-export const postInfos = new Map()   // id -> Promise<{ fav, tags } | null>
+export type PostPage = ReturnType<typeof readPostPage>
+export const postInfos: Map<string, Promise<PostPage | null>> = new Map()   // id -> Promise<{ fav, tags } | null>
 
-/** @param {string} id */
-export function postInfo(id) {
+export function postInfo(id: string) {
   let p = postInfos.get(id)
   if (!p) {
     p = fetch(`/index.php?page=post&s=view&id=${encodeURIComponent(id)}`, { credentials: 'same-origin' })
@@ -57,22 +54,21 @@ export function postInfo(id) {
 // Comments of a post page: #comment-list > div#c<id>, author/date/score in
 // .col1, text in .col2 (<br> for its line breaks). Ten a page; the next ten
 // come from the "Next »" link of the comments' paginator (a cursor).
-/** @typedef {ReturnType<typeof readComments>} Comments */
+export type Comments = ReturnType<typeof readComments>
 /**
- * @param {ParentNode} doc
- * @param {string} [base]  what the links are relative to
+ * @param base  what the links are relative to
  */
-export function readComments(doc, base = location.href) {
+export function readComments(doc: ParentNode, base: string = location.href) {
   const list = [...doc.querySelectorAll('#comment-list > div[id]')].filter(d => /^c\d+$/.test(d.id)).map(d => {
     const head = d.querySelector('.col1')
     const body = d.querySelector('.col2')
-    if (body) body.querySelectorAll('br').forEach((/** @type {Element} */ br) => br.replaceWith('\n'))
+    if (body) body.querySelectorAll('br').forEach((br: Element) => br.replaceWith('\n'))
     const headText = head ? (head.textContent || '').replace(/\s+/g, ' ') : ''
     const author = head && head.querySelector('a[href*="page=account"]')
     return {
       id: d.id.slice(1),   // c22197352 -> 22197352, for the vote
       user: ((author && author.textContent) || '').trim(),
-      profile: author ? new URL(/** @type {string} */ (author.getAttribute('href')), base).href : null,   // matched a[href…]
+      profile: author ? new URL(author.getAttribute('href') as string, base).href : null,   // matched a[href…]
       date: (headText.match(/Posted on (\S+ \S+)/) || [])[1] || '',
       score: Number((head && head.querySelector('[id^="sc"]') || {}).textContent) || 0,
       text: body ? (body.textContent || '').replace(/\n{3,}/g, '\n\n').trim() : '',
@@ -84,8 +80,7 @@ export function readComments(doc, base = location.href) {
   return { list, total, next: href ? new URL(href, base).href : null }
 }
 
-/** @param {string} html */
-function readPostPage(html) {
+function readPostPage(html: string) {
   const heart = html.match(/id="heart-img"[^>]*src="[^"]*\/(heart(?:-added)?)\.svg"/)
   // An inert document: no scripts run, no images load.
   const doc = new DOMParser().parseFromString(html, 'text/html')
@@ -94,7 +89,7 @@ function readPostPage(html) {
     const type = (li.className.match(/tag-type-([a-z]+)/) || [])[1] || 'general'
     // The search link carries the tag as typed in a search (underscores).
     const a = [...li.querySelectorAll('a[href*="tags="]')].pop()
-    const q = a && /** @type {string} */ (a.getAttribute('href')).match(/[?&]tags=([^&]+)/)   // matched a[href…]
+    const q = a && (a.getAttribute('href') as string).match(/[?&]tags=([^&]+)/)   // matched a[href…]
     if (q) tags.push({ name: decodeURIComponent(q[1].replace(/\+/g, ' ')), type })
   }
   // The sidebar's statistics: Id, Posted … by, Size, Source, Rating, Score.
@@ -108,18 +103,13 @@ function readPostPage(html) {
   const orig = [...doc.querySelectorAll('a[href*="/images/"]')].find(a => /original/i.test(a.textContent || ''))
   // The page links videos on api-cdn-mp4, the slow origin (0.4–0.6 MB/s
   // measured, against 6–7 MB/s for the same file on api-cdn, Cloudflare).
-  const original = orig ? /** @type {string} */ (orig.getAttribute('href')).replace(/([^:])\/\/+/g, '$1/').replace('//api-cdn-mp4.', '//api-cdn.') : null   // matched a[href…]
+  const original = orig ? (orig.getAttribute('href') as string).replace(/([^:])\/\/+/g, '$1/').replace('//api-cdn-mp4.', '//api-cdn.') : null   // matched a[href…]
   return { fav: heart ? heart[1] === 'heart-added' : null, tags, stats, original, comments }
 }
 
-/** @type {Map<string, Promise<boolean | null>>} */
-export const favLookups = new Map()   // id -> Promise<true | false | null>
+export const favLookups: Map<string, Promise<boolean | null>> = new Map()   // id -> Promise<true | false | null>
 
-/**
- * @param {string} id
- * @returns {Promise<boolean | null>}
- */
-export function lookUpFavorite(id) {
+export function lookUpFavorite(id: string): Promise<boolean | null> {
   if (!userId()) return Promise.resolve(null)   // logged out: the page has no state to give
   let p = favLookups.get(id)
   if (!p) {

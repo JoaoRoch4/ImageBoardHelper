@@ -16,18 +16,16 @@ export const SITE = location.hostname.replace(/^www\./, '')
 // appended (JSON: [{label: "tag (count)", value, type}], or gelbooru's
 // [{value, post_count, category}]).
 const TEAL = { accent: '#5eead4', line: '#39ff14', dark: '#1d3b38', mid: '#2f7d72' }
-/**
- * @typedef {object} SiteProfile
- * @property {string} list
- * @property {string} card
- * @property {string} item
- * @property {string[]} scriptHosts
- * @property {string[]} adSlots
- * @property {typeof TEAL} colors
- * @property {string} suggest
- */
-/** @type {Record<string, Partial<SiteProfile>>} */
-const SITE_PROFILES = {
+export type SiteProfile = {
+  list: string,
+  card: string,
+  item: string,
+  scriptHosts: string[],
+  adSlots: string[],
+  colors: typeof TEAL,
+  suggest: string,
+}
+const SITE_PROFILES: Record<string, Partial<SiteProfile>> = {
   'gelbooru.com': {
     list: '.thumbnail-container', card: 'article.thumbnail-preview', item: 'article', scriptHosts: ['https://ajax.googleapis.com'],
     // Clickadu's 300x250 spots (in fixed-size wrappers), the footer one, ExoClick's video slider.
@@ -37,8 +35,7 @@ const SITE_PROFILES = {
   },
   'safebooru.org': { suggest: '/autocomplete.php?q=' },
 }
-/** @type {SiteProfile} */
-export const PROFILE = { list: '.image-list', card: 'span.thumb', item: 'span', scriptHosts: [], adSlots: [], colors: TEAL,
+export const PROFILE: SiteProfile = { list: '.image-list', card: 'span.thumb', item: 'span', scriptHosts: [], adSlots: [], colors: TEAL,
   suggest: '/public/autocomplete.php?q=', ...SITE_PROFILES[SITE] }   // suggest: rule34's and xbooru's
 export const { accent: ACCENT, line: LINE, dark: ACCENT_DARK, mid: ACCENT_MID } = PROFILE.colors
 export const LIST = PROFILE.list                 // the list of thumbnails
