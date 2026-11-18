@@ -29,8 +29,8 @@ export const info  = (m: string) => log('info', m)
 export const warn  = (m: string) => log('warn', m)
 export const error = (m: string) => log('error', m)
 
-// any: whatever was thrown or rejected, an Error or not.
-export const describeError = (e: any) => (e && e.message ? e.message : String(e))
+// Whatever was thrown or rejected, an Error or not: its message, or itself as text.
+export const describeError = (e: unknown) => (e && (e as Partial<Error>).message ? (e as Error).message : String(e))
 
 // A log entry as one line of text, as Copy log and the console's tail() give it.
 export const logLine = (e: LogEntry) => `${new Date(e.t).toTimeString().slice(0, 8)} [${e.level}] ${e.msg}`

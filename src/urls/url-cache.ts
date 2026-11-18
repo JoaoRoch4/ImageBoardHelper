@@ -26,12 +26,10 @@ const URLCACHE_NEG_TTL = 24 * 60 * 60 * 1000    // "nothing loads": short, a CDN
 export const urlStats = { hits: 0, misses: 0, healed: 0 }
 // An entry: u the winning URL (null: nothing loads), t when it was written,
 // and for a miss f when it was first seen and n how many times.
-/** @typedef {{ u: string | null, t: number, f?: number, n?: number }} UrlCacheEntry */
-/** @typedef {Record<string, UrlCacheEntry>} UrlCache  kind:hash -> entry */
-/** @type {UrlCache | null} */
-let urlCache = null
-/** @type {number} */
-let urlCacheTimer = 0
+export type UrlCacheEntry = { u: string | null, t: number, f?: number, n?: number }
+export type UrlCache = Record<string, UrlCacheEntry>   // kind:hash -> entry
+let urlCache: UrlCache | null = null
+let urlCacheTimer: number = 0
 
 // The IndexedDB side. A database of its own: a new store in 'ibh' would
 // need a version change, which a tab still on an older version blocks. A
@@ -41,41 +39,33 @@ const URL_KINDS = ['sample', 'orig', 'gif', 'video', 'poster']
 // When the last batch that reached IndexedDB was taken: newer entries in
 // localStorage may have missed it (a write cut short by leaving the page).
 const URLIDX_SYNC_KEY = `IBH_URLIDX_SYNC_${SITE}`
-/** @type {Promise<IDBDatabase | null> | null} */
-let urlDbOpen = null
-/** @type {Map<string, UrlCacheEntry | null>} */
-const urlDirty = new Map()   // kind:hash -> entry to write, or null to delete, until the next flush
-/** @type {Set<string>} */
-const urlAsked = new Set()   // hashes already read, or being read, from IndexedDB
-/** @type {Set<string>} */
-const urlWanted = new Set()  // hashes for the next batched read
+let urlDbOpen: Promise<IDBDatabase | null> | null = null
+const urlDirty: Map<string, UrlCacheEntry | null> = new Map()   // kind:hash -> entry to write, or null to delete, until the next flush
+const urlAsked: Set<string> = new Set()   // hashes already read, or being read, from IndexedDB
+const urlWanted: Set<string> = new Set()  // hashes for the next batched read
 let urlGen = 0               // bumped by a clear: reads started before it drop their answer
-/** @type {Set<string>} */
-const urlInFlight = new Set()   // hashes asked of IndexedDB, not answered yet
-/** @type {Promise<void> | null} */
-export let urlReading = null           // the batch in flight, or its URLIDX_WAIT_MS if that comes first
+const urlInFlight: Set<string> = new Set()   // hashes asked of IndexedDB, not answered yet
+export let urlReading: Promise<void> | null = null           // the batch in flight, or its URLIDX_WAIT_MS if that comes first
 // A card on screen at load is scanned and wanted in the same moment: its
 // upgrade, GIF or cover waits this long at most for IndexedDB's answer
 // (a few ms to tens on the phone) rather than walk a ladder it may know.
 const URLIDX_WAIT_MS = 400
 
-/** @param {UrlCacheEntry} entry */
-const expired = entry => Date.now() - entry.t >= (entry.u === null ? URLCACHE_NEG_TTL : URLCACHE_TTL)
+const expired = (entry: UrlCacheEntry) => Date.now() - entry.t >= (entry.u === null ? URLCACHE_NEG_TTL : URLCACHE_TTL)
 
 // Auto-delete: expired entries go on load and on every write, not only when
 // read again, so files never seen again do not linger.
 // Only called with the cache loaded.
 function dropExpired() {
   let n = 0
-  for (const k of Object.keys(/** @type {UrlCache} */ (urlCache)))
-    if (expired(/** @type {UrlCache} */ (urlCache)[k])) { delete /** @type {UrlCache} */ (urlCache)[k]; n++ }
+  for (const k of Object.keys(urlCache!))
+    if (expired(urlCache![k])) { delete urlCache![k]; n++ }
   return n
 }
 
-/** @returns {UrlCache} */
-export function loadUrlCache() {
+export function loadUrlCache(): UrlCache {
   if (!urlCache) {
-    urlCache = /** @type {UrlCache} */ (readJSON(URLCACHE_KEY, {}) || {})
+    urlCache = (readJSON(URLCACHE_KEY, {}) || {}) as UrlCache
     if (dropExpired()) scheduleUrlFlush()
     syncUrlIndex(urlCache)
   }
@@ -83,9 +73,8 @@ export function loadUrlCache() {
 }
 
 // An entry written: in memory now, in both stores at the next flush.
-/** @param {string} key @param {UrlCacheEntry} entry */
-function putUrl(key, entry) {
-  /** @type {UrlCache} */ (urlCache)[key] = entry
+function putUrl(key: string, entry: UrlCacheEntry) {
+  urlCache![key] = entry
   urlDirty.set(key, entry)
   scheduleUrlFlush()
 }
@@ -97,11 +86,8 @@ const MISS_CONFIRM_MS = 60 * 1000
 
 /**
  * A URL string, null for a confirmed miss, or undefined when nothing usable is cached.
- * @param {string} kind
- * @param {string | undefined} hash
- * @returns {string | null | undefined}
  */
-export function cacheGet(kind, hash) {
+export function cacheGet(kind: string, hash: string | undefined): string | null | undefined {
   if (!CFG.urlCache || !hash) return undefined
   const key = `${kind}:${hash}`
   const entry = loadUrlCache()[key]
@@ -110,19 +96,16 @@ export function cacheGet(kind, hash) {
     urlStats.hits++
     return entry.u
   }
-  if (entry) { delete /** @type {UrlCache} */ (urlCache)[key]; scheduleUrlFlush() }
+  if (entry) { delete urlCache![key]; scheduleUrlFlush() }
   urlStats.misses++
   return undefined
 }
 
 /**
  * Record the outcome of a ladder. Only definitive ones: a winner, or "none loads".
- * @param {string} kind
- * @param {string | undefined} hash
- * @param {string | null} url
- * @param {string | null} [previous]  what cacheGet gave before the ladder
+ * @param previous  what cacheGet gave before the ladder
  */
-export function cacheSet(kind, hash, url, previous) {
+export function cacheSet(kind: string, hash: string | undefined, url: string | null, previous?: string | null) {
   if (!CFG.urlCache || !hash) return
   const key = `${kind}:${hash}`
   const old = loadUrlCache()[key]
@@ -148,18 +131,16 @@ export function cacheSet(kind, hash, url, previous) {
 }
 
 // The cached winner goes first; if it fails, the full ladder runs behind it.
-/** @param {string[]} urls @param {string | null | undefined} cached */
-export const cachedFirst = (urls, cached) => typeof cached === 'string' ? [cached, ...urls.filter(u => u !== cached)] : urls
+export const cachedFirst = (urls: string[], cached: string | null | undefined) => typeof cached === 'string' ? [cached, ...urls.filter(u => u !== cached)] : urls
 
 // One file's remembered miss gone from both stores, so its ladder runs
 // again (a GIF held to rebuild it). A winner stays: it is still the file.
-/** @param {string} kind @param {string | undefined} hash */
-export function forgetMiss(kind, hash) {
+export function forgetMiss(kind: string, hash: string | undefined) {
   if (!CFG.urlCache || !hash) return
   const key = `${kind}:${hash}`
   const entry = loadUrlCache()[key]
   if (entry && entry.u !== null) return
-  delete /** @type {UrlCache} */ (urlCache)[key]
+  delete urlCache![key]
   urlDirty.set(key, null)   // IndexedDB may hold it even when memory does not
   scheduleUrlFlush()
 }
@@ -169,11 +150,9 @@ function scheduleUrlFlush() {
   if (!urlCacheTimer) urlCacheTimer = setTimeout(flushUrlCache, 3000)
 }
 
-/** @param {string[]} keys */
-const newestFirst = keys => keys.sort((a, b) => /** @type {UrlCache} */ (urlCache)[b].t - /** @type {UrlCache} */ (urlCache)[a].t)
+const newestFirst = (keys: string[]) => keys.sort((a, b) => urlCache![b].t - urlCache![a].t)
 
-/** @param {string[]} keys */
-const pickUrls = keys => /** @type {UrlCache} */ (Object.fromEntries(keys.map(k => [k, /** @type {UrlCache} */ (urlCache)[k]])))
+const pickUrls = (keys: string[]) => (Object.fromEntries(keys.map(k => [k, urlCache![k]])) as UrlCache)
 
 let lastLoggedHits = -1
 export function flushUrlCache() {
@@ -196,8 +175,7 @@ export function flushUrlCache() {
   }
 }
 
-/** @param {boolean} missesOnly */
-export function clearUrlCache(missesOnly) {
+export function clearUrlCache(missesOnly: boolean) {
   const c = loadUrlCache()
   let n = 0
   for (const k of Object.keys(c)) if (!missesOnly || c[k].u === null) { delete c[k]; n++ }
@@ -208,8 +186,7 @@ export function clearUrlCache(missesOnly) {
 
 // Resolves null where IndexedDB is not available (then localStorage alone,
 // as before 1.16.4).
-/** @returns {Promise<IDBDatabase | null>} */
-export function urlDb() {
+export function urlDb(): Promise<IDBDatabase | null> {
   if (!urlDbOpen) {
     urlDbOpen = new Promise(resolve => {
       try {
@@ -238,11 +215,9 @@ export function urlDb() {
 
 // One transaction on the index store; resolves once it completes.
 /**
- * @param {IDBTransactionMode} mode
- * @param {(store: IDBObjectStore) => void} work
- * @returns {Promise<boolean>} false without IndexedDB or when it failed
+ * @returns false without IndexedDB or when it failed
  */
-async function urlTx(mode, work) {
+async function urlTx(mode: IDBTransactionMode, work: (store: IDBObjectStore) => void): Promise<boolean> {
   const db = await urlDb()
   if (!db) return false
   try {
@@ -261,8 +236,7 @@ async function urlTx(mode, work) {
 
 // A card's thumbnail, as the card is scanned: its entries come from
 // IndexedDB with the others of the same scan, in one transaction.
-/** @param {string | null | undefined} src */
-export function urlPrefetch(src) {
+export function urlPrefetch(src: string | null | undefined) {
   if (!CFG.urlCache) return
   const hash = (thumbParts(src) || {}).hash
   if (!hash || urlAsked.has(hash)) return
@@ -272,17 +246,15 @@ export function urlPrefetch(src) {
   if (urlWanted.size > 1) return   // joins the batch already on its way
   // A microtask, not a timer: it still runs after the rest of this scan has
   // joined, and a timer waits behind the page's loading (~0.15 s measured).
-  /** @type {Promise<void>} */
-  const batch = new Promise(resolve => queueMicrotask(() => readWanted().then(resolve)))
+  const batch: Promise<void> = new Promise(resolve => queueMicrotask(() => readWanted().then(resolve)))
   const capped = Promise.race([batch, new Promise(resolve => setTimeout(resolve, URLIDX_WAIT_MS))])
-  urlReading = /** @type {Promise<void>} */ (capped)
+  urlReading = capped as Promise<void>
   capped.then(() => { if (urlReading === capped) urlReading = null })
 }
 
 // What to wait for before a ladder for this kind and hash: the read in
 // flight, when it may bring an entry memory does not have yet; else null.
-/** @param {string} kind @param {string | undefined} hash */
-export function urlPending(kind, hash) {
+export function urlPending(kind: string, hash: string | undefined) {
   if (!urlReading || !hash || !urlInFlight.has(hash)) return null
   return urlCache && urlCache[`${kind}:${hash}`] ? null : urlReading
 }
@@ -297,11 +269,9 @@ async function readWanted() {
   }
 }
 
-/** @param {string[]} hashes */
-async function readUrls(hashes) {
+async function readUrls(hashes: string[]) {
   const gen = urlGen
-  /** @type {Array<[string, UrlCacheEntry & { m?: number }]>} */
-  const found = []
+  const found: Array<[string, UrlCacheEntry & { m?: number }]> = []
   const ok = await urlTx('readonly', store => {
     for (const hash of hashes) {
       for (const kind of URL_KINDS) {
@@ -344,8 +314,7 @@ async function flushUrlIndex() {
 // Once per page: localStorage entries newer than the last batch in go to
 // IndexedDB (all of them the first time, when nothing was ever sent), and
 // a moment later the index sweeps itself.
-/** @param {UrlCache} c */
-function syncUrlIndex(c) {
+function syncUrlIndex(c: UrlCache) {
   if (!CFG.urlCache) return
   const since = Number(readJSON(URLIDX_SYNC_KEY, 0)) || 0
   // >=: an entry written in the same millisecond the last batch was taken missed it.
@@ -362,11 +331,8 @@ function sweepUrlIndex() {
   let dropped = 0
   /**
    * Deletes what the cursor walks over, while drop() says so; then next().
-   * @param {IDBRequest<IDBCursorWithValue | null>} req
-   * @param {(value: UrlCacheEntry) => boolean} drop
-   * @param {() => void} [next]
    */
-  const walk = (req, drop, next) => {
+  const walk = (req: IDBRequest<IDBCursorWithValue | null>, drop: (value: UrlCacheEntry) => boolean, next?: () => void) => {
     req.onsuccess = () => {
       const cur = req.result
       if (!cur) { if (next) next(); return }
@@ -378,8 +344,7 @@ function sweepUrlIndex() {
   }
   urlTx('readwrite', store => {
     const byAge = store.index('t')
-    /** @param {IDBRequest<IDBCursorWithValue | null>} req */
-    const expiredMisses = req => {
+    const expiredMisses = (req: IDBRequest<IDBCursorWithValue | null>) => {
       req.onsuccess = () => {
         const cur = req.result
         if (!cur) { oldOnes(); return }
@@ -415,8 +380,7 @@ export async function urlIndexStats() {
 
 // The clear behind clearUrlCache: reads in flight drop their answer, and
 // writes not sent yet go too, or they would bring the cleared back.
-/** @param {boolean} missesOnly */
-function clearUrlIndex(missesOnly) {
+function clearUrlIndex(missesOnly: boolean) {
   urlGen++
   // A hash whose read this drops may be asked again. Cards already scanned
   // are not asked again: what they miss, their ladder writes back.

@@ -106,11 +106,11 @@ O usuário quer trazer vários recursos do app para o script no futuro (2026-11-
 - `core/site.js` — `VERSION`, `SITE`, `SITE_PROFILES`/`PROFILE` (lista, card, cores, sugestões) e os seletores `LIST`, `THUMB`, `ITEM`
 - `core/config.js` — configuração persistida (`IBH_CFG`, `DEFAULTS`, `NEEDS_RELOAD`, `CFG`, `readJSON`/`writeJSON`); o `setCfg` fica em `storage/storage.js`, junto do `backupCfg` que ele chama
 - `core/strings.js` — as duas tabelas de `I18N` (não importa nada: o `check-i18n` o carrega)
-- `core/i18n.js` — `resolveLang`, `LANG`, `t`
+- `core/i18n.ts` — `resolveLang`, `LANG`, `t`
 - `core/log.ts` — buffer de 250, níveis, espelho no console sob `debug`
 - `core/state.ts` — `STATE` observável pelo painel, `touch`
 - `urls/hosts.ts` — resolução de servidor de imagens: `HOSTS`, `imageBase`, `thumbParts`, `fileCandidates`
-- `urls/url-cache.js` — cache de endereços: `cacheGet`, `cacheSet`, `cachedFirst`, `flushUrlCache`, `clearUrlCache`; o lado IndexedDB (`urlDb`, `urlPrefetch`, `urlPending`, `readUrls`, `flushUrlIndex`, `syncUrlIndex`, `sweepUrlIndex`, `clearUrlIndex`)
+- `urls/url-cache.ts` — cache de endereços: `cacheGet`, `cacheSet`, `cachedFirst`, `flushUrlCache`, `clearUrlCache`; o lado IndexedDB (`urlDb`, `urlPrefetch`, `urlPending`, `readUrls`, `flushUrlIndex`, `syncUrlIndex`, `sweepUrlIndex`, `clearUrlIndex`)
 - `video/limits.ts` — `pastDecoder`, a mesma regra do `vreduce::fits` do app (não importa nada: o MCP o carrega)
 - `video/mp4.ts` — o leitor de MP4: `mp4Boxes`, `mp4Child`, `mp4VideoTrack`, `avcConfig` (não importa nada: o `wasm-test` e o MCP o carregam)
 - `thumbs/badges.js` — ⚠️ e duração no cartão (`markPastDecoder`, `markDuration`, `cardBadge`)
@@ -120,7 +120,7 @@ O usuário quer trazer vários recursos do app para o script no futuro (2026-11-
 - `thumbs/memory.js` — **D.** gerenciamento de memória: `farViewport`, `releaseFar`, `pinHeight`, `onNodesRemoved`, `releaseAll`, varredura a cada 15 s
 - `scrub/scrub.js` — **C.** prévia de cenas: arraste na miniatura (ou segurar, `scrubMode`): `seekFraction`, `previewLoad`, `previewStop`, `borrowDecoder`, `onScrubDown/Move/Up`; o slideshow por seek (`seekShow`, dois vídeos em revezamento, `tickSlide`), `holdVideoShow`, `playShow`; o segurar que toca e continua de onde parou (`holdResume`: `resumePoint`, `keepResume`, `forgetResume`), os chips do cartão (`holdChip`, `soundChip`, `lingerChips`, `removeChips`, `coverBack`, `flipSound`), deslizar para mover o vídeo (`holdRub`: `makeRub`, `rubMove`, também usados pelo player); `logSlideStats`, `installVideoScrub`
 - `scrub/reel.js` — a fita de keyframes do segurar (`slideReel`): `buildReel` lê o `moov` e os keyframes com Range pelo `GM_xmlhttpRequest`; `showReelWasm` decodifica cada keyframe e desenha num canvas; sem ele, `showReelVideo` toca o MP4 montado por `reelBlob`; se a fita falha, `reelFailed` cai no slideshow por seek
-- `scrub/h264.js` — o decodificador em WebAssembly: `h264Decoder`, `decodeKeyframe`, `dropH264`
+- `scrub/h264.ts` — o decodificador em WebAssembly: `h264Decoder`, `decodeKeyframe`, `dropH264`
 - `modal/modal.js` — **E.** o modal de post: `MODAL_CSS`, `LIKE_CSS`, `buildModal`, `flash`, as marcas de ♥/▲, `readCookie`, `insidePanel`
 - `modal/open.js` — `openModal`, `closeModal`, `stepModal`, `suspendPage`, `resumePage`, próximo post pronto (`preloadAhead`), `installVideoModal`
 - `modal/media.js` — `showVideo`, `showImage`, `raceImage`, `loadModalOriginal`, `sniffVideo`, `raceVideoAndGif`
@@ -140,8 +140,8 @@ O usuário quer trazer vários recursos do app para o script no futuro (2026-11-
 - `page/bulk.js` — favoritar em massa (`setBulkMode`, `bulkFavorite`, `onBulkClick`), `pageToast`
 - `page/raw-hold.js` — segurar para o raw (`holdRaw`) e para refazer um GIF (`onRawTouchStart`, `loadRaw`, `undoRaw`)
 - `page/double-tap.js` — toque duplo favorita (`onDoubleTapClick`)
-- `page/feed-css.js`, `page/theme.js`, `page/page-css.js` — `feedCss`/`applyFeed`, `THEME_CSS`/`applySiteTheme`, `injectPageCSS`
-- `page/ads.js` — `blockAds`: `AD_POLICY`, `applyAdBlock`, `installAdBlock`
+- `page/feed-css.js`, `page/theme.ts`, `page/page-css.js` — `feedCss`/`applyFeed`, `THEME_CSS`/`applySiteTheme`, `injectPageCSS`
+- `page/ads.ts` — `blockAds`: `AD_POLICY`, `applyAdBlock`, `installAdBlock`
 - `diag.js` — diagnóstico: `probeVideoUrls`, `logSnapshot`, `freeMemory`, `redoThumbs`, `tabChannel`
 - `panel/panel.js` — painel em Shadow DOM, `el`, `renderStatus`, `copyLog`, `mountPanel`, `rebuildPanel`
 - `panel/nav.js` — botões flutuantes (`ensureFeedNav`, `buildFeedNav`, `jumpPost`, `pageTarget`)

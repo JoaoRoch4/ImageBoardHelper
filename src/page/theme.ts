@@ -49,8 +49,7 @@ export const THEME_CSS = `
     html.ibh-theme hr { border: none !important; border-top: 1px solid ${LINE} !important; }
   `
 
-/** @type {boolean | null} */
-let themeOn = null
+let themeOn: boolean | null = null
 
 export function applySiteTheme() {
   const on = !!CFG.siteTheme

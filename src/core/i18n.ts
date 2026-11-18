@@ -2,14 +2,13 @@
 import { CFG } from './config'
 import { I18N } from './strings'
 
-/** @typedef {keyof typeof I18N} Lang */
-/** @typedef {typeof I18N.en} Strings */
+export type Lang = keyof typeof I18N
+export type Strings = typeof I18N.en
 
 /**
  * Active language: explicit choice first, otherwise the browser's.
- * @returns {Lang}
  */
-export function resolveLang() {
+export function resolveLang(): Lang {
   if (CFG.lang && I18N[CFG.lang]) return CFG.lang
   return String(navigator.language || 'en').toLowerCase().startsWith('pt')
     ? 'pt-BR'
@@ -17,11 +16,9 @@ export function resolveLang() {
 }
 
 export let LANG = resolveLang()
-/** @param {typeof LANG} v */
-export function setLang(v) { LANG = v }
+export function setLang(v: typeof LANG) { LANG = v }
 
-/** @type {<K extends keyof Strings>(key: K) => Strings[K]} */
-export const t = key => {
+export const t: <K extends keyof Strings>(key: K) => Strings[K] = key => {
   const value = I18N[LANG][key]
   return value === undefined ? I18N.en[key] : value
 }

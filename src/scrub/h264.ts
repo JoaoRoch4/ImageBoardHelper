@@ -6,28 +6,24 @@ import { describeError, info, warn } from '../core/log'
 // script. Keyframes decode straight into a canvas, scaled down to the card:
 // no <video>, no hardware decoder slot, any size. The decoder's imports are
 // system calls it hardly uses (its logging is off), answered by stubs.
-/**
- * The decoder's exports (wasm/h264dec.c).
- * @typedef {object} H264
- * @property {WebAssembly.Memory} memory
- * @property {() => void} [_initialize]
- * @property {(size: number) => number} buf_alloc
- * @property {(ptr: number) => void} buf_free
- * @property {(cfg: number, size: number) => number} dec_open      0 when it took the stream
- * @property {(ptr: number, size: number, maxW: number) => number} dec_frame   0 when it decoded
- * @property {() => number} dec_width
- * @property {() => number} dec_height
- * @property {() => number} dec_rgba     where the last frame's pixels are
- * @property {() => void} dec_close
- */
-/** @type {H264 | null} */
-let h264 = null          // the decoder's exports, once loaded
-/** @type {Promise<H264> | null} */
-let h264Loading = null
+// The decoder's exports (wasm/h264dec.c).
+export type H264 = {
+  memory: WebAssembly.Memory,
+  _initialize?: () => void,
+  buf_alloc: (size: number) => number,
+  buf_free: (ptr: number) => void,
+  dec_open: (cfg: number, size: number) => number,   // 0 when it took the stream
+  dec_frame: (ptr: number, size: number, maxW: number) => number,   // 0 when it decoded
+  dec_width: () => number,
+  dec_height: () => number,
+  dec_rgba: () => number,   // where the last frame's pixels are
+  dec_close: () => void,
+}
+let h264: H264 | null = null          // the decoder's exports, once loaded
+let h264Loading: Promise<H264> | null = null
 export let h264Broken = ''      // why it cannot load, after a first try: the <video> reel from then on
 
-/** @returns {Promise<H264>} */
-export function h264Decoder() {
+export function h264Decoder(): Promise<H264> {
   if (h264) return Promise.resolve(h264)
   if (!h264Loading) {
     h264Loading = (async () => {
@@ -35,12 +31,10 @@ export function h264Decoder() {
       const t0 = performance.now()
       const bytes = await (await fetch(GM_getResourceURL('h264dec'))).arrayBuffer()
       const mod = await WebAssembly.compile(bytes)
-      /** @type {WebAssembly.Memory | null} */
-      let mem = null
+      let mem: WebAssembly.Memory | null = null
       // Only called by the decoder, which runs once mem is set (start-up is _initialize, below).
-      const view = () => new DataView(/** @type {WebAssembly.Memory} */ (mem).buffer)
-      /** @type {Record<string, (...args: number[]) => number>} */
-      const calls = {
+      const view = () => new DataView(mem!.buffer)
+      const calls: Record<string, (...args: number[]) => number> = {
         fd_write: (fd, iov, count, written) => {   // nothing to show: count the bytes as written
           let n = 0
           for (let i = 0; i < count; i++) n += view().getUint32(iov + i * 8 + 4, true)
@@ -49,15 +43,14 @@ export function h264Decoder() {
         },
         environ_sizes_get: (count, size) => { view().setUint32(count, 0, true); view().setUint32(size, 0, true); return 0 },
         clock_time_get: (id, precision, out) => { view().setBigUint64(out, BigInt(Math.round(performance.now() * 1e6)), true); return 0 },
-        random_get: (buf, len) => { crypto.getRandomValues(new Uint8Array(/** @type {WebAssembly.Memory} */ (mem).buffer, buf, len)); return 0 },
+        random_get: (buf, len) => { crypto.getRandomValues(new Uint8Array(mem!.buffer, buf, len)); return 0 },
         proc_exit: code => { throw new Error(`decoder exited (${code})`) },
       }
-      /** @type {WebAssembly.Imports} */
-      const imports = {}
+      const imports: WebAssembly.Imports = {}
       for (const imp of WebAssembly.Module.imports(mod)) {
         (imports[imp.module] = imports[imp.module] || {})[imp.name] = calls[imp.name] || (() => 0)
       }
-      const x = /** @type {H264} */ (/** @type {unknown} */ ((await WebAssembly.instantiate(mod, imports)).exports))
+      const x = (await WebAssembly.instantiate(mod, imports)).exports as unknown as H264
       mem = x.memory
       if (x._initialize) x._initialize()   // the C library's own start-up
       info(`keyframe decoder: WebAssembly ready (${Math.round(bytes.byteLength / 1024)} KB in ${Math.round(performance.now() - t0)} ms)`)
@@ -79,12 +72,7 @@ export function dropH264() {
 }
 
 // One AVCC sample in, an ImageData of at least maxW pixels across out.
-/**
- * @param {H264} x
- * @param {Uint8Array} bytes
- * @param {number} maxW
- */
-export function decodeKeyframe(x, bytes, maxW) {
+export function decodeKeyframe(x: H264, bytes: Uint8Array, maxW: number) {
   const ptr = x.buf_alloc(bytes.length)
   new Uint8Array(x.memory.buffer, ptr, bytes.length).set(bytes)
   const r = x.dec_frame(ptr, bytes.length, maxW)

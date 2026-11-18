@@ -717,7 +717,7 @@
     }
   };
 
-  // src/core/i18n.js
+  // src/core/i18n.ts
   function resolveLang() {
     if (CFG.lang && I18N[CFG.lang]) return CFG.lang;
     return String(navigator.language || "en").toLowerCase().startsWith("pt") ? "pt-BR" : "en";
@@ -774,7 +774,7 @@
     if (onStateChange) onStateChange();
   }, "touch");
 
-  // src/urls/url-cache.js
+  // src/urls/url-cache.ts
   var URLCACHE_KEY = `IBH_URLCACHE_${SITE}`;
   var URLCACHE_MAX = 1500;
   var URLCACHE_TTL = 30 * 24 * 60 * 60 * 1e3;
@@ -796,16 +796,9 @@
   var expired = /* @__PURE__ */ __name((entry) => Date.now() - entry.t >= (entry.u === null ? URLCACHE_NEG_TTL : URLCACHE_TTL), "expired");
   function dropExpired() {
     let n = 0;
-    for (const k of Object.keys(
-      /** @type {UrlCache} */
-      urlCache
-    ))
-      if (expired(
-        /** @type {UrlCache} */
-        urlCache[k]
-      )) {
-        delete /** @type {UrlCache} */
-        urlCache[k];
+    for (const k of Object.keys(urlCache))
+      if (expired(urlCache[k])) {
+        delete urlCache[k];
         n++;
       }
     return n;
@@ -813,8 +806,7 @@
   __name(dropExpired, "dropExpired");
   function loadUrlCache() {
     if (!urlCache) {
-      urlCache = /** @type {UrlCache} */
-      readJSON(URLCACHE_KEY, {}) || {};
+      urlCache = readJSON(URLCACHE_KEY, {}) || {};
       if (dropExpired()) scheduleUrlFlush();
       syncUrlIndex(urlCache);
     }
@@ -841,8 +833,7 @@
       return entry.u;
     }
     if (entry) {
-      delete /** @type {UrlCache} */
-      urlCache[key];
+      delete urlCache[key];
       scheduleUrlFlush();
     }
     urlStats.misses++;
@@ -877,8 +868,7 @@
     const key = `${kind}:${hash}`;
     const entry = loadUrlCache()[key];
     if (entry && entry.u !== null) return;
-    delete /** @type {UrlCache} */
-    urlCache[key];
+    delete urlCache[key];
     urlDirty.set(key, null);
     scheduleUrlFlush();
   }
@@ -887,19 +877,8 @@
     if (!urlCacheTimer) urlCacheTimer = setTimeout(flushUrlCache, 3e3);
   }
   __name(scheduleUrlFlush, "scheduleUrlFlush");
-  var newestFirst = /* @__PURE__ */ __name((keys) => keys.sort((a, b) => (
-    /** @type {UrlCache} */
-    urlCache[b].t - /** @type {UrlCache} */
-    urlCache[a].t
-  )), "newestFirst");
-  var pickUrls = /* @__PURE__ */ __name((keys) => (
-    /** @type {UrlCache} */
-    Object.fromEntries(keys.map((k) => [
-      k,
-      /** @type {UrlCache} */
-      urlCache[k]
-    ]))
-  ), "pickUrls");
+  var newestFirst = /* @__PURE__ */ __name((keys) => keys.sort((a, b) => urlCache[b].t - urlCache[a].t), "newestFirst");
+  var pickUrls = /* @__PURE__ */ __name((keys) => Object.fromEntries(keys.map((k) => [k, urlCache[k]])), "pickUrls");
   var lastLoggedHits = -1;
   function flushUrlCache() {
     clearTimeout(urlCacheTimer);
@@ -988,8 +967,7 @@
     if (urlWanted.size > 1) return;
     const batch = new Promise((resolve) => queueMicrotask(() => readWanted().then(resolve)));
     const capped = Promise.race([batch, new Promise((resolve) => setTimeout(resolve, URLIDX_WAIT_MS))]);
-    urlReading = /** @type {Promise<void>} */
-    capped;
+    urlReading = capped;
     capped.then(() => {
       if (urlReading === capped) urlReading = null;
     });
@@ -1730,7 +1708,7 @@
   }
   __name(avcConfig, "avcConfig");
 
-  // src/scrub/h264.js
+  // src/scrub/h264.ts
   var h264 = null;
   var h264Loading = null;
   var h264Broken = "";
@@ -1743,10 +1721,7 @@
         const bytes = await (await fetch(GM_getResourceURL("h264dec"))).arrayBuffer();
         const mod = await WebAssembly.compile(bytes);
         let mem = null;
-        const view = /* @__PURE__ */ __name(() => new DataView(
-          /** @type {WebAssembly.Memory} */
-          mem.buffer
-        ), "view");
+        const view = /* @__PURE__ */ __name(() => new DataView(mem.buffer), "view");
         const calls = {
           fd_write: /* @__PURE__ */ __name((fd, iov, count, written) => {
             let n = 0;
@@ -1764,12 +1739,7 @@
             return 0;
           }, "clock_time_get"),
           random_get: /* @__PURE__ */ __name((buf, len) => {
-            crypto.getRandomValues(new Uint8Array(
-              /** @type {WebAssembly.Memory} */
-              mem.buffer,
-              buf,
-              len
-            ));
+            crypto.getRandomValues(new Uint8Array(mem.buffer, buf, len));
             return 0;
           }, "random_get"),
           proc_exit: /* @__PURE__ */ __name((code) => {
@@ -1780,11 +1750,7 @@
         for (const imp of WebAssembly.Module.imports(mod)) {
           (imports[imp.module] = imports[imp.module] || {})[imp.name] = calls[imp.name] || (() => 0);
         }
-        const x = (
-          /** @type {H264} */
-          /** @type {unknown} */
-          (await WebAssembly.instantiate(mod, imports)).exports
-        );
+        const x = (await WebAssembly.instantiate(mod, imports)).exports;
         mem = x.memory;
         if (x._initialize) x._initialize();
         info(`keyframe decoder: WebAssembly ready (${Math.round(bytes.byteLength / 1024)} KB in ${Math.round(performance.now() - t0)} ms)`);
@@ -3060,7 +3026,7 @@
   }
   __name(switchFeed, "switchFeed");
 
-  // src/page/theme.js
+  // src/page/theme.ts
   var THEME_CSS = `
     html.ibh-theme, html.ibh-theme body { background: #182125 !important; color: #e6eef0 !important; }
     html.ibh-theme body *:not(img):not(video):not(canvas):not(iframe):not(svg):not(path):not([data-ibh-ui]) {
@@ -8887,7 +8853,7 @@ host: ${STATE.imageBase}
   }
   __name(openTapped, "openTapped");
 
-  // src/page/ads.js
+  // src/page/ads.ts
   var SITE_DOMAIN = SITE.split(".").slice(-2).join(".");
   var OWN_HOSTS = `'self' https://${SITE_DOMAIN} https://*.${SITE_DOMAIN} https://challenges.cloudflare.com`;
   var AD_POLICY = `script-src ${OWN_HOSTS} ${PROFILE.scriptHosts.join(" ")} 'unsafe-inline' 'unsafe-eval' blob: moz-extension:; frame-src ${OWN_HOSTS} blob:`;
