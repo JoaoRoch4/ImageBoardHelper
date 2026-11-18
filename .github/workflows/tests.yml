@@ -54,12 +54,16 @@ jobs:
       - uses: ./.github/actions/node-modules
       # Playwright's Firefox and the .deb files of the system libraries it
       # needs, kept by the cache: the browser under the Playwright version,
-      # the libraries under the runner's image too, since the image decides
-      # which ones are missing. Fetching both took 14-19 s in every job; a
+      # the libraries under the runner's system too (/etc/os-release: the
+      # ImageOS and ImageVersion variables are empty on these runners), since
+      # the system decides which ones are missing. Fetching both took 14-19 s in every job; a
       # hit installs the kept .debs with dpkg, no apt-get update, no download.
-      - name: Playwright's version
+      - name: Playwright's version and the runner's system
         id: playwright
-        run: echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+        run: |
+          echo "version=$(node -p "require('playwright/package.json').version")" >> "$GITHUB_OUTPUT"
+          . /etc/os-release
+          echo "system=$ID$VERSION_ID-$(uname -m)" >> "$GITHUB_OUTPUT"
       - name: Firefox and its libraries, from the cache
         id: firefox
         uses: actions/cache@v6
@@ -67,7 +71,7 @@ jobs:
           path: |
             ~/.cache/ms-playwright
             ~/firefox-debs
-          key: playwright-firefox-${{ env.ImageOS }}-${{ env.ImageVersion }}-${{ steps.playwright.outputs.version }}
+          key: playwright-firefox-${{ steps.playwright.outputs.system }}-${{ steps.playwright.outputs.version }}
       - name: Firefox and its libraries, downloaded
         if: steps.firefox.outputs.cache-hit != 'true'
         run: |
