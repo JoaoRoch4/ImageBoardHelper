@@ -146,6 +146,7 @@ O usuário quer trazer vários recursos do app para o script no futuro (2026-11-
 - `panel/panel.ts` — painel em Shadow DOM, `el`, `renderStatus`, `copyLog`, `mountPanel`, `rebuildPanel`
 - `panel/nav.ts` — botões flutuantes (`ensureFeedNav`, `buildFeedNav`, `jumpPost`, `pageTarget`)
 - `main.ts` — o arranque: o que rodava entre as seções (o `pagehide`, o `urlDb()`, o `tabChannel`, o `pointerdown` do painel) e depois o `MutationObserver`, os listeners, `boot` e `__ibh` (na `unsafeWindow`)
+- `logo.svg`, `logo.png` (256 px) — a logo (2026-11-18, escolha do usuário): o hexágono do TypeScript com as orelhas e a cauda da raposa do gelbooru, nas cores do TS. Fica fora do script gerado (o build só segue os imports do `main.ts`; o pedido foi "põe no src, não no script"), então não há `@icon` no cabeçalho
 
 ---
 
