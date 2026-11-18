@@ -90,6 +90,28 @@ const logLine = (page, re, timeout = 15000) => page.waitForFunction(
     const shadowHosts = await page.evaluate(() => [...document.querySelectorAll('*')].filter(e => e.shadowRoot).length)
     check('panel mounted', shadowHosts >= 1, `${shadowHosts} shadow host(s)`)
     check('site search bar', await page.locator('#ibh-sitesearch').count() === 1)
+    // A recent search can run to 160 characters, and a select is as wide as
+    // its longest option. On rule34's home page the bar's box sits in a flex
+    // column that centres it and takes its width from what it holds, and that
+    // one option spilled it past the screen on both sides (2.0.0). The same
+    // structure here, with a copy of the bar: the box keeps to the column.
+    const fits = await page.evaluate(() => {
+      const column = document.createElement('div')
+      column.style.cssText = 'display: flex; flex-direction: column; align-items: center; width: 300px'
+      const space = document.createElement('div')
+      const copy = document.getElementById('ibh-sitesearch').cloneNode(true)
+      copy.removeAttribute('id')
+      const pick = copy.querySelector('select.saved')
+      pick.hidden = false
+      pick.add(new Option('enormous_breasts blonde · ( giga* | hyper* | massive* | enormous* ) '.repeat(3)))
+      space.appendChild(copy)
+      column.appendChild(space)
+      document.body.appendChild(column)
+      const width = Math.round(space.getBoundingClientRect().width)
+      column.remove()
+      return width
+    })
+    check('a long recent search keeps the bar inside its box', fits <= 300, `the box is ${fits} px wide in a 300 px column`)
     // Tag suggestions: typing in the bar asks the site; a tap swaps the word being typed.
     const bar = page.locator('#ibh-sitesearch input[type="search"]').first()
     await bar.click()

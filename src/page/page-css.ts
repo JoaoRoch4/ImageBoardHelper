@@ -11,7 +11,9 @@ import { ADS_CSS } from './ads'
 const NATIVE_MARK_CSS = `${LIST} img.webm-thumb { border: 3px solid rgb(0, 0, 255); box-sizing: border-box; }`
 
 const FAVSEARCH_CSS = `
-    .ibh-search { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0 12px; position: relative; }
+    .ibh-search { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0 12px; position: relative; min-width: 0; max-width: 100%; }
+    .ibh-search > * { min-width: 0; max-width: 100%; box-sizing: border-box; }
+    .ibh-search select { text-overflow: ellipsis; }
     .ibh-suggest { position: absolute; z-index: 30; margin: 0 !important; padding: 4px 0 !important; list-style: none;
       max-height: 50vh; overflow-y: auto; overscroll-behavior: contain; user-select: none; -webkit-touch-callout: none;
       background: #1f2b30 !important; border: 1px solid ${LINE} !important;
@@ -28,7 +30,14 @@ const FAVSEARCH_CSS = `
     .ibh-search input.min { width: 96px; padding: 7px 8px; font-size: 14px; box-sizing: border-box; }
     .ibh-search select, .ibh-search button { padding: 7px 12px; font-size: 14px; }
     .ibh-search .st { flex: 1 1 100%; font-size: 12px; opacity: .85; }
-    .ibh-search select.saved { flex: 1 1 100%; }
+    /* A select is as wide as its longest option, and a recent search can run
+       to 160 characters. Where the bar's box takes its width from what it
+       holds (rule34's home page, centred in a flex column; a shrink-to-fit
+       column), that one option widened the box past the screen on both
+       sides: max-width does not stop it, since Firefox still counts the
+       option when it measures the content. contain: inline-size measures
+       the lists as if empty, and flex-basis 100% then fills the bar's line. */
+    .ibh-search select.saved { flex: 1 1 100%; contain: inline-size; }
     .ibh-search select.saved[hidden] { display: none; }
     #ibh-favmore { display: block; margin: 14px auto; padding: 9px 18px; font-size: 14px; }
     #ibh-favmore[hidden] { display: none; }
