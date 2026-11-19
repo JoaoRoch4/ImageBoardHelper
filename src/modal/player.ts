@@ -41,7 +41,7 @@ function showBadge(text: string, sticky?: boolean) {
 function playerRub(video: HTMLVideoElement, press: { x: number, rate: number }, layer: HTMLElement): Rub {
   let playing = false
   const box = modal.box
-  return makeRub(video, press.x, () => layer.getBoundingClientRect().width, {
+  return makeRub(video, press.x, () => layer.getBoundingClientRect(), {
     alive: () => !!modal && modal.open && modal.box === box,
     begin: () => {
       playing = !video.paused

@@ -11,7 +11,7 @@
     "test:gif": "npm run -s build && node tools/gif-test.js",
     "test:fav": "npm run -s build && node tools/fav-test.js",
     "test:url": "npm run -s build && node tools/url-test.js",
-    "test:tools": "node --test tools/build.test.mts tools/rish.test.mts tools/phone-server.test.mts tools/video-reducer.test.mts"
+    "test:tools": "node --test tools/build.test.mts tools/rish.test.mts tools/phone-server.test.mts tools/video-reducer.test.mts tools/rub.test.mts"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

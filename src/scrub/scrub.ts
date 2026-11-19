@@ -13,6 +13,7 @@ import { asElement, insidePanel, modal } from '../modal/modal'
 import { setCfg } from '../storage/storage'
 import { mmss } from '../modal/player'
 import { postId } from '../modal/media'
+import { rubTarget } from './rub-target'
 
 // ═══════════════════════════════════════════════════════════
 // C. Scene preview
@@ -624,13 +625,13 @@ function flipSound() {
 // ── Rub: hold, then slide to move the video (holdRub) ──
 // On a thumbnail whose hold plays the video, and on the post's player once
 // a hold has started, sliding the finger sideways moves the video: to the
-// right forward, to the left back, from wherever it is. Where the finger
-// sits doesn't matter, only how far it slides: the width under the finger
-// (the card, the player) spans the whole video, at most RUB_SPAN_S. While
+// right forward, to the left back, from wherever it is. From where a slide
+// starts, the way to the right edge of the area under the finger (the
+// card, the player) is what is left of the video, and to its left edge
+// what came before (rubTarget, the app's rule too; 2.1.2). While
 // the finger moves, the video waits on the frame there (fastSeek: the
 // nearest keyframe, quick to decode); once it rests, the exact frame, and
 // the next slide starts from there.
-const RUB_SPAN_S = 120
 const RUB_REST_MS = 250
 
 // A finger rubbing one video; makeRub builds it.
@@ -643,13 +644,13 @@ export type Rub = {
 
 /**
  * @param x0   px, where the finger went down
- * @param width   px that span the whole video
+ * @param area   the area under the finger (its left edge and width, px)
  * @param hooks
  *   alive: the gesture still runs; begin: a rub starts (before the pause);
  *   paint: the target changed; rest: the finger rests on the exact frame;
  *   lift: the finger lifted mid-rub, the video on the exact frame
  */
-export function makeRub(v: HTMLVideoElement, x0: number, width: () => number, hooks: { alive(): boolean, begin(): void, paint(t: number): void, rest(): void, lift?(): void }): Rub {
+export function makeRub(v: HTMLVideoElement, x0: number, area: () => { left: number, width: number }, hooks: { alive(): boolean, begin(): void, paint(t: number): void, rest(): void, lift?(): void }): Rub {
   let active = false
   let count = 0
   let x = x0          // where the finger was when this rub began (or rested)
@@ -693,8 +694,8 @@ export function makeRub(v: HTMLVideoElement, x0: number, width: () => number, ho
         hooks.begin()
         v.pause()
       }
-      const span = Math.min(v.duration, RUB_SPAN_S)
-      target = Math.min(v.duration - 0.05, Math.max(0, t + ((nx - x) / (width() || 1)) * span))
+      const a = area()
+      target = rubTarget(x - a.left, t, nx - a.left, a.width, v.duration)
       hooks.paint(target)
       if (!busy) seek()
       clearTimeout(still)
@@ -717,7 +718,7 @@ export function makeRub(v: HTMLVideoElement, x0: number, width: () => number, ho
 function rubMove(s: Scrub, x: number) {
   const v = s.video
   if (!s.rub) {
-    s.rub = makeRub(v, s.x0, () => s.card.getBoundingClientRect().width, {
+    s.rub = makeRub(v, s.x0, () => s.card.getBoundingClientRect(), {
       alive: () => scrub === s,
       begin: () => { s.stats.rubs = (s.stats.rubs || 0) + 1 },
       paint: at => {

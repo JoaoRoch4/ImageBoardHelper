@@ -1,5 +1,16 @@
 # Changelog
 
+## 2.1.2
+
+- The hold's slide (`holdRub`) reaches both ends of the video, on a
+  thumbnail and in the post's player: from where a slide starts, the way
+  to the right edge of the card (or the player) is what is left of the
+  video, and the way to its left edge what came before, whatever its
+  length. Until now the width under the finger spanned the whole video,
+  at most 2 minutes, so a long video's ends were out of reach. The same
+  rule as QtMediaPlayer's thumbnails (`rubTarget`, with the app's test
+  cases in `tools/rub.test.mts`)
+
 ## 2.1.1
 
 - The raw hold's mark is a small RAW square in the card's top left, under

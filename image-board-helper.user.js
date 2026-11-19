@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Image Board Helper
 // @namespace    joao.imageboardhelper
-// @version      2.1.1
+// @version      2.1.2
 // @description  For the phone, on Gelbooru boards (rule34.xxx, gelbooru.com and others): an in-page post viewer, sharp feed with columns, real video covers and scene previews, inline GIFs, favorites search, autopager, Watch later, downloads, and memory care
 // @author       João
 // @icon         https://raw.githubusercontent.com/JoaoRoch4/ImageBoardHelper/105fa38fc20327b5a6b067538c0cc880d2cdf196/src/logo.png
@@ -74,7 +74,7 @@
   "use strict";
 
   // src/core/site.ts
-  const VERSION = '2.1.1'
+  const VERSION = '2.1.2'
   const SITE = location.hostname.replace(/^www\./, '')
 
   // The site's thumbnail list. Gelbooru 0.2 sites (rule34, safebooru, xbooru)
@@ -7262,6 +7262,40 @@
     }
   }
 
+  // src/scrub/rub-target.ts
+  // Imports nothing, so the tools load it too.
+
+  // Where a rub takes the video (makeRub), the same rule as the app's
+  // PreviewRub (QtMediaPlayer's src/previewrub.cpp, targetAt; its
+  // tests/tst_previewrub.cpp has the cases to keep, here in
+  // tools/rub.test.mts). The user's request of 2026-11-18: the sensitivity
+  // follows the finger, the span's ends and the video's length. From where
+  // a slide starts, the way to the span's right edge is what is left of the
+  // video, and the way to its left edge what came before, so both ends are
+  // always in reach (until 2.1.1 the span was the whole video, at most
+  // 2 min). Short of the very end, where a player stops instead of showing
+  // a frame.
+  const END_MARGIN_S = 0.05
+
+  /**
+   * @param from      px from the span's left edge, where this slide started
+   * @param t0        s, the video's time then
+   * @param x         px from the span's left edge, the finger now
+   * @param width     px, the span's width
+   * @param duration  s
+   * @returns s, within the video
+   */
+  function rubTarget(from, t0, x, width, duration) {
+    let t = t0
+    if (x >= from) {
+      const room = width - from
+      if (room > 0) t = t0 + Math.min(1, (x - from) / room) * (duration - t0)
+    } else if (from > 0) {
+      t = t0 - Math.min(1, (from - x) / from) * t0
+    }
+    return Math.min(Math.max(0, duration - END_MARGIN_S), Math.max(0, t))
+  }
+
   // src/scrub/scrub.ts
   // ═══════════════════════════════════════════════════════════
   // C. Scene preview
@@ -7842,26 +7876,26 @@
   // ── Rub: hold, then slide to move the video (holdRub) ──
   // On a thumbnail whose hold plays the video, and on the post's player once
   // a hold has started, sliding the finger sideways moves the video: to the
-  // right forward, to the left back, from wherever it is. Where the finger
-  // sits doesn't matter, only how far it slides: the width under the finger
-  // (the card, the player) spans the whole video, at most RUB_SPAN_S. While
+  // right forward, to the left back, from wherever it is. From where a slide
+  // starts, the way to the right edge of the area under the finger (the
+  // card, the player) is what is left of the video, and to its left edge
+  // what came before (rubTarget, the app's rule too; 2.1.2). While
   // the finger moves, the video waits on the frame there (fastSeek: the
   // nearest keyframe, quick to decode); once it rests, the exact frame, and
   // the next slide starts from there.
-  const RUB_SPAN_S = 120
   const RUB_REST_MS = 250
 
   // A finger rubbing one video; makeRub builds it.
 
   /**
    * @param x0   px, where the finger went down
-   * @param width   px that span the whole video
+   * @param area   the area under the finger (its left edge and width, px)
    * @param hooks
    *   alive: the gesture still runs; begin: a rub starts (before the pause);
    *   paint: the target changed; rest: the finger rests on the exact frame;
    *   lift: the finger lifted mid-rub, the video on the exact frame
    */
-  function makeRub(v, x0, width, hooks) {
+  function makeRub(v, x0, area, hooks) {
     let active = false
     let count = 0
     let x = x0          // where the finger was when this rub began (or rested)
@@ -7905,8 +7939,8 @@
           hooks.begin()
           v.pause()
         }
-        const span = Math.min(v.duration, RUB_SPAN_S)
-        target = Math.min(v.duration - 0.05, Math.max(0, t + ((nx - x) / (width() || 1)) * span))
+        const a = area()
+        target = rubTarget(x - a.left, t, nx - a.left, a.width, v.duration)
         hooks.paint(target)
         if (!busy) seek()
         clearTimeout(still)
@@ -7929,7 +7963,7 @@
   function rubMove(s, x) {
     const v = s.video
     if (!s.rub) {
-      s.rub = makeRub(v, s.x0, () => s.card.getBoundingClientRect().width, {
+      s.rub = makeRub(v, s.x0, () => s.card.getBoundingClientRect(), {
         alive: () => scrub === s,
         begin: () => { s.stats.rubs = (s.stats.rubs || 0) + 1 },
         paint: at => {
@@ -8145,7 +8179,7 @@
   function playerRub(video, press, layer) {
     let playing = false
     const box = modal.box
-    return makeRub(video, press.x, () => layer.getBoundingClientRect().width, {
+    return makeRub(video, press.x, () => layer.getBoundingClientRect(), {
       alive: () => !!modal && modal.open && modal.box === box,
       begin: () => {
         playing = !video.paused

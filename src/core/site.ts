@@ -1,4 +1,4 @@
-export const VERSION = '2.1.1'
+export const VERSION = '2.1.2'
 export const SITE = location.hostname.replace(/^www\./, '')
 
 // The site's thumbnail list. Gelbooru 0.2 sites (rule34, safebooru, xbooru)
